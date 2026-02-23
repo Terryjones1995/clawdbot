@@ -10,7 +10,8 @@
     "test-switchboard": "node scripts/test-switchboard.js",
     "test-warden": "node scripts/test-warden.js",
     "test-forge": "node scripts/test-forge.js",
-    "test-scribe": "node scripts/test-scribe.js"
+    "test-scribe": "node scripts/test-scribe.js",
+    "test-scout": "node scripts/test-scout.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
