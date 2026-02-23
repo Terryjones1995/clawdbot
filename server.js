@@ -8,8 +8,10 @@ const agentRoutes  = require('./src/routes/agents');
 const routeRoute   = require('./src/routes/route');
 const wardenRoutes = require('./src/routes/warden');
 const forgeRoutes  = require('./src/routes/forge');
+const scribeRoutes = require('./src/routes/scribe');
 const requireAuth  = require('./src/middleware/requireAuth');
 const sentinel     = require('./src/sentinel');
+const scribe       = require('./src/scribe');
 
 const app = express();
 const PORT = process.env.OPENCLAW_PORT || 18789;
@@ -41,8 +43,10 @@ app.use('/api/agents', agentRoutes);
 app.use('/api/route',  routeRoute);
 app.use('/api/warden', wardenRoutes);
 app.use('/api/forge',  forgeRoutes);
+app.use('/api/scribe', scribeRoutes);
 
 app.listen(PORT, () => {
   console.log(`OpenClaw gateway running on http://localhost:${PORT}`);
   sentinel.start().catch(err => console.error('[Sentinel] Failed to start:', err.message));
+  scribe.start();
 });

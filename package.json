@@ -9,7 +9,8 @@
     "test-ollama": "node scripts/test-ollama.js",
     "test-switchboard": "node scripts/test-switchboard.js",
     "test-warden": "node scripts/test-warden.js",
-    "test-forge": "node scripts/test-forge.js"
+    "test-forge": "node scripts/test-forge.js",
+    "test-scribe": "node scripts/test-scribe.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
