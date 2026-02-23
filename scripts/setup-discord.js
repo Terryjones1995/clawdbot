@@ -178,6 +178,13 @@ const AGENTS = [
 
 const COMMAND_CHANNELS = [
   {
+    plain:    'reception',
+    display:  '🎙️・reception',
+    topic:    '🤖 Talk to Ghost naturally — type anything and the right agent will handle it',
+    readOnly: false,
+    envKey:   'DISCORD_CH_RECEPTION',
+  },
+  {
     plain:    'commands',
     display:  '📡・commands',
     topic:    '👋 Talk to Ghost here — type anything to route it, or !help for commands',
@@ -281,6 +288,46 @@ async function pinMessage(msg) {
 }
 
 // ── Embeds ────────────────────────────────────────────────────────────────────
+
+async function postReceptionEmbed(channel) {
+  if (await hasEmbedWithTitle(channel, 'Ghost Reception')) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x57F287)
+    .setTitle('🎙️ Ghost Reception — Talk to Any Agent')
+    .setDescription('Type anything here in plain English. Ghost will figure out which agent to use and get it done — no commands needed.')
+    .addFields(
+      {
+        name:  '🤖 What Ghost can do',
+        value: [
+          '`research what\'s happening in AI` → Scout',
+          '`fix the bug in my login flow` → Forge',
+          '`show me today\'s briefing` → Scribe',
+          '`check system alerts` → Lens',
+          '`draft a welcome email campaign` → Courier',
+          '`remember: we decided to use Postgres` → Archivist',
+          '`what did we decide about the database?` → Archivist',
+        ].join('\n'),
+        inline: false,
+      },
+      {
+        name:  '⚡ How it works',
+        value: 'Switchboard classifies your message → routes to the right agent → runs it → returns the result. All in one place.',
+        inline: false,
+      },
+      {
+        name: '💡 Tips',
+        value: '`!help` for commands · `!status` for system status · `!pending` for approvals',
+        inline: false,
+      },
+    )
+    .setFooter({ text: 'Ghost AI • Reception — powered by Switchboard' })
+    .setTimestamp();
+
+  const msg = await channel.send({ embeds: [embed] });
+  await pinMessage(msg);
+  console.log(`  📌 Embed posted in #${channel.name}`);
+}
 
 async function postCommandCenterEmbed(channel) {
   if (await hasEmbedWithTitle(channel, 'Ghost HQ')) return;
@@ -472,14 +519,16 @@ async function main() {
     }
   }
 
-  const commandsCh = guild.channels.cache.get(channelIds.DISCORD_COMMANDS_CHANNEL_ID);
-  const alertsCh   = guild.channels.cache.get(channelIds.DISCORD_ALERTS_CHANNEL_ID);
-  const auditCh    = guild.channels.cache.get(channelIds.DISCORD_CH_AUDIT);
+  const receptionCh = guild.channels.cache.get(channelIds.DISCORD_CH_RECEPTION);
+  const commandsCh  = guild.channels.cache.get(channelIds.DISCORD_COMMANDS_CHANNEL_ID);
+  const alertsCh    = guild.channels.cache.get(channelIds.DISCORD_ALERTS_CHANNEL_ID);
+  const auditCh     = guild.channels.cache.get(channelIds.DISCORD_CH_AUDIT);
 
   console.log('\n── Command center embeds ──');
-  if (commandsCh) await postCommandCenterEmbed(commandsCh);
-  if (alertsCh)   await postAlertChannelEmbed(alertsCh);
-  if (auditCh)    await postAuditLogEmbed(auditCh);
+  if (receptionCh) await postReceptionEmbed(receptionCh);
+  if (commandsCh)  await postCommandCenterEmbed(commandsCh);
+  if (alertsCh)    await postAlertChannelEmbed(alertsCh);
+  if (auditCh)     await postAuditLogEmbed(auditCh);
 
   // ── Agent Offices ───────────────────────────────────────────────────────────
 

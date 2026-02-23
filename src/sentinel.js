@@ -501,6 +501,71 @@ async function handleNaturalLanguage(event) {
     `intent=${decision.intent} agent=${decision.agent} approval=${decision.requires_approval}`);
 }
 
+// ── Reception — classify + execute in one channel ────────────────────────────
+
+const AGENT_HANDLERS = {
+  Scribe:     handleScribeMessage,
+  Scout:      handleScoutMessage,
+  Forge:      handleForgeMessage,
+  Lens:       handleLensMessage,
+  Courier:    handleCourierMessage,
+  Archivist:  handleArchivistMessage,
+  Warden:     handleWardenMessage,
+  Switchboard: handleNaturalLanguage,
+};
+
+async function handleReceptionMessage(event) {
+  const { channel_id, content, user_role } = event;
+
+  if (user_role === 'MEMBER') {
+    await discord.sendMessage(channel_id, '❌ You need ADMIN or OWNER role to use Ghost.');
+    return;
+  }
+
+  // Handle ! commands directly
+  if (content.trim().startsWith('!')) {
+    await handleCommand(event);
+    return;
+  }
+
+  // Step 1: classify
+  const decision = await switchboard.classify({ source: 'discord', user_role, message: content });
+  if (decision.error) {
+    await discord.sendMessage(channel_id, `❌ Routing error: ${decision.error}`);
+    return;
+  }
+
+  // Step 2: show a brief routing notice
+  const routingMsg = await discord.send(channel_id, {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle(`🔀 Routing to ${decision.agent}…`)
+        .setDescription(`*${decision.reason || decision.intent}*`)
+        .setFooter({ text: 'Ghost AI • Switchboard' }),
+    ],
+  });
+
+  // Step 3: execute the agent
+  try {
+    const handler = AGENT_HANDLERS[decision.agent];
+    if (handler) {
+      await handler(event);
+    } else {
+      await discord.sendMessage(channel_id, `⚠️ No handler for agent: **${decision.agent}**`);
+    }
+  } catch (err) {
+    console.error(`[Sentinel] Reception → ${decision.agent} error:`, err.message);
+    appendLog('ERROR', 'reception-dispatch', user_role, 'failed', err.message);
+    await discord.send(channel_id, { embeds: [errEmbed(decision.agent, 0xED4245, err)] });
+  } finally {
+    try { await routingMsg.delete(); } catch { /* non-fatal */ }
+  }
+
+  appendLog('INFO', 'reception-dispatch', user_role, 'success',
+    `agent=${decision.agent} intent=${decision.intent}`);
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 async function start() {
@@ -509,11 +574,21 @@ async function start() {
 
   discord.onMessage((event) => {
     heartbeat.pulse();
-    const agentMap    = getAgentChannelMap();
-    const agentName   = agentMap[event.channel_id];
-    const inCommands  = event.channel_id === process.env.DISCORD_COMMANDS_CHANNEL_ID;
-    const isOwnerDM   = event.user_id === process.env.DISCORD_OWNER_USER_ID
-                        && event.channel === 'dm';
+    const agentMap      = getAgentChannelMap();
+    const agentName     = agentMap[event.channel_id];
+    const inCommands    = event.channel_id === process.env.DISCORD_COMMANDS_CHANNEL_ID;
+    const inReception   = event.channel_id === process.env.DISCORD_CH_RECEPTION;
+    const isOwnerDM     = event.user_id === process.env.DISCORD_OWNER_USER_ID
+                          && event.channel === 'dm';
+
+    // Reception — classify + execute
+    if (inReception) {
+      handleReceptionMessage(event).catch(err => {
+        console.error('[Sentinel] Reception error:', err.message);
+        appendLog('ERROR', 'reception', event.user_role, 'failed', err.message);
+      });
+      return;
+    }
 
     // Agent office channel — route to that agent
     if (agentName) {
