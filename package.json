@@ -7,7 +7,8 @@
     "start": "node server.js",
     "create-user": "node scripts/create-user.js",
     "test-ollama": "node scripts/test-ollama.js",
-    "test-switchboard": "node scripts/test-switchboard.js"
+    "test-switchboard": "node scripts/test-switchboard.js",
+    "test-warden": "node scripts/test-warden.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

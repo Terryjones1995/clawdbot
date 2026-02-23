@@ -20,6 +20,7 @@ const path = require('path');
 
 const discord      = require('../openclaw/skills/discord');
 const switchboard  = require('./switchboard');
+const warden       = require('./warden');
 const APPROVALS    = path.join(__dirname, '../memory/approvals.md');
 const LOG_FILE     = path.join(__dirname, '../memory/run_log.md');
 
@@ -28,29 +29,6 @@ const LOG_FILE     = path.join(__dirname, '../memory/run_log.md');
 function appendLog(level, action, userRole, outcome, note) {
   const entry = `[${level}] ${new Date().toISOString()} | agent=Sentinel | action=${action} | user_role=${userRole} | model=qwen3-coder | outcome=${outcome} | escalated=false | note="${note}"\n`;
   try { fs.appendFileSync(LOG_FILE, entry); } catch { /* non-fatal */ }
-}
-
-function readApprovals() {
-  if (!fs.existsSync(APPROVALS)) return '';
-  return fs.readFileSync(APPROVALS, 'utf8');
-}
-
-function getPendingIds(content) {
-  const matches = [...content.matchAll(/## \[([A-Z0-9-]+)\][\s\S]*?- \*\*Status:\*\* PENDING/g)];
-  return matches.map(m => m[1]);
-}
-
-function resolveApproval(content, id, decision) {
-  const status  = decision === 'approve' ? 'APPROVED' : 'DENIED';
-  const resolved = new Date().toISOString();
-
-  // Replace Status: PENDING with the decision, scoped to the right block
-  const blockRe = new RegExp(
-    `(## \\[${id}\\][\\s\\S]*?- \\*\\*Status:\\*\\*) PENDING([\\s\\S]*?- \\*\\*Resolved At:\\*\\*) null([\\s\\S]*?- \\*\\*Resolved By:\\*\\*) null`
-  );
-  if (!blockRe.test(content)) return null;
-
-  return content.replace(blockRe, `$1 ${status}$2 ${resolved}$3 OWNER`);
 }
 
 // ── Command Router ────────────────────────────────────────────────────────────
@@ -87,12 +65,15 @@ async function handleCommand(event) {
       await discord.sendMessage(channel_id, '❌ Insufficient permissions.');
       return;
     }
-    const ids = getPendingIds(readApprovals());
-    if (ids.length === 0) {
+    const pending = warden.getPending();
+    if (pending.length === 0) {
       await discord.sendMessage(channel_id, '✅ No pending approvals.');
     } else {
+      const lines = pending.map(p =>
+        `\`${p.id}\` — **${p.requesting_agent}** → \`${p.action}\``
+      );
       await discord.sendMessage(channel_id,
-        `⏳ **${ids.length} pending:** ${ids.map(id => `\`${id}\``).join(', ')}`);
+        `⏳ **${pending.length} pending:**\n${lines.join('\n')}`);
     }
     return;
   }
@@ -107,26 +88,15 @@ async function handleCommand(event) {
     const decision = approvalMatch[1].toLowerCase();
     const id       = approvalMatch[2].toUpperCase();
 
-    const original = readApprovals();
-    if (!original.includes(`[${id}]`)) {
-      await discord.sendMessage(channel_id, `⚠️ No approval request found with ID \`${id}\`.`);
-      return;
-    }
-    if (!original.match(new RegExp(`\\[${id}\\][\\s\\S]*?Status:\\*\\* PENDING`))) {
-      await discord.sendMessage(channel_id, `ℹ️ Request \`${id}\` is already resolved.`);
+    const result = warden.resolve(id, decision, 'OWNER');
+    if (!result.ok) {
+      await discord.sendMessage(channel_id, `⚠️ ${result.error}`);
       return;
     }
 
-    const updated = resolveApproval(original, id, decision);
-    if (!updated) {
-      await discord.sendMessage(channel_id, `❌ Could not resolve \`${id}\` — check approvals.md format.`);
-      return;
-    }
-
-    fs.writeFileSync(APPROVALS, updated);
     const verb = decision === 'approve' ? '✅ Approved' : '❌ Denied';
-    await discord.sendMessage(channel_id, `${verb} — request \`${id}\` has been **${decision === 'approve' ? 'approved' : 'denied'}**.`);
-    appendLog(decision === 'approve' ? 'APPROVE' : 'DENY', `warden-${decision}`, 'OWNER', 'success', `id=${id}`);
+    await discord.sendMessage(channel_id,
+      `${verb} — request \`${id}\` has been **${decision === 'approve' ? 'approved' : 'denied'}**.`);
     return;
   }
 

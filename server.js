@@ -3,11 +3,12 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 
-const authRoutes  = require('./src/routes/auth');
-const agentRoutes = require('./src/routes/agents');
-const routeRoute  = require('./src/routes/route');
-const requireAuth = require('./src/middleware/requireAuth');
-const sentinel    = require('./src/sentinel');
+const authRoutes   = require('./src/routes/auth');
+const agentRoutes  = require('./src/routes/agents');
+const routeRoute   = require('./src/routes/route');
+const wardenRoutes = require('./src/routes/warden');
+const requireAuth  = require('./src/middleware/requireAuth');
+const sentinel     = require('./src/sentinel');
 
 const app = express();
 const PORT = process.env.OPENCLAW_PORT || 18789;
@@ -37,6 +38,7 @@ app.get('/agents', (req, res) => {
 
 app.use('/api/agents', agentRoutes);
 app.use('/api/route',  routeRoute);
+app.use('/api/warden', wardenRoutes);
 
 app.listen(PORT, () => {
   console.log(`OpenClaw gateway running on http://localhost:${PORT}`);
