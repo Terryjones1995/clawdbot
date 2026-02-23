@@ -542,14 +542,29 @@ async function handleReceptionMessage(event) {
     return;
   }
 
+  // Immediate acknowledgement — so the user knows Ghost is working
+  const waitMsg = await discord.send(channel_id, {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle('⏳ Please wait…')
+        .setDescription('*Ghost is on it — figuring out the best agent for your request.*')
+        .setFooter({ text: 'Ghost AI • Reception' }),
+    ],
+  });
+
   // Step 1: classify
   const decision = await switchboard.classify({ source: 'discord', user_role, message: content });
+
+  // Delete wait message before showing result
+  try { await waitMsg.delete(); } catch { /* non-fatal */ }
+
   if (decision.error) {
     await discord.sendMessage(channel_id, `❌ Routing error: ${decision.error}`);
     return;
   }
 
-  // Step 2: show a brief routing notice
+  // Step 2: brief routing notice (auto-deleted after agent responds)
   const routingMsg = await discord.send(channel_id, {
     embeds: [
       new EmbedBuilder()
