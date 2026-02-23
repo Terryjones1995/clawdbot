@@ -7,6 +7,7 @@ const authRoutes   = require('./src/routes/auth');
 const agentRoutes  = require('./src/routes/agents');
 const routeRoute   = require('./src/routes/route');
 const wardenRoutes = require('./src/routes/warden');
+const forgeRoutes  = require('./src/routes/forge');
 const requireAuth  = require('./src/middleware/requireAuth');
 const sentinel     = require('./src/sentinel');
 
@@ -39,6 +40,7 @@ app.get('/agents', (req, res) => {
 app.use('/api/agents', agentRoutes);
 app.use('/api/route',  routeRoute);
 app.use('/api/warden', wardenRoutes);
+app.use('/api/forge',  forgeRoutes);
 
 app.listen(PORT, () => {
   console.log(`OpenClaw gateway running on http://localhost:${PORT}`);
