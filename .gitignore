@@ -6,3 +6,4 @@ dist/
 logs/
 memory/private/
 .DS_Store
+src/data/users.json
