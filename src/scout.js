@@ -55,7 +55,7 @@ function detectModel(type, depth, query = '') {
 
   // Web / trend queries → Grok (real-time web access)
   if (type === 'web' || type === 'trend') {
-    return { model: 'grok-3-mini', grok: true, reason: `${type} research uses Grok web access` };
+    return { model: 'grok-4-latest', grok: true, reason: `${type} research uses Grok web access` };
   }
 
   // Factual / competitive quick → free local model
@@ -64,7 +64,7 @@ function detectModel(type, depth, query = '') {
 
 // ── LLM callers ───────────────────────────────────────────────────────────────
 
-function _grokChat(messages, model = 'grok-3-mini') {
+function _grokChat(messages, model = 'grok-4-latest') {
   return new Promise((resolve, reject) => {
     const apiKey = process.env.GROK_API_KEY;
     if (!apiKey) return reject(new Error('GROK_API_KEY not set'));
