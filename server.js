@@ -6,6 +6,7 @@ const path = require('path');
 const authRoutes = require('./src/routes/auth');
 const agentRoutes = require('./src/routes/agents');
 const requireAuth = require('./src/middleware/requireAuth');
+const sentinel = require('./src/sentinel');
 
 const app = express();
 const PORT = process.env.OPENCLAW_PORT || 18789;
@@ -37,4 +38,5 @@ app.use('/api/agents', agentRoutes);
 
 app.listen(PORT, () => {
   console.log(`OpenClaw gateway running on http://localhost:${PORT}`);
+  sentinel.start().catch(err => console.error('[Sentinel] Failed to start:', err.message));
 });
