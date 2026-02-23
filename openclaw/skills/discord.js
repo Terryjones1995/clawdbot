@@ -59,6 +59,9 @@ class DiscordConnector {
     this.client.on('messageCreate', (message) => {
       if (message.author.bot) return;
 
+      // Ignore messages from other guilds — only respond in configured guild or DMs
+      if (message.guild && message.guild.id !== this.guildId) return;
+
       const userRole = this._resolveRole(message.author.id, message.member);
       const event = {
         event:     'message',
