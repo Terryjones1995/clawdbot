@@ -320,8 +320,10 @@ function start() {
 
 async function _deliverToDiscord(content) {
   try {
-    const discord = require('../openclaw/skills/discord');
+    const discord   = require('../openclaw/skills/discord');
+    const heartbeat = require('./heartbeat');
     if (!discord.ready) return;
+    heartbeat.pulse();
     await discord.dmOwner(content);
   } catch { /* Discord may not be connected */ }
 }

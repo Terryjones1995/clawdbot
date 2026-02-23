@@ -16,6 +16,7 @@ const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 
 const discord     = require('../openclaw/skills/discord');
+const heartbeat   = require('./heartbeat');
 const switchboard = require('./switchboard');
 const warden      = require('./warden');
 const scribe      = require('./scribe');
@@ -507,6 +508,7 @@ async function start() {
   if (!connected) return;
 
   discord.onMessage((event) => {
+    heartbeat.pulse();
     const agentMap    = getAgentChannelMap();
     const agentName   = agentMap[event.channel_id];
     const inCommands  = event.channel_id === process.env.DISCORD_COMMANDS_CHANNEL_ID;

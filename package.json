@@ -15,7 +15,14 @@
     "test-scout": "node scripts/test-scout.js",
     "test-lens": "node scripts/test-lens.js",
     "test-courier": "node scripts/test-courier.js",
-    "test-archivist": "node scripts/test-archivist.js"
+    "test-archivist": "node scripts/test-archivist.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop ghost",
+    "pm2:restart": "pm2 restart ghost",
+    "pm2:logs": "pm2 logs ghost",
+    "pm2:status": "pm2 status",
+    "pm2:save": "pm2 save",
+    "pm2:startup": "pm2 startup"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
