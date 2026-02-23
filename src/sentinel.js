@@ -19,6 +19,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const discord      = require('../openclaw/skills/discord');
+const switchboard  = require('./switchboard');
 const APPROVALS    = path.join(__dirname, '../memory/approvals.md');
 const LOG_FILE     = path.join(__dirname, '../memory/run_log.md');
 
@@ -135,6 +136,48 @@ async function handleCommand(event) {
   }
 }
 
+// ── Natural language → Switchboard ───────────────────────────────────────────
+
+async function handleNaturalLanguage(event) {
+  const { channel_id, user_id, user_role, content } = event;
+
+  await discord.sendMessage(channel_id, `⏳ Routing…`);
+
+  const decision = await switchboard.classify({
+    source:    'discord',
+    user_role,
+    message:   content,
+  });
+
+  if (decision.error) {
+    await discord.sendMessage(channel_id, `❌ Routing error: ${decision.error}`);
+    return;
+  }
+
+  const approvalNote = decision.requires_approval
+    ? '\n⚠️ **Requires approval** before execution.'
+    : '';
+
+  const dangerNote = decision.dangerous
+    ? '\n🚨 **Dangerous action detected** — Warden gate active.'
+    : '';
+
+  const escalatedNote = decision.escalated
+    ? `\n🔼 Escalated to \`${decision.model}\`.`
+    : '';
+
+  await discord.sendMessage(channel_id, [
+    `**Switchboard → ${decision.agent}**`,
+    `Intent: \`${decision.intent}\``,
+    `Model: \`${decision.model}\``,
+    `Reason: ${decision.reason}`,
+    approvalNote, dangerNote, escalatedNote,
+  ].filter(Boolean).join('\n'));
+
+  appendLog('INFO', 'switchboard-route', user_role, 'success',
+    `intent=${decision.intent} agent=${decision.agent} approval=${decision.requires_approval}`);
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 async function start() {
@@ -152,13 +195,21 @@ async function start() {
     // Ignore regular members in #commands
     if (event.user_role === 'MEMBER') return;
 
-    // Only process messages that start with ! (commands)
-    if (!event.content.trim().startsWith('!')) return;
+    const text = event.content.trim();
 
-    handleCommand(event).catch(err => {
-      console.error('[Sentinel] Command error:', err.message);
-      appendLog('ERROR', 'command-handler', event.user_role, 'failed', err.message);
-    });
+    if (text.startsWith('!')) {
+      // Hard commands (! prefix)
+      handleCommand(event).catch(err => {
+        console.error('[Sentinel] Command error:', err.message);
+        appendLog('ERROR', 'command-handler', event.user_role, 'failed', err.message);
+      });
+    } else {
+      // Natural language — forward to Switchboard
+      handleNaturalLanguage(event).catch(err => {
+        console.error('[Sentinel] Switchboard error:', err.message);
+        appendLog('ERROR', 'switchboard-route', event.user_role, 'failed', err.message);
+      });
+    }
   });
 
   console.log('[Sentinel] Command handler active.');
