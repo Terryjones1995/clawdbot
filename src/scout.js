@@ -58,10 +58,10 @@ function detectModel(type, depth, query = '') {
     return { model: 'grok-4-1-fast-reasoning', grok: true, reason: `${type} research uses Grok web access` };
   }
 
-  // Real-time data queries → Grok (Ollama has no internet)
+  // Real-time data queries → OpenAI search (date-aware, cheap)
   const REALTIME_RE = /\b(weather|temperature|temp|forecast|rain|snow|humidity|wind speed|current(ly)?|right now|today'?s|tonight|this week'?s|price of|stock price|exchange rate|news|latest|breaking|live|score|standings)\b/i;
   if (REALTIME_RE.test(q)) {
-    return { model: 'grok-4-1-fast-reasoning', grok: true, reason: 'real-time data query — Ollama has no web access' };
+    return { model: 'gpt-4o-mini-search-preview', grok: false, openai: true, reason: 'real-time data query — OpenAI search with current date' };
   }
 
   // Factual / competitive quick → free local model
@@ -69,6 +69,44 @@ function detectModel(type, depth, query = '') {
 }
 
 // ── LLM callers ───────────────────────────────────────────────────────────────
+
+function _openaiChat(messages, model = 'gpt-4o-mini-search-preview') {
+  return new Promise((resolve, reject) => {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return reject(new Error('OPENAI_API_KEY not set'));
+
+    const bodyStr = JSON.stringify({ model, messages, max_tokens: 1024 });
+    const options = {
+      hostname: 'api.openai.com',
+      path:     '/v1/chat/completions',
+      method:   'POST',
+      headers: {
+        'Content-Type':   'application/json',
+        'Authorization':  `Bearer ${apiKey}`,
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
+    };
+
+    const req = https.request(options, res => {
+      let raw = '';
+      res.on('data', chunk => { raw += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(raw);
+          if (json.error) return reject(new Error(`OpenAI error: ${json.error.message}`));
+          resolve(json.choices?.[0]?.message?.content || '');
+        } catch (err) {
+          reject(new Error(`OpenAI parse error: ${err.message}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(30_000, () => { req.destroy(new Error('OpenAI request timeout')); });
+    req.write(bodyStr);
+    req.end();
+  });
+}
 
 function _grokChat(messages, model = 'grok-4-1-fast-reasoning') {
   return new Promise((resolve, reject) => {
@@ -168,8 +206,8 @@ function _parseResponse(text) {
 async function run({ query, type = 'factual', depth = 'quick', store_result = false } = {}) {
   if (!query) throw new Error('query is required');
 
-  const { model, grok, reason } = detectModel(type, depth, query);
-  const escalated = !grok && model !== 'qwen3-coder';
+  const { model, grok, openai, reason } = detectModel(type, depth, query);
+  const escalated = !grok && !openai && model !== 'qwen2.5-coder:7b';
 
   const userMessage = [
     `Research query: ${query}`,
@@ -181,8 +219,30 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
   let rawText    = '';
   let actualModel = model;
 
-  // ── Path 1: Grok (web/trend)
-  if (grok) {
+  // ── Path 1: OpenAI (real-time / date-aware web search)
+  if (openai) {
+    const today = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+    try {
+      rawText     = await _openaiChat([
+        { role: 'system', content: `${SYSTEM_PROMPT}\n\nToday's date is ${today}.` },
+        { role: 'user',   content: userMessage },
+      ], model);
+      actualModel = model;
+    } catch (err) {
+      appendLog('WARN', 'research', 'system', 'openai-failed',
+        `query="${query.slice(0, 50)}" err=${err.message} — falling back to Ollama`);
+      const ollamaRes = await _ollamaChat([
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user',   content: userMessage },
+      ]);
+      rawText     = ollamaRes.escalate ? await _claudeChat(userMessage, depth) : ollamaRes.text;
+      actualModel = ollamaRes.escalate ? 'claude-sonnet-4-6' : 'qwen2.5-coder:7b';
+    }
+
+  // ── Path 2: Grok (web/trend prefixed queries)
+  } else if (grok) {
     try {
       rawText     = await _grokChat([
         { role: 'system', content: SYSTEM_PROMPT },
@@ -192,23 +252,15 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
     } catch (err) {
       appendLog('WARN', 'research', 'system', 'grok-failed',
         `query="${query.slice(0, 50)}" err=${err.message} — falling back to Ollama`);
-
-      // Fall back to Ollama
       const ollamaRes = await _ollamaChat([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user',   content: userMessage },
       ]);
-
-      if (ollamaRes.escalate) {
-        rawText     = await _claudeChat(userMessage, depth);
-        actualModel = 'claude-sonnet-4-6';
-      } else {
-        rawText     = ollamaRes.text;
-        actualModel = 'qwen3-coder';
-      }
+      rawText     = ollamaRes.escalate ? await _claudeChat(userMessage, depth) : ollamaRes.text;
+      actualModel = ollamaRes.escalate ? 'claude-sonnet-4-6' : 'qwen2.5-coder:7b';
     }
 
-  // ── Path 2: Claude Sonnet (escalated)
+  // ── Path 3: Claude Sonnet (escalated)
   } else if (escalated) {
     rawText     = await _claudeChat(userMessage, depth);
     actualModel = 'claude-sonnet-4-6';

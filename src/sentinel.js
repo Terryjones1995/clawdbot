@@ -501,6 +501,85 @@ async function handleNaturalLanguage(event) {
     `intent=${decision.intent} agent=${decision.agent} approval=${decision.requires_approval}`);
 }
 
+// ── Vision — analyse image attachments via OpenAI gpt-4o ─────────────────────
+
+const https = require('https');
+
+function _openaiVisionRequest(messages) {
+  return new Promise((resolve, reject) => {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return reject(new Error('OPENAI_API_KEY not set'));
+
+    const bodyStr = JSON.stringify({
+      model:      'gpt-4o',
+      messages,
+      max_tokens: 1024,
+    });
+    const options = {
+      hostname: 'api.openai.com',
+      path:     '/v1/chat/completions',
+      method:   'POST',
+      headers: {
+        'Content-Type':   'application/json',
+        'Authorization':  `Bearer ${apiKey}`,
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
+    };
+
+    const req = https.request(options, res => {
+      let raw = '';
+      res.on('data', c => { raw += c; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(raw);
+          if (json.error) return reject(new Error(`OpenAI vision error: ${json.error.message}`));
+          resolve(json.choices?.[0]?.message?.content || '');
+        } catch (e) {
+          reject(new Error(`OpenAI vision parse error: ${e.message}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30_000, () => { req.destroy(new Error('OpenAI vision timeout')); });
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
+async function handleVisionMessage(event) {
+  const { channel_id, content } = event;
+  const attachments = [...(event.raw?.attachments?.values() || [])]
+    .filter(a => a.contentType?.startsWith('image/'));
+
+  if (attachments.length === 0) return false;
+
+  const prompt = content.trim() || 'Describe this image in detail. Include any text, objects, colours, and context you can see.';
+
+  const userContent = [
+    { type: 'text', text: prompt },
+    ...attachments.map(a => ({
+      type:      'image_url',
+      image_url: { url: a.url, detail: 'auto' },
+    })),
+  ];
+
+  const result = await _openaiVisionRequest([{ role: 'user', content: userContent }]);
+
+  await discord.send(channel_id, {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x10A37F)
+        .setTitle(`👁️ Vision — ${attachments.length > 1 ? `${attachments.length} images` : '1 image'}`)
+        .setDescription(result.slice(0, 3000))
+        .setImage(attachments[0].url)
+        .setFooter({ text: 'Ghost AI • Vision · gpt-4o' })
+        .setTimestamp(),
+    ],
+  });
+
+  return true;
+}
+
 // ── Reception — classify + execute in one channel ────────────────────────────
 
 const AGENT_HANDLERS = {
@@ -519,6 +598,15 @@ async function handleReceptionMessage(event) {
 
   if (user_role === 'MEMBER') {
     await discord.sendMessage(channel_id, '❌ You need ADMIN or OWNER role to use Ghost.');
+    return;
+  }
+
+  // Image attachments → vision (handle before any text routing)
+  try {
+    const handled = await handleVisionMessage(event);
+    if (handled) return;
+  } catch (err) {
+    await discord.send(channel_id, { embeds: [errEmbed('Vision', 0xED4245, err)] });
     return;
   }
 
