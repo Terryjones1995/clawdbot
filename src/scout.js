@@ -55,16 +55,16 @@ function detectModel(type, depth, query = '') {
 
   // Web / trend queries → Grok (real-time web access)
   if (type === 'web' || type === 'trend') {
-    return { model: 'grok-4-latest', grok: true, reason: `${type} research uses Grok web access` };
+    return { model: 'grok-4-1-fast-reasoning', grok: true, reason: `${type} research uses Grok web access` };
   }
 
   // Factual / competitive quick → free local model
-  return { model: 'qwen3-coder', grok: false, reason: 'factual/quick uses local model' };
+  return { model: 'qwen2.5-coder:7b', grok: false, reason: 'factual/quick uses local model' };
 }
 
 // ── LLM callers ───────────────────────────────────────────────────────────────
 
-function _grokChat(messages, model = 'grok-4-latest') {
+function _grokChat(messages, model = 'grok-4-1-fast-reasoning') {
   return new Promise((resolve, reject) => {
     const apiKey = process.env.GROK_API_KEY;
     if (!apiKey) return reject(new Error('GROK_API_KEY not set'));
