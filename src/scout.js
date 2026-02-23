@@ -58,6 +58,12 @@ function detectModel(type, depth, query = '') {
     return { model: 'grok-4-1-fast-reasoning', grok: true, reason: `${type} research uses Grok web access` };
   }
 
+  // Real-time data queries → Grok (Ollama has no internet)
+  const REALTIME_RE = /\b(weather|temperature|temp|forecast|rain|snow|humidity|wind speed|current(ly)?|right now|today'?s|tonight|this week'?s|price of|stock price|exchange rate|news|latest|breaking|live|score|standings)\b/i;
+  if (REALTIME_RE.test(q)) {
+    return { model: 'grok-4-1-fast-reasoning', grok: true, reason: 'real-time data query — Ollama has no web access' };
+  }
+
   // Factual / competitive quick → free local model
   return { model: 'qwen2.5-coder:7b', grok: false, reason: 'factual/quick uses local model' };
 }
