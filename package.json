@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "create-user": "node scripts/create-user.js"
+    "create-user": "node scripts/create-user.js",
+    "test-ollama": "node scripts/test-ollama.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
