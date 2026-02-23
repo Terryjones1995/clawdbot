@@ -528,6 +528,20 @@ async function handleReceptionMessage(event) {
     return;
   }
 
+  // Greetings — respond friendly instead of routing
+  if (/^(hi|hello|hey|sup|yo|howdy|hiya|greetings|good\s*(morning|afternoon|evening))[\s!?.]*$/i.test(content.trim())) {
+    await discord.send(channel_id, {
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x57F287)
+          .setTitle('👻 Ghost — Ready')
+          .setDescription('Hey! Just tell me what you need and I\'ll get it done.\n\nExamples:\n› `research what\'s happening in AI`\n› `fix a bug in my code`\n› `show me today\'s briefing`\n› `check system alerts`\n› `remember: we chose Postgres`')
+          .setFooter({ text: 'Ghost AI • Reception' }),
+      ],
+    });
+    return;
+  }
+
   // Step 1: classify
   const decision = await switchboard.classify({ source: 'discord', user_role, message: content });
   if (decision.error) {
@@ -546,7 +560,20 @@ async function handleReceptionMessage(event) {
     ],
   });
 
-  // Step 3: execute the agent
+  // Step 3: execute the agent — if unclassifiable, prompt the user
+  if (decision.intent === 'unknown/unclassified') {
+    await discord.send(channel_id, {
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xFEE75C)
+          .setTitle('🤔 Not sure what you need')
+          .setDescription(`I couldn't figure out which agent handles that.\n\nTry being more specific:\n› \`research [topic]\`\n› \`fix [code issue]\`\n› \`status\` or \`daily\`\n› \`web: [search query]\`\n› \`remember: [note]\`\n\nOr visit an agent's office directly.`)
+          .setFooter({ text: 'Ghost AI • Switchboard' }),
+      ],
+    });
+    return;
+  }
+
   try {
     const handler = AGENT_HANDLERS[decision.agent];
     if (handler) {
