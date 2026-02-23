@@ -11,7 +11,8 @@
     "test-warden": "node scripts/test-warden.js",
     "test-forge": "node scripts/test-forge.js",
     "test-scribe": "node scripts/test-scribe.js",
-    "test-scout": "node scripts/test-scout.js"
+    "test-scout": "node scripts/test-scout.js",
+    "test-lens": "node scripts/test-lens.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

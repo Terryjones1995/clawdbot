@@ -10,6 +10,7 @@ const wardenRoutes = require('./src/routes/warden');
 const forgeRoutes  = require('./src/routes/forge');
 const scribeRoutes = require('./src/routes/scribe');
 const scoutRoutes  = require('./src/routes/scout');
+const lensRoutes   = require('./src/routes/lens');
 const requireAuth  = require('./src/middleware/requireAuth');
 const sentinel     = require('./src/sentinel');
 const scribe       = require('./src/scribe');
@@ -46,6 +47,7 @@ app.use('/api/warden', wardenRoutes);
 app.use('/api/forge',  forgeRoutes);
 app.use('/api/scribe', scribeRoutes);
 app.use('/api/scout', scoutRoutes);
+app.use('/api/lens',  lensRoutes);
 
 app.listen(PORT, () => {
   console.log(`OpenClaw gateway running on http://localhost:${PORT}`);
