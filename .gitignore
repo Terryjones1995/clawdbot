@@ -1,0 +1,8 @@
+﻿.env
+.env.*
+!.env.example
+node_modules/
+dist/
+logs/
+memory/private/
+.DS_Store
