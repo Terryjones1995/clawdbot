@@ -103,7 +103,13 @@
       border: 1px solid #2a2a30;
       border-radius: 10px;
       padding: 22px 20px;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      transition: border-color 0.15s, background 0.15s;
     }
+
+    a.card:hover { border-color: #5c6ef8; background: #1e1e24; }
 
     .card-icon { font-size: 24px; margin-bottom: 10px; }
     .card-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
@@ -127,11 +133,11 @@
     <div class="welcome-sub">OpenClaw gateway is running.</div>
 
     <div class="cards">
-      <div class="card">
+      <a class="card" href="/agents">
         <div class="card-icon">&#x1F916;</div>
         <div class="card-title">Agents</div>
         <div class="card-desc">Manage and configure AI agent prompt files.</div>
-      </div>
+      </a>
       <div class="card">
         <div class="card-icon">&#x1F4AC;</div>
         <div class="card-title">Prompts</div>

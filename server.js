@@ -4,6 +4,7 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 
 const authRoutes = require('./src/routes/auth');
+const agentRoutes = require('./src/routes/agents');
 const requireAuth = require('./src/middleware/requireAuth');
 
 const app = express();
@@ -27,6 +28,12 @@ app.use(requireAuth);
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
+
+app.get('/agents', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'agents.html'));
+});
+
+app.use('/api/agents', agentRoutes);
 
 app.listen(PORT, () => {
   console.log(`OpenClaw gateway running on http://localhost:${PORT}`);

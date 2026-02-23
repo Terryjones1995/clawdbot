@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenClaw — Agents</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0d0d0f;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e8e8e8;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 32px;
+      border-bottom: 1px solid #2a2a30;
+      background: #16161a;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      text-decoration: none;
+      color: #e8e8e8;
+    }
+
+    .logo-icon {
+      width: 30px; height: 30px;
+      background: linear-gradient(135deg, #5c6ef8, #9b59f7);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px;
+    }
+
+    .header-right { display: flex; align-items: center; gap: 14px; }
+
+    .user-badge { font-size: 13px; color: #aaa; }
+    .user-badge span { color: #e8e8e8; font-weight: 500; }
+
+    button.logout {
+      padding: 7px 16px;
+      background: transparent;
+      border: 1px solid #2a2a30;
+      border-radius: 6px;
+      color: #aaa;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    button.logout:hover { border-color: #f08080; color: #f08080; }
+
+    /* ── Layout ── */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      height: calc(100vh - 65px);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      border-right: 1px solid #2a2a30;
+      background: #16161a;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid #2a2a30;
+    }
+
+    .sidebar-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .btn-new {
+      padding: 5px 12px;
+      background: linear-gradient(135deg, #5c6ef8, #9b59f7);
+      border: none;
+      border-radius: 5px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-new:hover { opacity: 0.85; }
+
+    .agent-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .agent-item {
+      padding: 10px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .agent-item:hover { background: #1e1e24; }
+    .agent-item.active {
+      background: #1e1e24;
+      border-left-color: #5c6ef8;
+    }
+
+    .agent-item-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .agent-item-model {
+      font-size: 11px;
+      color: #555;
+      margin-top: 2px;
+    }
+
+    .empty-list {
+      padding: 24px 16px;
+      font-size: 13px;
+      color: #555;
+      text-align: center;
+    }
+
+    /* ── Main Panel ── */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px 40px;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #444;
+      text-align: center;
+      gap: 12px;
+    }
+
+    .empty-state-icon { font-size: 48px; }
+    .empty-state h2 { font-size: 18px; color: #666; font-weight: 500; }
+    .empty-state p { font-size: 13px; }
+
+    /* ── Form ── */
+    .form-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 28px;
+    }
+
+    .form-title { font-size: 20px; font-weight: 700; }
+    .form-subtitle { font-size: 13px; color: #666; margin-top: 3px; }
+
+    .btn-delete {
+      padding: 7px 16px;
+      background: transparent;
+      border: 1px solid #2a2a30;
+      border-radius: 6px;
+      color: #aaa;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .btn-delete:hover { border-color: #f08080; color: #f08080; }
+
+    .form-grid { display: flex; flex-direction: column; gap: 20px; max-width: 640px; }
+
+    .form-row { display: flex; gap: 16px; }
+    .form-row .field { flex: 1; }
+
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 7px;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      padding: 10px 14px;
+      background: #0d0d0f;
+      border: 1px solid #2a2a30;
+      border-radius: 7px;
+      color: #e8e8e8;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus { border-color: #5c6ef8; }
+
+    .field select { cursor: pointer; }
+
+    .field textarea {
+      resize: vertical;
+      min-height: 200px;
+      line-height: 1.6;
+      font-size: 13px;
+    }
+
+    .form-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+
+    .btn-save {
+      padding: 10px 24px;
+      background: linear-gradient(135deg, #5c6ef8, #9b59f7);
+      border: none;
+      border-radius: 7px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-save:hover { opacity: 0.9; }
+    .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .form-msg { font-size: 13px; color: #888; }
+    .form-msg.success { color: #6fcf97; }
+    .form-msg.error { color: #f08080; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2a30; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="logo" href="/">
+      <div class="logo-icon">&#x2B50;</div>
+      OpenClaw
+    </a>
+    <div class="header-right">
+      <div class="user-badge">Signed in as <span id="username-display">…</span></div>
+      <button class="logout" id="logout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Agents</span>
+        <button class="btn-new" id="btn-new">+ New</button>
+      </div>
+      <div class="agent-list" id="agent-list">
+        <div class="empty-list">No agents yet.</div>
+      </div>
+    </aside>
+
+    <!-- Main Panel -->
+    <main class="main" id="main-panel">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-state-icon">&#x1F916;</div>
+        <h2>No agent selected</h2>
+        <p>Click an agent in the sidebar or create a new one.</p>
+      </div>
+
+      <div id="agent-form" style="display:none;">
+        <div class="form-header">
+          <div>
+            <div class="form-title" id="form-title">New Agent</div>
+            <div class="form-subtitle" id="form-subtitle">Configure your agent's identity and system prompt.</div>
+          </div>
+          <button class="btn-delete" id="btn-delete" style="display:none;">Delete</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-row">
+            <div class="field">
+              <label for="f-name">Name</label>
+              <input id="f-name" type="text" placeholder="e.g. Research Assistant" />
+            </div>
+            <div class="field">
+              <label for="f-model">Model</label>
+              <select id="f-model">
+                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="f-description">Description</label>
+            <input id="f-description" type="text" placeholder="Short description of what this agent does" />
+          </div>
+
+          <div class="field">
+            <label for="f-system-prompt">System Prompt</label>
+            <textarea id="f-system-prompt" placeholder="You are a helpful assistant..."></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn-save" id="btn-save">Save Agent</button>
+            <span class="form-msg" id="form-msg"></span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    let agents = [];
+    let activeId = null; // null = new agent
+
+    // ── Auth ──
+    (async () => {
+      const res = await fetch('/auth/me');
+      if (!res.ok) { window.location.href = '/login'; return; }
+      const { username } = await res.json();
+      document.getElementById('username-display').textContent = username;
+    })();
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/auth/logout', { method: 'POST' });
+      window.location.href = '/login';
+    });
+
+    // ── Load agents ──
+    async function loadAgents() {
+      const res = await fetch('/api/agents');
+      agents = res.ok ? await res.json() : [];
+      renderList();
+    }
+
+    function renderList() {
+      const list = document.getElementById('agent-list');
+      if (agents.length === 0) {
+        list.innerHTML = '<div class="empty-list">No agents yet.</div>';
+        return;
+      }
+      list.innerHTML = agents.map(a => `
+        <div class="agent-item ${a.id === activeId ? 'active' : ''}" data-id="${a.id}">
+          <div class="agent-item-name">${esc(a.name)}</div>
+          <div class="agent-item-model">${modelLabel(a.model)}</div>
+        </div>
+      `).join('');
+
+      list.querySelectorAll('.agent-item').forEach(el => {
+        el.addEventListener('click', () => selectAgent(el.dataset.id));
+      });
+    }
+
+    function modelLabel(m) {
+      return { 'claude-sonnet-4-6': 'Sonnet 4.6', 'claude-opus-4-6': 'Opus 4.6', 'claude-haiku-4-5': 'Haiku 4.5' }[m] || m;
+    }
+
+    function esc(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Select / open agent ──
+    function selectAgent(id) {
+      activeId = id;
+      const agent = agents.find(a => a.id === id);
+      if (!agent) return;
+
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('agent-form').style.display = 'block';
+      document.getElementById('form-title').textContent = agent.name;
+      document.getElementById('form-subtitle').textContent = `ID: ${agent.id}`;
+      document.getElementById('btn-delete').style.display = 'inline-block';
+
+      document.getElementById('f-name').value = agent.name;
+      document.getElementById('f-model').value = agent.model;
+      document.getElementById('f-description').value = agent.description;
+      document.getElementById('f-system-prompt').value = agent.systemPrompt;
+      setMsg('', '');
+      renderList();
+    }
+
+    // ── New agent ──
+    document.getElementById('btn-new').addEventListener('click', () => {
+      activeId = null;
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('agent-form').style.display = 'block';
+      document.getElementById('form-title').textContent = 'New Agent';
+      document.getElementById('form-subtitle').textContent = 'Configure your agent\'s identity and system prompt.';
+      document.getElementById('btn-delete').style.display = 'none';
+
+      document.getElementById('f-name').value = '';
+      document.getElementById('f-model').value = 'claude-sonnet-4-6';
+      document.getElementById('f-description').value = '';
+      document.getElementById('f-system-prompt').value = '';
+      setMsg('', '');
+      renderList();
+      document.getElementById('f-name').focus();
+    });
+
+    // ── Save ──
+    document.getElementById('btn-save').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-save');
+      btn.disabled = true;
+      setMsg('Saving…', '');
+
+      const payload = {
+        name: document.getElementById('f-name').value,
+        description: document.getElementById('f-description').value,
+        model: document.getElementById('f-model').value,
+        systemPrompt: document.getElementById('f-system-prompt').value,
+      };
+
+      const url = activeId ? `/api/agents/${activeId}` : '/api/agents';
+      const method = activeId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      btn.disabled = false;
+
+      if (!res.ok) {
+        setMsg(data.error || 'Save failed.', 'error');
+        return;
+      }
+
+      activeId = data.id;
+      await loadAgents();
+      selectAgent(activeId);
+      setMsg('Saved.', 'success');
+    });
+
+    // ── Delete ──
+    document.getElementById('btn-delete').addEventListener('click', async () => {
+      if (!activeId) return;
+      const agent = agents.find(a => a.id === activeId);
+      if (!confirm(`Delete "${agent?.name}"? This cannot be undone.`)) return;
+
+      const res = await fetch(`/api/agents/${activeId}`, { method: 'DELETE' });
+      if (!res.ok) { setMsg('Delete failed.', 'error'); return; }
+
+      activeId = null;
+      await loadAgents();
+      document.getElementById('agent-form').style.display = 'none';
+      document.getElementById('empty-state').style.display = 'flex';
+    });
+
+    function setMsg(text, type) {
+      const el = document.getElementById('form-msg');
+      el.textContent = text;
+      el.className = 'form-msg' + (type ? ` ${type}` : '');
+    }
+
+    loadAgents();
+  </script>
+</body>
+</html>
