@@ -13,7 +13,8 @@
     "test-scribe": "node scripts/test-scribe.js",
     "test-scout": "node scripts/test-scout.js",
     "test-lens": "node scripts/test-lens.js",
-    "test-courier": "node scripts/test-courier.js"
+    "test-courier": "node scripts/test-courier.js",
+    "test-archivist": "node scripts/test-archivist.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
