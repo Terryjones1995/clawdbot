@@ -108,18 +108,24 @@ class DiscordConnector {
 
   // ── Outbound ──────────────────────────────────────────────────────────────
 
-  /** Send a message to any channel by ID. */
+  /** Send a message to any channel by ID. Accepts a string or full discord.js MessageCreateOptions. */
   async sendMessage(channelId, content) {
     this._assertReady();
     try {
       const channel = await this.client.channels.fetch(channelId);
-      const msg = await channel.send(content);
+      const payload = typeof content === 'string' ? { content } : content;
+      const msg = await channel.send(payload);
       this._log('INFO', 'send-message', 'system', 'success', `channel=${channelId}`);
       return msg;
     } catch (err) {
       this._log('ERROR', 'send-message', 'system', 'failed', err.message);
       throw err;
     }
+  }
+
+  /** Send discord.js MessageCreateOptions (embeds, components, etc.) to a channel. */
+  async send(channelId, options) {
+    return this.sendMessage(channelId, options);
   }
 
   /** Send a DM to a user by ID. */

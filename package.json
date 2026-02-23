@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "setup-discord": "node scripts/setup-discord.js",
     "create-user": "node scripts/create-user.js",
     "test-ollama": "node scripts/test-ollama.js",
     "test-switchboard": "node scripts/test-switchboard.js",
