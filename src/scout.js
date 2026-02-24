@@ -18,13 +18,16 @@ const fs      = require('fs');
 const path    = require('path');
 const https   = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
+
+const LOCAL_MODEL = process.env.OLLAMA_MODEL || 'qwen3:8b';
 const ollama  = require('../openclaw/skills/ollama');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
 const SYSTEM_PROMPT = `You are Scout, the research agent for the Ghost AI system.
-Provide accurate, concise research summaries. Cite sources when known.
-Format: write your summary, then list any sources on separate lines prefixed with "SOURCE: ".
+You genuinely love digging into things — sources, data, the weird corners of a topic. Be enthusiastic but accurate.
+If there's an interesting angle or anomaly, flag it. Be honest when sources conflict or you're uncertain.
+Format: summary first, then any sources prefixed with "SOURCE: ".
 Quick depth: under 300 words. Deep depth: under 700 words. Plain text only.`;
 
 // ── Escalation logic ──────────────────────────────────────────────────────────
@@ -65,7 +68,7 @@ function detectModel(type, depth, query = '') {
   }
 
   // Factual / competitive quick → free local model
-  return { model: 'qwen2.5-coder:7b', grok: false, reason: 'factual/quick uses local model' };
+  return { model: LOCAL_MODEL, grok: false, reason: 'factual/quick uses local model' };
 }
 
 // ── LLM callers ───────────────────────────────────────────────────────────────
@@ -207,7 +210,7 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
   if (!query) throw new Error('query is required');
 
   const { model, grok, openai, reason } = detectModel(type, depth, query);
-  const escalated = !grok && !openai && model !== 'qwen2.5-coder:7b';
+  const escalated = !grok && !openai && model !== LOCAL_MODEL;
 
   const userMessage = [
     `Research query: ${query}`,
@@ -238,7 +241,7 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
         { role: 'user',   content: userMessage },
       ]);
       rawText     = ollamaRes.escalate ? await _claudeChat(userMessage, depth) : ollamaRes.text;
-      actualModel = ollamaRes.escalate ? 'claude-sonnet-4-6' : 'qwen2.5-coder:7b';
+      actualModel = ollamaRes.escalate ? 'claude-sonnet-4-6' : LOCAL_MODEL;
     }
 
   // ── Path 2: Grok (web/trend prefixed queries)
@@ -257,7 +260,7 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
         { role: 'user',   content: userMessage },
       ]);
       rawText     = ollamaRes.escalate ? await _claudeChat(userMessage, depth) : ollamaRes.text;
-      actualModel = ollamaRes.escalate ? 'claude-sonnet-4-6' : 'qwen2.5-coder:7b';
+      actualModel = ollamaRes.escalate ? 'claude-sonnet-4-6' : LOCAL_MODEL;
     }
 
   // ── Path 3: Claude Sonnet (escalated)

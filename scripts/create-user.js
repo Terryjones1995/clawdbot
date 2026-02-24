@@ -2,24 +2,11 @@
 'use strict';
 
 require('dotenv').config();
-const bcrypt = require('bcryptjs');
-const fs = require('fs');
-const path = require('path');
+const bcrypt   = require('bcryptjs');
 const readline = require('readline');
+const db       = require('../src/db');
 
-const USERS_FILE = path.join(__dirname, '../src/data/users.json');
-
-function loadUsers() {
-  if (!fs.existsSync(USERS_FILE)) return [];
-  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-}
-
-function saveUsers(users) {
-  fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-}
-
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const rl  = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (prompt) => new Promise((resolve) => rl.question(prompt, resolve));
 
 async function main() {
@@ -28,7 +15,6 @@ async function main() {
   const username = (await ask('Username: ')).trim();
   if (!username) { console.error('Username cannot be empty.'); process.exit(1); }
 
-  // Hide password input if possible
   const password = await new Promise((resolve) => {
     process.stdout.write('Password: ');
     const stdin = process.stdin;
@@ -63,18 +49,25 @@ async function main() {
   const role = roleInput === 'admin' ? 'admin' : 'user';
   rl.close();
 
-  const users = loadUsers();
+  const passwordHash = await bcrypt.hash(password, 12);
 
-  if (users.find((u) => u.username === username)) {
-    console.error(`\nUser "${username}" already exists.`);
+  try {
+    await db.query(
+      `INSERT INTO users (username, password_hash, role)
+       VALUES ($1, $2, $3)`,
+      [username, passwordHash, role]
+    );
+    console.log(`\nUser "${username}" created with role "${role}".`);
+  } catch (err) {
+    if (err.code === '23505') {
+      console.error(`\nUser "${username}" already exists.`);
+    } else {
+      console.error('\nFailed to create user:', err.message);
+    }
     process.exit(1);
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
-  users.push({ username, passwordHash, role, createdAt: new Date().toISOString() });
-  saveUsers(users);
-
-  console.log(`\nUser "${username}" created with role "${role}".`);
+  process.exit(0);
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

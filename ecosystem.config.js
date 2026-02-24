@@ -14,6 +14,32 @@
 module.exports = {
   apps: [
     {
+      name:   'ghost-portal',
+      script: 'portal-start.js',
+      cwd:    '.',
+
+      // ── Restart behaviour ───────────────────────────────────────────────────
+      autorestart:              true,
+      restart_delay:            5000,
+      exp_backoff_restart_delay: 100,
+      max_restarts:             10,
+
+      // ── Memory guard ────────────────────────────────────────────────────────
+      max_memory_restart: '512M',
+
+      // ── Logs ────────────────────────────────────────────────────────────────
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      error_file:      './logs/portal-error.log',
+      out_file:        './logs/portal-out.log',
+      merge_logs:      true,
+
+      // ── Environment ─────────────────────────────────────────────────────────
+      env: {
+        NODE_ENV:       'production',
+        PORT:           '3001',
+      },
+    },
+    {
       name:   'ghost',
       script: 'server.js',
 

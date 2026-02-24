@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Existing Express backend table ────────────────────────────────────────────
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  role         String   @default("user")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  commandLogs CommandLog[]
+  tasks       Task[]
+
+  @@map("users")
+}
+
+// ── Portal tables ─────────────────────────────────────────────────────────────
+model Job {
+  id         String    @id @default(cuid())
+  orgId      String    @default("ghost") @map("org_id")
+  type       String
+  status     String    @default("queued")
+  priority   Int       @default(5)
+  payload    Json      @default("{}")
+  result     Json?
+  error      String?
+  agentId    String?   @map("agent_id")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  startedAt  DateTime? @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("portal_jobs")
+}
+
+model Task {
+  id               String    @id @default(cuid())
+  orgId            String    @default("ghost") @map("org_id")
+  title            String
+  description      String?
+  status           String    @default("todo")
+  assignedToUserId Int?      @map("assigned_to_user_id")
+  dueAt            DateTime? @map("due_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  assignedTo User? @relation(fields: [assignedToUserId], references: [id])
+
+  @@map("portal_tasks")
+}
+
+model CommandLog {
+  id          String   @id @default(cuid())
+  orgId       String   @default("ghost") @map("org_id")
+  userId      Int?     @map("user_id")
+  commandText String   @map("command_text")
+  target      String   @default("ghost")
+  targetId    String?  @map("target_id")
+  status      String   @default("pending")
+  outputText  String?  @map("output_text")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt(sort: Desc)])
+  @@map("portal_command_logs")
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  orgId       String   @default("ghost") @map("org_id")
+  actorUserId Int?     @map("actor_user_id")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  meta        Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@map("portal_audit_events")
+}
+
+model ErrorLog {
+  id         String    @id @default(cuid())
+  source     String
+  level      String    @default("error")
+  message    String
+  stack      String?
+  context    Json      @default("{}")
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime? @map("resolved_at")
+  resolvedBy String?   @map("resolved_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([resolved])
+  @@index([createdAt(sort: Desc)])
+  @@map("portal_error_logs")
+}
+
+model ApiUsage {
+  id           String   @id @default(cuid())
+  provider     String
+  model        String?
+  inputTokens  Int      @default(0) @map("input_tokens")
+  outputTokens Int      @default(0) @map("output_tokens")
+  costUsd      Float    @default(0) @map("cost_usd")
+  agentId      String?  @map("agent_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([provider])
+  @@index([createdAt(sort: Desc)])
+  @@map("portal_api_usage")
+}

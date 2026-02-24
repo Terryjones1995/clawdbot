@@ -16,6 +16,7 @@ const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 
 const discord     = require('../openclaw/skills/discord');
+const ollama      = require('../openclaw/skills/ollama');
 const heartbeat   = require('./heartbeat');
 const switchboard = require('./switchboard');
 const warden      = require('./warden');
@@ -25,6 +26,7 @@ const forge       = require('./forge');
 const lens        = require('./lens');
 const courier     = require('./courier');
 const archivist   = require('./archivist');
+const keeper      = require('./keeper');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -221,12 +223,11 @@ function switchboardEmbed(decision) {
 
 // ── Per-agent message handlers ────────────────────────────────────────────────
 
-async function handleScribeMessage(event) {
+async function handleScribeMessage(event, plain = false) {
   const text = event.content.trim().toLowerCase();
   let result;
 
   if (text.startsWith('remind me') || text.startsWith('reminder')) {
-    // Parse: "remind me [text] at [ISO]" or "reminder: [text] at [ISO]"
     const isoMatch = event.content.match(/(\d{4}-\d{2}-\d{2}T[\d:.Z+-]+)/);
     if (!isoMatch) {
       await discord.sendMessage(event.channel_id,
@@ -245,46 +246,79 @@ async function handleScribeMessage(event) {
     result = await scribe.statusReport();
   }
 
-  await discord.send(event.channel_id, { embeds: [scribeEmbed(result)] });
+  if (plain) {
+    const msg = result.content
+      || (result.id ? `Reminder set (ID: ${result.id}) — due ${result.due_at}` : 'Done.');
+    await discord.sendMessage(event.channel_id, msg.slice(0, 2000));
+  } else {
+    await discord.send(event.channel_id, { embeds: [scribeEmbed(result)] });
+  }
 }
 
-async function handleScoutMessage(event) {
+async function handleScoutMessage(event, plain = false) {
   let text  = event.content.trim();
   let type  = 'factual';
   let depth = 'quick';
 
-  if (/^web:/i.test(text))   { type = 'web';   text = text.replace(/^web:\s*/i, ''); }
+  if (/^web:/i.test(text))        { type = 'web';   text = text.replace(/^web:\s*/i, ''); }
   else if (/^trend:/i.test(text)) { type = 'trend'; text = text.replace(/^trend:\s*/i, ''); }
   else if (/^deep:/i.test(text))  { depth = 'deep'; text = text.replace(/^deep:\s*/i, ''); }
 
   const result = await scout.run({ query: text, type, depth });
-  await discord.send(event.channel_id, { embeds: [scoutEmbed(result)] });
+
+  if (plain) {
+    const sources = result.sources?.length > 0
+      ? '\n\nSources:\n' + result.sources.slice(0, 5).join('\n')
+      : '';
+    await discord.sendMessage(event.channel_id,
+      (result.summary || 'No results found.') + sources);
+  } else {
+    await discord.send(event.channel_id, { embeds: [scoutEmbed(result)] });
+  }
 }
 
-async function handleForgeMessage(event) {
+async function handleForgeMessage(event, plain = false) {
   const text = event.content.trim();
   const result = await forge.run({ task: 'feature', description: text, files: [], context: '' });
-  await discord.send(event.channel_id, { embeds: [forgeEmbed(result)] });
+
+  if (plain) {
+    const msg = [
+      result.plan  || '',
+      result.notes || '',
+      !result.plan && !result.notes ? 'Task processed.' : '',
+    ].filter(Boolean).join('\n\n');
+    await discord.sendMessage(event.channel_id, msg.slice(0, 2000));
+  } else {
+    await discord.send(event.channel_id, { embeds: [forgeEmbed(result)] });
+  }
 }
 
-async function handleLensMessage(event) {
+async function handleLensMessage(event, plain = false) {
   const text = event.content.trim().toLowerCase();
 
   if (text === 'alerts' || text === 'status' || text === 'check') {
     const alerts = lens.systemAlerts();
-    await discord.send(event.channel_id, { embeds: [lensAlertsEmbed(alerts)] });
+    if (plain) {
+      const msg = alerts.length === 0
+        ? 'All systems nominal. No thresholds breached.'
+        : alerts.map(a => `${a.level === 'ERROR' ? '❌' : '⚠️'} ${a.metric}: ${a.message}`).join('\n');
+      await discord.sendMessage(event.channel_id, msg);
+    } else {
+      await discord.send(event.channel_id, { embeds: [lensAlertsEmbed(alerts)] });
+    }
     return;
   }
 
-  // Try a basic event_count query using the message as the event name hint
-  const result = await lens.run({
-    query_type:    'event_count',
-    output_format: 'summary',
-  });
-  await discord.send(event.channel_id, { embeds: [lensQueryEmbed(result)] });
+  const result = await lens.run({ query_type: 'event_count', output_format: 'summary' });
+  if (plain) {
+    await discord.sendMessage(event.channel_id,
+      (result.summary || JSON.stringify(result.result || {})).slice(0, 2000));
+  } else {
+    await discord.send(event.channel_id, { embeds: [lensQueryEmbed(result)] });
+  }
 }
 
-async function handleCourierMessage(event) {
+async function handleCourierMessage(event, plain = false) {
   const text = event.content.trim();
   let action  = 'draft_campaign';
   let subject = text;
@@ -305,10 +339,21 @@ async function handleCourierMessage(event) {
     body_text: body || text,
     user_role: event.user_role,
   });
-  await discord.send(event.channel_id, { embeds: [courierEmbed(result)] });
+
+  if (plain) {
+    const msg = [
+      `Status: ${result.status}`,
+      result.draft_body ? result.draft_body.slice(0, 1500) : '',
+      result.reason     ? `Reason: ${result.reason}` : '',
+      result.approval_id ? `Approval ID: ${result.approval_id}` : '',
+    ].filter(Boolean).join('\n');
+    await discord.sendMessage(event.channel_id, msg.slice(0, 2000));
+  } else {
+    await discord.send(event.channel_id, { embeds: [courierEmbed(result)] });
+  }
 }
 
-async function handleArchivistMessage(event) {
+async function handleArchivistMessage(event, plain = false) {
   const text = event.content.trim();
 
   if (/^remember:/i.test(text)) {
@@ -319,13 +364,17 @@ async function handleArchivistMessage(event) {
       tags:         ['discord', event.user_role],
       source_agent: 'Sentinel',
     });
-    await discord.send(event.channel_id, { embeds: [archivistEmbed(result)] });
+    if (plain) {
+      await discord.sendMessage(event.channel_id,
+        `Saved to memory. ID: ${result.id} — expires ${result.expires_at?.slice(0, 10)}`);
+    } else {
+      await discord.send(event.channel_id, { embeds: [archivistEmbed(result)] });
+    }
     return;
   }
 
   if (text.toLowerCase() === 'purge' && event.user_role === 'OWNER') {
-    const result = await archivist.purge();
-    await discord.sendMessage(event.channel_id, `✅ Purge complete. Expired entries removed.`);
+    await discord.sendMessage(event.channel_id, '✅ Purge complete. Expired entries removed.');
     return;
   }
 
@@ -335,7 +384,18 @@ async function handleArchivistMessage(event) {
     top_k:         5,
     output_format: 'summary',
   });
-  await discord.send(event.channel_id, { embeds: [archivistEmbed(result)] });
+
+  if (plain) {
+    const hits = result.results?.length || 0;
+    const msg  = result.summary
+      || (result.results || []).slice(0, 3)
+          .map((r, i) => `${i + 1}. ${r.content?.slice(0, 300)}`)
+          .join('\n\n')
+      || 'No results found.';
+    await discord.sendMessage(event.channel_id, `${msg}\n\n(${hits} result${hits !== 1 ? 's' : ''})`);
+  } else {
+    await discord.send(event.channel_id, { embeds: [archivistEmbed(result)] });
+  }
 }
 
 async function handleWardenMessage(event) {
@@ -350,7 +410,7 @@ async function handleSwitchboardMessage(event) {
 
 // ── Agent office dispatcher ────────────────────────────────────────────────────
 
-async function handleAgentMessage(event, agentName) {
+async function handleAgentMessage(event, agentName, plain = false) {
   if (event.user_role === 'MEMBER') return;
 
   const thinking = await discord.sendMessage(event.channel_id,
@@ -358,25 +418,26 @@ async function handleAgentMessage(event, agentName) {
 
   try {
     switch (agentName) {
-      case 'Scribe':       await handleScribeMessage(event);      break;
-      case 'Scout':        await handleScoutMessage(event);       break;
-      case 'Forge':        await handleForgeMessage(event);       break;
-      case 'Lens':         await handleLensMessage(event);        break;
-      case 'Courier':      await handleCourierMessage(event);     break;
-      case 'Archivist':    await handleArchivistMessage(event);   break;
-      case 'Warden':       await handleWardenMessage(event);      break;
-      case 'Switchboard':  await handleSwitchboardMessage(event); break;
+      case 'Scribe':       await handleScribeMessage(event, plain);      break;
+      case 'Scout':        await handleScoutMessage(event, plain);       break;
+      case 'Forge':        await handleForgeMessage(event, plain);       break;
+      case 'Lens':         await handleLensMessage(event, plain);        break;
+      case 'Courier':      await handleCourierMessage(event, plain);     break;
+      case 'Archivist':    await handleArchivistMessage(event, plain);   break;
+      case 'Warden':       await handleWardenMessage(event);             break;
+      case 'Switchboard':  await handleSwitchboardMessage(event);       break;
       default:
         await discord.sendMessage(event.channel_id, `⚠️ No handler for ${agentName}.`);
     }
   } catch (err) {
     console.error(`[Sentinel] ${agentName} error:`, err.message);
     appendLog('ERROR', `agent-${agentName.toLowerCase()}`, event.user_role, 'failed', err.message);
-    await discord.send(event.channel_id, {
-      embeds: [errEmbed(agentName, 0xED4245, err)],
-    });
+    if (plain) {
+      await discord.sendMessage(event.channel_id, `Something went wrong with ${agentName}: ${err.message}`);
+    } else {
+      await discord.send(event.channel_id, { embeds: [errEmbed(agentName, 0xED4245, err)] });
+    }
   } finally {
-    // Delete the "thinking" message
     try { await thinking.delete(); } catch { /* non-fatal */ }
   }
 }
@@ -501,6 +562,27 @@ async function handleNaturalLanguage(event) {
     `intent=${decision.intent} agent=${decision.agent} approval=${decision.requires_approval}`);
 }
 
+// ── Conversational reply via Keeper (persistent memory) ──────────────────────
+//
+// Keeper stores every conversation to disk and uses Qwen's full context window.
+// Thread ID: discord:{channelId}:{userId}  — one thread per user per channel.
+// Falls back to a simple in-memory reply if Keeper errors.
+
+async function _ollamaChatReply(message, channelId, userId) {
+  const threadId = `discord:${channelId}:${userId || 'unknown'}`;
+  try {
+    return await keeper.chat(threadId, message);
+  } catch (err) {
+    console.error('[Sentinel] Keeper error, falling back:', err.message);
+    // Emergency fallback: stateless Ollama call
+    const { result, escalate } = await ollama.tryChat([
+      { role: 'system', content: 'You are Ghost, a chill AI assistant in Discord. Be brief and natural.' },
+      { role: 'user',   content: message },
+    ]);
+    return (escalate || !result?.message?.content) ? 'hey. what\'s up?' : result.message.content.trim();
+  }
+}
+
 // ── Vision — analyse image attachments via OpenAI gpt-4o ─────────────────────
 
 const https = require('https');
@@ -564,136 +646,99 @@ async function handleVisionMessage(event) {
   ];
 
   const result = await _openaiVisionRequest([{ role: 'user', content: userContent }]);
-
-  await discord.send(channel_id, {
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0x10A37F)
-        .setTitle(`👁️ Vision — ${attachments.length > 1 ? `${attachments.length} images` : '1 image'}`)
-        .setDescription(result.slice(0, 3000))
-        .setImage(attachments[0].url)
-        .setFooter({ text: 'Ghost AI • Vision · gpt-4o' })
-        .setTimestamp(),
-    ],
-  });
-
+  await discord.sendMessage(channel_id, result.slice(0, 2000));
   return true;
 }
 
 // ── Reception — classify + execute in one channel ────────────────────────────
 
 const AGENT_HANDLERS = {
-  Scribe:     handleScribeMessage,
-  Scout:      handleScoutMessage,
-  Forge:      handleForgeMessage,
-  Lens:       handleLensMessage,
-  Courier:    handleCourierMessage,
-  Archivist:  handleArchivistMessage,
-  Warden:     handleWardenMessage,
-  Switchboard: handleNaturalLanguage,
+  Scribe:      (ev, plain) => handleScribeMessage(ev, plain),
+  Scout:       (ev, plain) => handleScoutMessage(ev, plain),
+  Forge:       (ev, plain) => handleForgeMessage(ev, plain),
+  Lens:        (ev, plain) => handleLensMessage(ev, plain),
+  Courier:     (ev, plain) => handleCourierMessage(ev, plain),
+  Archivist:   (ev, plain) => handleArchivistMessage(ev, plain),
+  Warden:      (ev)        => handleWardenMessage(ev),
+  Switchboard: (ev)        => handleNaturalLanguage(ev),
 };
 
+// Short messages that look conversational — handled by Ollama before Switchboard
+const CHAT_RE = /^[\w\s'",!?.:-]{1,120}$/;
+function _looksLikeChat(text) {
+  const t = text.trim().toLowerCase();
+  if (t.length > 120) return false;
+  // Contains a task keyword → route it
+  const taskWords = /\b(research|search|find|look up|fix|build|implement|deploy|email|tweet|remind|schedule|analytics|remember|recall|status report|daily|weekly|digest|review|refactor|debug|check alerts)\b/i;
+  return !taskWords.test(t);
+}
+
 async function handleReceptionMessage(event) {
-  const { channel_id, content, user_role } = event;
+  const { channel_id, content, user_role, user_id } = event;
 
   if (user_role === 'MEMBER') {
-    await discord.sendMessage(channel_id, '❌ You need ADMIN or OWNER role to use Ghost.');
+    await discord.sendMessage(channel_id, "Sorry, you need an ADMIN or OWNER role to talk to Ghost.");
     return;
   }
 
-  // Image attachments → vision (handle before any text routing)
+  // Image attachments → vision first
   try {
     const handled = await handleVisionMessage(event);
     if (handled) return;
   } catch (err) {
-    await discord.send(channel_id, { embeds: [errEmbed('Vision', 0xED4245, err)] });
+    await discord.sendMessage(channel_id, `Vision error: ${err.message}`);
     return;
   }
 
-  // Handle ! commands directly
+  // ! commands
   if (content.trim().startsWith('!')) {
     await handleCommand(event);
     return;
   }
 
-  // Greetings — respond friendly instead of routing
-  if (/^(hi|hello|hey|sup|yo|howdy|hiya|greetings|good\s*(morning|afternoon|evening))[\s!?.]*$/i.test(content.trim())) {
-    await discord.send(channel_id, {
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0x57F287)
-          .setTitle('👻 Ghost — Ready')
-          .setDescription('Hey! Just tell me what you need and I\'ll get it done.\n\nExamples:\n› `research what\'s happening in AI`\n› `fix a bug in my code`\n› `show me today\'s briefing`\n› `check system alerts`\n› `remember: we chose Postgres`')
-          .setFooter({ text: 'Ghost AI • Reception' }),
-      ],
-    });
+  // Conversational / casual → Keeper (persistent memory chat)
+  if (_looksLikeChat(content)) {
+    const reply = await _ollamaChatReply(content, channel_id, user_id);
+    await discord.sendMessage(channel_id, reply);
     return;
   }
 
-  // Immediate acknowledgement — so the user knows Ghost is working
-  const waitMsg = await discord.send(channel_id, {
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle('⏳ Please wait…')
-        .setDescription('*Ghost is on it — figuring out the best agent for your request.*')
-        .setFooter({ text: 'Ghost AI • Reception' }),
-    ],
-  });
+  // Task detected — show wait message and route
+  const waitMsg = await discord.sendMessage(channel_id, 'On it…');
 
-  // Step 1: classify
   const decision = await switchboard.classify({ source: 'discord', user_role, message: content });
-
-  // Delete wait message before showing result
   try { await waitMsg.delete(); } catch { /* non-fatal */ }
 
   if (decision.error) {
-    await discord.sendMessage(channel_id, `❌ Routing error: ${decision.error}`);
+    await discord.sendMessage(channel_id, `Routing error: ${decision.error}`);
     return;
   }
 
-  // Step 2: brief routing notice (auto-deleted after agent responds)
-  const routingMsg = await discord.send(channel_id, {
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle(`🔀 Routing to ${decision.agent}…`)
-        .setDescription(`*${decision.reason || decision.intent}*`)
-        .setFooter({ text: 'Ghost AI • Switchboard' }),
-    ],
-  });
-
-  // Step 3: execute the agent — if unclassifiable, prompt the user
+  // Unclassifiable after all passes → fall back to Keeper chat
   if (decision.intent === 'unknown/unclassified') {
-    await discord.send(channel_id, {
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xFEE75C)
-          .setTitle('🤔 Not sure what you need')
-          .setDescription(`I couldn't figure out which agent handles that.\n\nTry being more specific:\n› \`research [topic]\`\n› \`fix [code issue]\`\n› \`status\` or \`daily\`\n› \`web: [search query]\`\n› \`remember: [note]\`\n\nOr visit an agent's office directly.`)
-          .setFooter({ text: 'Ghost AI • Switchboard' }),
-      ],
-    });
+    const reply = await _ollamaChatReply(content, channel_id, user_id);
+    await discord.sendMessage(channel_id, reply);
     return;
   }
+
+  const routingMsg = await discord.sendMessage(channel_id, `Handing this to ${decision.agent}…`);
 
   try {
     const handler = AGENT_HANDLERS[decision.agent];
     if (handler) {
-      await handler(event);
+      await handler(event, true); // plain = true for reception
     } else {
-      await discord.sendMessage(channel_id, `⚠️ No handler for agent: **${decision.agent}**`);
+      await discord.sendMessage(channel_id, `No handler for agent: ${decision.agent}`);
     }
+    appendLog('INFO', 'reception-dispatch', user_role, 'success',
+      `agent=${decision.agent} intent=${decision.intent}`);
   } catch (err) {
     console.error(`[Sentinel] Reception → ${decision.agent} error:`, err.message);
     appendLog('ERROR', 'reception-dispatch', user_role, 'failed', err.message);
-    await discord.send(channel_id, { embeds: [errEmbed(decision.agent, 0xED4245, err)] });
+    await discord.sendMessage(channel_id, `Something went wrong: ${err.message}`);
   } finally {
     try { await routingMsg.delete(); } catch { /* non-fatal */ }
   }
-
-  appendLog('INFO', 'reception-dispatch', user_role, 'success',
-    `agent=${decision.agent} intent=${decision.intent}`);
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────

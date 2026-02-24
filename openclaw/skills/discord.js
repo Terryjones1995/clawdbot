@@ -50,7 +50,7 @@ class DiscordConnector {
       return false;
     }
 
-    this.client.once('ready', () => {
+    this.client.once('clientReady', () => {
       this.ready = true;
       console.log(`[Sentinel] Connected as ${this.client.user.tag}`);
       this._log('INFO', 'connect', 'system', 'success', `bot=${this.client.user.tag}`);

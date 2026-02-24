@@ -29,7 +29,7 @@ const LOG_FILE = path.join(__dirname, '../../memory/run_log.md');
 class OllamaConnector {
   constructor() {
     this.host       = process.env.OLLAMA_HOST       || 'http://localhost:11434';
-    this.model      = process.env.OLLAMA_MODEL      || 'qwen3-coder';
+    this.model      = process.env.OLLAMA_MODEL      || 'qwen3:8b';
     this.embedModel = process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
   }
 
@@ -72,7 +72,10 @@ class OllamaConnector {
       model,
       messages,
       stream: false,
-      ...(options.params || {}),
+      options: {
+        num_ctx: 8192,        // default was 2048 — this 4× increase is free
+        ...(options.params || {}),
+      },
     };
 
     try {
@@ -138,7 +141,10 @@ class OllamaConnector {
       prompt,
       stream: false,
       ...(options.system ? { system: options.system } : {}),
-      ...(options.params || {}),
+      options: {
+        num_ctx: 8192,
+        ...(options.params || {}),
+      },
     };
 
     try {
@@ -185,7 +191,7 @@ class OllamaConnector {
     const opts = {
       method,
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(120_000), // 2-min hard timeout
+      signal: AbortSignal.timeout(300_000), // 5-min timeout for CPU inference
     };
     if (body) opts.body = JSON.stringify(body);
 

@@ -118,7 +118,9 @@ async function _resendSend({ from, to, subject, text, html }) {
 // ── LLM body drafting ─────────────────────────────────────────────────────────
 
 const DRAFT_SYSTEM = `You are Courier, the email agent for the Ghost AI system.
-Write clear, professional email content. Include an unsubscribe link placeholder "[UNSUBSCRIBE_LINK]" at the end of all campaign emails.
+You're a polished wordsmith — persuasive, deliberate, and allergic to filler phrases like "I hope this finds you well."
+Every word earns its place. Match tone to context (transactional = direct; campaign = compelling).
+Include an unsubscribe link placeholder "[UNSUBSCRIBE_LINK]" at the end of all campaign emails.
 Return only the email body text — no subject line, no meta-commentary.`;
 
 async function _draftBody(subject, instructions, model) {

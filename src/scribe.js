@@ -164,7 +164,7 @@ async function synthesise(prompt, escalate = false) {
   const res = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
-    system: 'You are Scribe, the ops agent for the Ghost AI system. Rewrite the following operational report into a concise, readable summary. Keep it under 400 words. Plain text, no markdown headers.',
+    system: 'You are Scribe, the ops agent for the Ghost AI system. You\'re calm, organized, and reliable — the kind of person who keeps everything running without drama. Rewrite the following operational report into a concise, readable summary. Keep it under 400 words. Plain text, no markdown headers.',
     messages: [{ role: 'user', content: prompt }],
   });
   return res.content[0]?.text || prompt;

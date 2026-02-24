@@ -1,19 +1,14 @@
+'use strict';
+
 const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const fs = require('fs');
-const path = require('path');
+const bcrypt  = require('bcryptjs');
+const jwt     = require('jsonwebtoken');
+const db      = require('../db');
 
-const router = express.Router();
-const USERS_FILE = path.join(__dirname, '../data/users.json');
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-set-JWT_SECRET-in-env';
-const TOKEN_TTL = '8h';
+const router       = express.Router();
+const JWT_SECRET   = process.env.JWT_SECRET || 'change-me-set-JWT_SECRET-in-env';
+const TOKEN_TTL    = '8h';
 const COOKIE_MAX_AGE = 8 * 60 * 60 * 1000;
-
-function loadUsers() {
-  if (!fs.existsSync(USERS_FILE)) return [];
-  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-}
 
 // POST /auth/login
 router.post('/login', async (req, res) => {
@@ -23,26 +18,34 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Username and password are required.' });
   }
 
-  const users = loadUsers();
-  const user = users.find(u => u.username === username);
+  try {
+    const { rows } = await db.query(
+      'SELECT username, password_hash, role FROM users WHERE username = $1',
+      [username]
+    );
+    const user = rows[0];
 
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    return res.status(401).json({ error: 'Invalid username or password.' });
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Invalid username or password.' });
+    }
+
+    const token = jwt.sign(
+      { username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: TOKEN_TTL }
+    );
+
+    res.cookie('oc_token', token, {
+      httpOnly: true,
+      sameSite: 'strict',
+      maxAge:   COOKIE_MAX_AGE,
+    });
+
+    res.json({ ok: true, username: user.username, role: user.role });
+  } catch (err) {
+    console.error('[Auth] Login error:', err.message);
+    res.status(500).json({ error: 'Login failed. Please try again.' });
   }
-
-  const token = jwt.sign(
-    { username: user.username, role: user.role },
-    JWT_SECRET,
-    { expiresIn: TOKEN_TTL }
-  );
-
-  res.cookie('oc_token', token, {
-    httpOnly: true,
-    sameSite: 'strict',
-    maxAge: COOKIE_MAX_AGE,
-  });
-
-  res.json({ ok: true, username: user.username, role: user.role });
 });
 
 // POST /auth/logout
