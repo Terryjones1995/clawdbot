@@ -11,17 +11,14 @@
  */
 
 const AGENTS = [
-  { id: 'sentinel',    name: 'Sentinel',    role: 'Discord Connector'   },
-  { id: 'switchboard', name: 'Switchboard', role: 'Router / Classifier' },
-  { id: 'scout',       name: 'Scout',       role: 'Research'            },
-  { id: 'forge',       name: 'Forge',       role: 'Dev / Architect'     },
-  { id: 'scribe',      name: 'Scribe',      role: 'Ops / Summaries'     },
-  { id: 'warden',      name: 'Warden',      role: 'Approvals'           },
-  { id: 'archivist',   name: 'Archivist',   role: 'Memory'              },
-  { id: 'lens',        name: 'Lens',        role: 'Analytics'           },
-  { id: 'courier',     name: 'Courier',     role: 'Email'               },
-  { id: 'helm',        name: 'Helm',        role: 'SRE / Deploy'        },
-  { id: 'keeper',      name: 'Keeper',      role: 'Conversation Memory' },
+  { id: 'ghost',   name: 'Ghost',   role: 'CEO / Brain'           },
+  { id: 'oracle',  name: 'Oracle',  role: 'Operations Manager'    },
+  { id: 'nexus',   name: 'Nexus',   role: 'Reception / Router'    },
+  { id: 'viper',   name: 'Viper',   role: 'Social Media Head'     },
+  { id: 'atlas',   name: 'Atlas',   role: 'Support Head'          },
+  { id: 'pulse',   name: 'Pulse',   role: 'Marketing Head'        },
+  { id: 'scout',   name: 'Scout',   role: 'Intelligence'          },
+  { id: 'courier', name: 'Courier', role: 'Email / Comms'         },
 ];
 
 // In-memory state

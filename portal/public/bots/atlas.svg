@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="100" fill="#0A1A0F"/>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#10B981" stroke-width="2" opacity="0.4"/>
+  <!-- Shield -->
+  <path d="M 100 45 L 150 65 L 150 105 Q 150 145 100 165 Q 50 145 50 105 L 50 65 Z"
+        fill="#10B981" opacity="0.25" stroke="#10B981" stroke-width="2.5"/>
+  <!-- Checkmark -->
+  <path d="M 72 102 L 90 120 L 128 80"
+        fill="none" stroke="#10B981" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

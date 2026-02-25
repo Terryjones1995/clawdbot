@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="100" fill="#1A0A2E"/>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#7C3AED" stroke-width="2" opacity="0.4"/>
+  <!-- Eye shape -->
+  <path d="M 40 100 Q 100 55 160 100 Q 100 145 40 100 Z" fill="none" stroke="#7C3AED" stroke-width="3"/>
+  <path d="M 40 100 Q 100 55 160 100 Q 100 145 40 100 Z" fill="#7C3AED" opacity="0.15"/>
+  <!-- Iris -->
+  <circle cx="100" cy="100" r="22" fill="#7C3AED" opacity="0.8"/>
+  <!-- Pupil -->
+  <circle cx="100" cy="100" r="10" fill="#ffffff"/>
+  <circle cx="100" cy="100" r="5" fill="#1A0A2E"/>
+  <!-- circuit lines -->
+  <line x1="40" y1="100" x2="20" y2="100" stroke="#7C3AED" stroke-width="1.5" opacity="0.5"/>
+  <line x1="160" y1="100" x2="180" y2="100" stroke="#7C3AED" stroke-width="1.5" opacity="0.5"/>
+  <line x1="100" y1="78" x2="100" y2="58" stroke="#7C3AED" stroke-width="1.5" opacity="0.5"/>
+  <line x1="100" y1="122" x2="100" y2="142" stroke="#7C3AED" stroke-width="1.5" opacity="0.5"/>
+</svg>

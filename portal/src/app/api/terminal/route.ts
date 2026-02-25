@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
         source:    'portal-terminal',
         channelId: 'terminal',
       }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(180_000),
     });
 
     if (!res.ok) {
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     // Ghost backend may be offline
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {
-      return NextResponse.json({ error: 'Ghost gateway timed out after 60s' }, { status: 504 });
+      return NextResponse.json({ error: 'Ghost gateway timed out after 180s — Ollama may be busy or cold-starting' }, { status: 504 });
     }
     if (err.code === 'ECONNREFUSED' || err.message?.includes('fetch failed')) {
       return NextResponse.json({

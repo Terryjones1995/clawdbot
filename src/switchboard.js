@@ -183,7 +183,7 @@ async function ollamaClassify(message, context) {
   const { result, escalate, reason } = await ollama.tryChat([
     { role: 'system', content: CLASSIFICATION_PROMPT },
     { role: 'user',   content: userContent },
-  ]);
+  ], { params: { num_ctx: 2048, temperature: 0.1 } });
 
   if (escalate) return { success: false, reason };
 

@@ -144,7 +144,12 @@ async function chat(threadId, userMessage) {
   const { result, escalate } = await ollama.tryChat([
     { role: 'system', content: systemPrompt },
     ..._buildMessages({ ...thread, messages: thread.messages.slice(0, -1) }, userMessage),
-  ]);
+  ], {
+    params: {
+      num_ctx:     2048,  // smaller ctx = much faster CPU inference
+      temperature: 0.7,
+    },
+  });
 
   const reply = (escalate || !result?.message?.content)
     ? "I'm here. What's on your mind?"

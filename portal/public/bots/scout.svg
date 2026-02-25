@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="100" fill="#080F1F"/>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#60A5FA" stroke-width="2" opacity="0.4"/>
+  <!-- Crosshair outer ring -->
+  <circle cx="100" cy="100" r="42" fill="none" stroke="#60A5FA" stroke-width="2.5"/>
+  <!-- Crosshair inner ring -->
+  <circle cx="100" cy="100" r="16" fill="#60A5FA" opacity="0.3"/>
+  <circle cx="100" cy="100" r="6" fill="#60A5FA"/>
+  <!-- Crosshair lines -->
+  <line x1="100" y1="42" x2="100" y2="72" stroke="#60A5FA" stroke-width="2.5"/>
+  <line x1="100" y1="128" x2="100" y2="158" stroke="#60A5FA" stroke-width="2.5"/>
+  <line x1="42" y1="100" x2="72" y2="100" stroke="#60A5FA" stroke-width="2.5"/>
+  <line x1="128" y1="100" x2="158" y2="100" stroke="#60A5FA" stroke-width="2.5"/>
+</svg>

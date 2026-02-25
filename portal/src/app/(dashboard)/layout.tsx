@@ -56,7 +56,7 @@ export default function DashboardLayout({ children }: {
   }
 
   return (
-    <div className="min-h-screen flex bg-ghost-bg scanline-overlay" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className="h-screen flex bg-ghost-bg scanline-overlay" style={{ fontFamily: 'Inter, sans-serif' }}>
       {/* Background effects */}
       <div className="fixed inset-0 bg-grid-sm opacity-30 pointer-events-none" />
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] pointer-events-none"

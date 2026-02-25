@@ -51,38 +51,28 @@ export function statusColor(status: string) {
 
 export function agentColor(agentKey: string) {
   const colors: Record<string, string> = {
-    sentinel:    '#4A90E2',
-    scout:       '#27AE60',
-    forge:       '#E67E22',
-    scribe:      '#1ABC9C',
-    courier:     '#E91E63',
-    switchboard: '#9B59B6',
-    warden:      '#E74C3C',
-    archivist:   '#A0522D',
-    lens:        '#00BCD4',
-    helm:        '#7F8C8D',
-    codex:       '#3B82F6',
-    operator:    '#8B5CF6',
-    keeper:      '#06B6D4',
+    ghost:   '#00D4FF',
+    oracle:  '#7C3AED',
+    nexus:   '#00BFA5',
+    viper:   '#EF4444',
+    atlas:   '#10B981',
+    pulse:   '#F59E0B',
+    scout:   '#60A5FA',
+    courier: '#A78BFA',
   };
   return colors[agentKey.toLowerCase()] ?? '#64748B';
 }
 
 export function agentEmoji(agentKey: string) {
   const emojis: Record<string, string> = {
-    sentinel:    '🤖',
-    scout:       '🔍',
-    forge:       '⚒️',
-    scribe:      '📝',
-    courier:     '✉️',
-    switchboard: '🔀',
-    warden:      '🛡️',
-    archivist:   '📚',
-    lens:        '📊',
-    helm:        '⚙️',
-    codex:       '🧠',
-    operator:    '🎯',
-    keeper:      '💬',
+    ghost:   '👑',
+    oracle:  '👁️',
+    nexus:   '🔀',
+    viper:   '⚡',
+    atlas:   '🛡️',
+    pulse:   '📈',
+    scout:   '🎯',
+    courier: '✉️',
   };
   return emojis[agentKey.toLowerCase()] ?? '🤖';
 }

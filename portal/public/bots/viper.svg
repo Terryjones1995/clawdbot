@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="100" fill="#1A0A0A"/>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#EF4444" stroke-width="2" opacity="0.4"/>
+  <!-- Lightning bolt -->
+  <path d="M 115 40 L 85 105 L 105 105 L 85 160 L 130 90 L 108 90 Z"
+        fill="#EF4444" opacity="0.9"/>
+  <!-- Glow dots -->
+  <circle cx="68" cy="75" r="5" fill="#EF4444" opacity="0.5"/>
+  <circle cx="132" cy="75" r="5" fill="#EF4444" opacity="0.5"/>
+  <circle cx="68" cy="125" r="5" fill="#EF4444" opacity="0.5"/>
+  <circle cx="132" cy="125" r="5" fill="#EF4444" opacity="0.5"/>
+</svg>

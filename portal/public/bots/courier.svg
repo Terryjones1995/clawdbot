@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="100" fill="#0A0A1A"/>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#A78BFA" stroke-width="2" opacity="0.4"/>
+  <!-- Envelope body -->
+  <rect x="45" y="78" width="110" height="75" rx="6" fill="none" stroke="#A78BFA" stroke-width="2.5"/>
+  <rect x="45" y="78" width="110" height="75" rx="6" fill="#A78BFA" opacity="0.15"/>
+  <!-- Envelope flap -->
+  <path d="M 45 78 L 100 118 L 155 78" fill="none" stroke="#A78BFA" stroke-width="2.5"/>
+  <!-- Wings -->
+  <path d="M 45 95 Q 25 88 22 100 Q 25 112 45 105" fill="#A78BFA" opacity="0.5"/>
+  <path d="M 155 95 Q 175 88 178 100 Q 175 112 155 105" fill="#A78BFA" opacity="0.5"/>
+</svg>

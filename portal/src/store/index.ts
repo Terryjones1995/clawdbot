@@ -67,19 +67,14 @@ interface GhostStore {
 export const useGhostStore = create<GhostStore>((set, get) => ({
   // ── Agents ──
   agents: {
-    sentinel:    { id: 'sentinel',    name: 'Sentinel',    role: 'Discord Connector',  status: 'online',  lastSeenAt: null, events: [] },
-    scout:       { id: 'scout',       name: 'Scout',       role: 'Research',           status: 'idle',    lastSeenAt: null, events: [] },
-    forge:       { id: 'forge',       name: 'Forge',       role: 'Dev / Architect',    status: 'idle',    lastSeenAt: null, events: [] },
-    scribe:      { id: 'scribe',      name: 'Scribe',      role: 'Ops / Summaries',    status: 'idle',    lastSeenAt: null, events: [] },
-    courier:     { id: 'courier',     name: 'Courier',     role: 'Email',              status: 'idle',    lastSeenAt: null, events: [] },
-    switchboard: { id: 'switchboard', name: 'Switchboard', role: 'Router',             status: 'online',  lastSeenAt: null, events: [] },
-    warden:      { id: 'warden',      name: 'Warden',      role: 'Approvals',          status: 'online',  lastSeenAt: null, events: [] },
-    archivist:   { id: 'archivist',   name: 'Archivist',   role: 'Memory / Pinecone',  status: 'idle',    lastSeenAt: null, events: [] },
-    lens:        { id: 'lens',        name: 'Lens',        role: 'Analytics',          status: 'idle',    lastSeenAt: null, events: [] },
-    helm:        { id: 'helm',        name: 'Helm',        role: 'SRE / Deploy',       status: 'offline', lastSeenAt: null, events: [] },
-    codex:       { id: 'codex',       name: 'Codex',       role: 'League Knowledge',   status: 'idle',    lastSeenAt: null, events: [] },
-    operator:    { id: 'operator',    name: 'Operator',    role: 'Task Dispatcher',    status: 'idle',    lastSeenAt: null, events: [] },
-    keeper:      { id: 'keeper',      name: 'Keeper',      role: 'Conversation Memory', status: 'online', lastSeenAt: null, events: [] },
+    ghost:   { id: 'ghost',   name: 'Ghost',   role: 'CEO / Brain',            status: 'online',  lastSeenAt: null, events: [] },
+    oracle:  { id: 'oracle',  name: 'Oracle',  role: 'Operations Manager',     status: 'online',  lastSeenAt: null, events: [] },
+    nexus:   { id: 'nexus',   name: 'Nexus',   role: 'Reception / Router',     status: 'online',  lastSeenAt: null, events: [] },
+    viper:   { id: 'viper',   name: 'Viper',   role: 'Social Media Head',      status: 'idle',    lastSeenAt: null, events: [] },
+    atlas:   { id: 'atlas',   name: 'Atlas',   role: 'Support Head',           status: 'idle',    lastSeenAt: null, events: [] },
+    pulse:   { id: 'pulse',   name: 'Pulse',   role: 'Marketing Head',         status: 'idle',    lastSeenAt: null, events: [] },
+    scout:   { id: 'scout',   name: 'Scout',   role: 'Intelligence / Research', status: 'idle',   lastSeenAt: null, events: [] },
+    courier: { id: 'courier', name: 'Courier', role: 'Email / Comms',          status: 'idle',    lastSeenAt: null, events: [] },
   },
 
   upsertAgent: (agent) =>

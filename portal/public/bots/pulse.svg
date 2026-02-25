@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="100" fill="#1A1200"/>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#F59E0B" stroke-width="2" opacity="0.4"/>
+  <!-- Signal/pulse wave -->
+  <polyline points="30,100 55,100 65,60 80,140 95,75 110,125 125,60 140,140 155,100 170,100"
+            fill="none" stroke="#F59E0B" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
