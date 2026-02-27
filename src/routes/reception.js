@@ -21,7 +21,6 @@ const codex          = require('../codex');
 const courier        = require('../courier');
 const registry       = require('../agentRegistry');
 const db             = require('../db');
-const discord        = require('../../openclaw/skills/discord');
 
 const router = express.Router();
 
@@ -40,14 +39,23 @@ const KEYWORD_ROUTES = [
     agent: 'codex',
   },
   { patterns: [/\bemail\b/i, /\bsend.*mail\b/i, /\bdraft.*email\b/i],  agent: 'courier' },
-  // Discord management → execute real Discord API actions
+  // Discord management → execute real Discord API actions (must stay before scout)
   {
     patterns: [
+      // Role management
       /\bcreate.*role\b/i, /\bmake.*role\b/i, /\badd.*role\b/i,
       /\bdelete.*role\b/i, /\bremove.*role\b/i,
       /\blist.*roles\b/i, /\bshow.*roles\b/i,
-      /\bcreate.*channel\b/i, /\bmake.*channel\b/i,
       /\bassign.*role\b/i, /\bgive.*role\b/i,
+      // Channel management
+      /\bcreate.*channel\b/i, /\bmake.*channel\b/i, /\bdelete.*channel\b/i,
+      // Moderation
+      /\bkick\b/i, /\bban\b/i, /\btimeout\b/i, /\bmute\s+<@/i,
+      // DM
+      /\bsend.*dm\b/i, /\bdm\s+<@/i, /\bdirect.*message.*<@/i,
+      // Member queries
+      /\blist.*members\b/i, /\bshow.*members\b/i, /\bwho.*in.*server\b/i,
+      /\bfind.*user\b/i, /\blook.*up.*user\b/i,
     ],
     agent: 'discord-admin',
   },
@@ -159,67 +167,13 @@ router.post('/', async (req, res) => {
     if (keywordAgent === 'discord-admin') {
       registry.setStatus('sentinel', 'working');
       try {
-        // Use mini to parse the natural language command into a structured action
-        const parseRes = await mini.tryChat([
-          {
-            role: 'system',
-            content: `You are a Discord bot command parser. Extract the action from the user's message and return ONLY valid JSON.
-Actions: create_role, delete_role, list_roles, assign_role, remove_role, create_channel
-JSON schema:
-{ "action": "create_role", "role_name": "string", "color": "hex or null" }
-{ "action": "delete_role", "role_name": "string" }
-{ "action": "list_roles" }
-{ "action": "assign_role", "role_name": "string", "username": "string or null" }
-{ "action": "remove_role", "role_name": "string", "username": "string or null" }
-{ "action": "create_channel", "channel_name": "string", "topic": "string or null" }
-Return ONLY the JSON object, no explanation.`,
-          },
-          { role: 'user', content: message.trim() },
-        ]);
-
-        let parsed;
-        try {
-          const raw = parseRes.result?.message?.content?.trim() ?? '{}';
-          parsed = JSON.parse(raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, ''));
-        } catch {
-          throw new Error('Could not parse Discord command');
-        }
-
-        let reply = '';
-        switch (parsed.action) {
-          case 'create_role': {
-            const role = await discord.createRole(parsed.role_name, { color: parsed.color });
-            reply = `Done. Role **${role.name}** created in Discord.`;
-            break;
-          }
-          case 'delete_role': {
-            await discord.deleteRole(parsed.role_name);
-            reply = `Done. Role **${parsed.role_name}** deleted from Discord.`;
-            break;
-          }
-          case 'list_roles': {
-            const roles = await discord.listRoles();
-            reply = `**Discord roles (${roles.length}):**\n${roles.map(r => `• ${r.name}`).join('\n')}`;
-            break;
-          }
-          case 'create_channel': {
-            const ch = await discord.createChannel(parsed.channel_name, { topic: parsed.topic });
-            reply = `Done. Channel **#${ch.name}** created in Discord.`;
-            break;
-          }
-          case 'assign_role':
-          case 'remove_role': {
-            reply = `To assign/remove roles from users I need their Discord user ID. Use the Discord server member list to find it, then say: "assign role ${parsed.role_name} to user ID 123456789"`;
-            break;
-          }
-          default:
-            throw new Error(`Unknown action: ${parsed.action}`);
-        }
-
+        const discordAdmin = require('../discordAdminHandler');
+        const userRole     = req.user?.role?.toUpperCase() || 'ADMIN';
+        const reply        = await discordAdmin.run(message.trim(), userRole);
         registry.setStatus('sentinel', 'idle');
         registry.setStatus('switchboard', 'idle');
-        db.logEntry({ level: 'INFO', agent: 'Sentinel', action: parsed.action, outcome: 'success', model: mini.MODEL, note: `cmd="${message.slice(0,60)}"` });
-        return res.json({ reply, agent: 'sentinel', intent: 'discord-admin', model: mini.MODEL, latency_ms: Date.now() - t0 });
+        db.logEntry({ level: 'INFO', agent: 'Sentinel', action: 'discord-admin', outcome: 'success', model: 'ollama/mini', note: `cmd="${message.slice(0,60)}"` });
+        return res.json({ reply, agent: 'sentinel', intent: 'discord-admin', model: 'ollama/mini', latency_ms: Date.now() - t0 });
       } catch (err) {
         registry.setStatus('sentinel', 'idle');
         db.logEntry({ level: 'ERROR', agent: 'Sentinel', action: 'discord-admin', outcome: 'failed', note: err.message });

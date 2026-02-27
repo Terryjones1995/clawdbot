@@ -290,6 +290,127 @@ class DiscordConnector {
     }
   }
 
+  /** Delete a channel by name or ID. */
+  async deleteChannel(nameOrId) {
+    this._assertReady();
+    try {
+      const guild = await this.client.guilds.fetch(this.guildId);
+      await guild.channels.fetch();
+      const channel = guild.channels.cache.get(nameOrId)
+        ?? guild.channels.cache.find(c => c.name.toLowerCase() === (nameOrId || '').toLowerCase());
+      if (!channel) throw new Error(`Channel "${nameOrId}" not found`);
+      await channel.delete('Deleted via Ghost');
+      this._log('INFO', 'delete-channel', 'system', 'success', `channel="${nameOrId}"`);
+      return channel;
+    } catch (err) {
+      this._log('ERROR', 'delete-channel', 'system', 'failed', err.message);
+      throw err;
+    }
+  }
+
+  /** Timeout (mute) a member for durationMinutes. Requires MODERATE_MEMBERS permission. */
+  async timeoutUser(userId, durationMinutes = 10, reason = 'Timed out by Ghost') {
+    this._assertReady();
+    try {
+      const guild  = await this.client.guilds.fetch(this.guildId);
+      const member = await guild.members.fetch(userId);
+      const until  = new Date(Date.now() + durationMinutes * 60_000);
+      await member.disableCommunicationUntil(until, reason);
+      this._log('INFO', 'timeout-user', 'system', 'success',
+        `user=${userId} duration=${durationMinutes}m reason="${reason}"`);
+    } catch (err) {
+      this._log('ERROR', 'timeout-user', 'system', 'failed', err.message);
+      throw err;
+    }
+  }
+
+  /** List members in the primary guild. Returns up to limit results. */
+  async listMembers(limit = 100) {
+    this._assertReady();
+    const guild   = await this.client.guilds.fetch(this.guildId);
+    const members = await guild.members.fetch({ limit });
+    return [...members.values()].map(m => ({
+      id:          m.id,
+      username:    m.user.tag,
+      displayName: m.displayName,
+      roles:       m.roles.cache.filter(r => r.name !== '@everyone').map(r => r.name),
+      joinedAt:    m.joinedAt?.toISOString() ?? null,
+    })).sort((a, b) => a.username.localeCompare(b.username));
+  }
+
+  /** Find a guild member by username, display name, or @mention snowflake. */
+  async findMemberByName(query) {
+    this._assertReady();
+    const guild   = await this.client.guilds.fetch(this.guildId);
+    const members = await guild.members.fetch();
+    const lower   = (query || '').toLowerCase().replace(/[<@!>]/g, '');
+    // Try ID match first (from mention extraction)
+    const byId = members.get(lower);
+    if (byId) {
+      return {
+        id:          byId.id,
+        username:    byId.user.tag,
+        displayName: byId.displayName,
+        roles:       byId.roles.cache.filter(r => r.name !== '@everyone').map(r => r.name),
+      };
+    }
+    const found = members.find(m =>
+      m.user.username.toLowerCase().includes(lower) ||
+      m.displayName.toLowerCase().includes(lower) ||
+      m.user.tag.toLowerCase().includes(lower)
+    );
+    if (!found) return null;
+    return {
+      id:          found.id,
+      username:    found.user.tag,
+      displayName: found.displayName,
+      roles:       found.roles.cache.filter(r => r.name !== '@everyone').map(r => r.name),
+    };
+  }
+
+  /**
+   * Return data for all guilds the bot is currently in.
+   * Used by the Servers page — read-only, cross-guild.
+   */
+  async listGuilds() {
+    this._assertReady();
+    const result = [];
+    for (const [, guild] of this.client.guilds.cache) {
+      try {
+        const full = await guild.fetch();
+        await full.roles.fetch();
+        const roles = full.roles.cache
+          .filter(r => r.name !== '@everyone')
+          .map(r => ({ id: r.id, name: r.name, color: r.hexColor }))
+          .sort((a, b) => (b.position ?? 0) - (a.position ?? 0));
+        const channels = [...full.channels.cache.values()]
+          .filter(c => [0, 2, 15].includes(c.type))
+          .map(c => ({
+            id:   c.id,
+            name: c.name,
+            type: c.type === 0 ? 'text' : c.type === 2 ? 'voice' : 'forum',
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        result.push({
+          id:          full.id,
+          name:        full.name,
+          icon:        full.iconURL({ size: 128 }) ?? null,
+          memberCount: full.memberCount,
+          botJoinedAt: full.joinedAt?.toISOString() ?? null,
+          isPrimary:   full.id === this.guildId,
+          channels,
+          roles,
+          features:    [...(full.features ?? [])],
+        });
+      } catch (err) {
+        this._log('WARN', 'list-guilds', 'system', 'partial-fail', `guild=${guild.id} err=${err.message}`);
+      }
+    }
+    // Primary guild first
+    result.sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0));
+    return result;
+  }
+
   /** Create a text channel. */
   async createChannel(name, { topic = '', categoryId = null } = {}) {
     this._assertReady();

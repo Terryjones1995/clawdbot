@@ -27,8 +27,9 @@ const forge       = require('./forge');
 const lens        = require('./lens');
 const courier     = require('./courier');
 const archivist   = require('./archivist');
-const keeper      = require('./keeper');
-const db          = require('./db');
+const keeper          = require('./keeper');
+const db              = require('./db');
+const discordAdmin    = require('./discordAdminHandler');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -764,6 +765,60 @@ async function handleReceptionMessage(event) {
   }
 }
 
+// ── @mention handler — any channel, any member ────────────────────────────────
+//
+// Fires when someone @Ghost in a channel not already handled by another path.
+// ADMINs/OWNERs get full Discord admin commands.
+// Everyone else gets a conversational reply via Keeper.
+
+const ADMIN_INTENT_RE = /\b(kick|ban|timeout|mute|dm\s+<@|assign\s+role|remove\s+role|give\s+role|create\s+role|delete\s+role|create\s+channel|delete\s+channel|list\s+roles|list\s+members|find\s+user|look\s+up)\b/i;
+
+async function handleMentionMessage(event) {
+  const { channel_id, content, user_id, user_role, raw } = event;
+
+  // Strip the @Ghost mention from the message
+  const botId   = discord.client?.user?.id;
+  const stripped = content
+    .replace(botId ? new RegExp(`<@!?${botId}>`, 'g') : /^\s*/, '')
+    .trim();
+  const text = stripped || 'hello';
+
+  appendLog('INFO', 'mention', user_role, 'received',
+    `user=${user_id} channel=${channel_id} text="${text.slice(0, 60)}"`);
+
+  // Instant reply check (greetings, acks)
+  const quick = instantReply(text);
+  if (quick) {
+    await discord.sendMessage(channel_id, quick);
+    return;
+  }
+
+  // Admin command path — ADMIN/OWNER with admin intent keywords
+  if ((user_role === 'OWNER' || user_role === 'ADMIN') && ADMIN_INTENT_RE.test(text)) {
+    try {
+      const reply = await discordAdmin.run(text, user_role);
+      await discord.sendMessage(channel_id, reply);
+      appendLog('INFO', 'mention-admin', user_role, 'success', `cmd="${text.slice(0, 60)}"`);
+    } catch (err) {
+      await discord.sendMessage(channel_id, `❌ Command failed: ${err.message}`);
+      appendLog('ERROR', 'mention-admin', user_role, 'failed', err.message);
+    }
+    return;
+  }
+
+  // Conversational reply for everyone via Keeper (Ollama free-first)
+  try {
+    const thinkingMsg = await discord.sendMessage(channel_id, '*Ghost is thinking…*');
+    const reply = await _ollamaChatReply(text, channel_id, user_id);
+    try { await thinkingMsg.delete(); } catch { /* non-fatal */ }
+    await discord.sendMessage(channel_id, reply.slice(0, 2000));
+    appendLog('INFO', 'mention-chat', user_role, 'success', `user=${user_id}`);
+  } catch (err) {
+    await discord.sendMessage(channel_id, `Something went wrong: ${err.message}`);
+    appendLog('ERROR', 'mention-chat', user_role, 'failed', err.message);
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 async function start() {
@@ -793,6 +848,16 @@ async function start() {
       handleAgentMessage(event, agentName).catch(err => {
         console.error(`[Sentinel] ${agentName} error:`, err.message);
         appendLog('ERROR', 'agent-route', event.user_role, 'failed', err.message);
+      });
+      return;
+    }
+
+    // @mention in any other channel — respond to everyone
+    const botMentioned = discord.client?.user && event.raw?.mentions?.has(discord.client.user);
+    if (botMentioned && !inReception && !agentName && !inCommands && !isOwnerDM) {
+      handleMentionMessage(event).catch(err => {
+        console.error('[Sentinel] Mention error:', err.message);
+        appendLog('ERROR', 'mention-handler', event.user_role, 'failed', err.message);
       });
       return;
     }
