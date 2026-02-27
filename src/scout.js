@@ -21,6 +21,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const mini      = require('./skills/openai-mini');
 const archivist = require('./archivist');
+const db        = require('./db');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -206,8 +207,45 @@ function _parseResponse(text) {
  *
  * @returns {object} { query, type, depth, summary, sources, model_used, escalated, escalation_reason, stored, flagged_urgent, logged }
  */
+/**
+ * Check ghost_memory for existing knowledge on a topic before going to the web.
+ * Only used for factual queries — web/trend always need fresh data.
+ * Returns a cached answer string if found, null otherwise.
+ */
+async function _checkMemoryCache(query, type) {
+  if (type === 'web' || type === 'trend') return null; // always fetch fresh
+  try {
+    const rows = await db.getFacts(query, 5);
+    if (!rows.length) return null;
+    // Only use cache if we have relevant matches (not just recency fallbacks)
+    const relevant = rows.filter(r => r.relevant === 1 || r.relevant === '1');
+    if (relevant.length < 2) return null;
+    return relevant.map(r => `• ${r.content}`).join('\n');
+  } catch {
+    return null;
+  }
+}
+
 async function run({ query, type = 'factual', depth = 'quick', store_result = false } = {}) {
   if (!query) throw new Error('query is required');
+
+  // Check ghost_memory cache before hitting external APIs (factual queries only)
+  const cached = await _checkMemoryCache(query, type);
+  if (cached) {
+    appendLog('INFO', 'research', 'system', 'cache-hit',
+      `query="${query.slice(0, 50)}" type=${type} — served from ghost_memory`);
+    return {
+      query, type, depth,
+      summary:           `From Ghost's memory:\n${cached}`,
+      sources:           [],
+      model_used:        'ghost_memory',
+      escalated:         false,
+      escalation_reason: null,
+      stored:            false,
+      cache_hit:         true,
+      logged:            true,
+    };
+  }
 
   const { model, grok, openai, reason } = detectModel(type, depth, query);
   const escalated = !grok && !openai && model !== 'gpt-4o-mini';

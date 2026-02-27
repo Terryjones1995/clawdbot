@@ -123,4 +123,60 @@ async function getRelevantFacts(query, limit = 15) {
   }
 }
 
-module.exports = { extractAndStore, getRelevantFacts };
+// ── Correction Detection ──────────────────────────────────────────────────────
+
+const CORRECTION_RE = /\b(no[,.]?\s+(actually|that'?s|you'?re|it'?s)|actually[,.]?\s+(it'?s|that'?s|the|no)|that'?s (wrong|incorrect|not right)|you'?re wrong|you('re| are) incorrect|wrong[,.]|incorrect[,.]|not (quite|right|correct)|let me correct|correction[,:]|mistake[,:]|that is (wrong|incorrect))\b/i;
+
+const CORRECTION_SYSTEM = `You are a lesson extractor for Ghost, an AI assistant.
+The user is correcting a previous response. Extract the lesson clearly.
+
+Return ONLY a JSON object:
+{ "key": "lesson-unique-slug", "lesson": "Ghost was wrong about X. The correct answer is Y.", "category": "correction" }
+
+The lesson must be a complete, standalone sentence that Ghost can use to avoid the same mistake.
+If you cannot identify a clear correction, return null.`;
+
+/**
+ * Detect if the user is correcting Ghost, and store the lesson if so.
+ * Call before extractAndStore on every message.
+ *
+ * @param {string} userMessage       — current user message
+ * @param {string} previousReply     — Ghost's previous response (may be null)
+ * @param {string} threadId
+ */
+async function detectAndStoreCorrection(userMessage, previousReply, threadId) {
+  if (!CORRECTION_RE.test(userMessage)) return false;
+  if (!previousReply) return false;
+
+  const exchange = `Ghost previously said: "${previousReply.slice(0, 400)}"\n\nUser correction: "${userMessage}"`;
+
+  const { result, escalate } = await mini.tryChat([
+    { role: 'system', content: CORRECTION_SYSTEM },
+    { role: 'user',   content: exchange },
+  ], { maxTokens: 256 });
+
+  if (escalate || !result?.message?.content) return false;
+
+  let parsed;
+  try {
+    const raw = result.message.content.trim()
+      .replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    parsed = JSON.parse(raw);
+    if (!parsed || !parsed.key || !parsed.lesson) return false;
+  } catch {
+    return false;
+  }
+
+  await db.storeFact({
+    key:      parsed.key,
+    content:  parsed.lesson,
+    category: 'correction',
+    source:   'correction',
+    threadId,
+  }).catch(() => {});
+
+  console.log(`[Memory] Stored correction from thread ${threadId}: ${parsed.lesson.slice(0, 80)}`);
+  return true;
+}
+
+module.exports = { extractAndStore, getRelevantFacts, detectAndStoreCorrection };

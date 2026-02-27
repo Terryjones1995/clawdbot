@@ -203,21 +203,54 @@ async function storeFact({ key, content, category = 'misc', source = 'conversati
   );
 }
 
+// Common English stop words to ignore when matching facts
+const STOP_WORDS = new Set([
+  'a','an','the','is','are','was','were','be','been','being','have','has','had',
+  'do','does','did','will','would','shall','should','may','might','must','can',
+  'could','what','which','who','whom','this','that','these','those','i','me',
+  'my','we','our','you','your','he','him','his','she','her','it','its','they',
+  'them','their','when','where','why','how','all','both','each','some','such',
+  'no','not','only','so','than','too','very','just','as','of','at','by','for',
+  'with','about','into','through','before','after','above','below','to','from',
+  'up','in','out','on','off','over','under','look','get','set','put','use',
+  'make','give','take','know','see','tell','try','ask','call','let',
+]);
+
 /**
- * Retrieve facts relevant to a query using full-text search.
- * Falls back to most-recently-updated facts when nothing matches.
+ * Retrieve facts relevant to a query using word-overlap matching.
+ * Uses ILIKE for broad matching — more lenient than strict FTS AND.
+ * Falls back to most-recently-updated facts when no keywords match.
+ *
  * @param {string} queryText  — the user's message to match against
  * @param {number} limit      — max facts to return (default 15)
  */
 async function getFacts(queryText = '', limit = 15) {
+  // Extract meaningful keywords (length > 3, not stop words)
+  const keywords = (queryText || '').toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !STOP_WORDS.has(w));
+
+  if (!keywords.length) {
+    const { rows } = await query(
+      `SELECT content, category, updated_at, 0 AS relevant
+       FROM ghost_memory ORDER BY updated_at DESC LIMIT $1`,
+      [limit],
+    );
+    return rows;
+  }
+
+  // Build ILIKE conditions — a fact is "relevant" if content contains ANY keyword
+  const conditions = keywords.map((_, i) => `LOWER(content) LIKE $${i + 2}`).join(' OR ');
+  const params     = [limit, ...keywords.map(w => `%${w}%`)];
+
   const { rows } = await query(
     `SELECT content, category, updated_at,
-            CASE WHEN $1 != '' AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)
-                 THEN 1 ELSE 0 END AS relevant
+            CASE WHEN ${conditions} THEN 1 ELSE 0 END AS relevant
      FROM ghost_memory
      ORDER BY relevant DESC, updated_at DESC
-     LIMIT $2`,
-    [queryText, limit],
+     LIMIT $1`,
+    params,
   );
   return rows;
 }

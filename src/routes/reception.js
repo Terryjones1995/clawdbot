@@ -110,6 +110,22 @@ router.post('/', async (req, res) => {
     }
 
     if (keywordAgent === 'scout') {
+      // Check ghost_memory first — if we already know the answer, skip the web call
+      const memoryHit = await (async () => {
+        try {
+          const rows = await db.getFacts(message.trim(), 5);
+          const relevant = rows.filter(r => r.relevant === 1 || r.relevant === '1');
+          if (relevant.length >= 2) return relevant.map(r => `• ${r.content}`).join('\n');
+        } catch { /* non-fatal */ }
+        return null;
+      })();
+
+      if (memoryHit) {
+        registry.setStatus('switchboard', 'idle');
+        db.logEntry({ level: 'INFO', agent: 'Ghost', action: 'memory-hit', outcome: 'success', model: 'ghost_memory', note: `q="${message.slice(0,60)}"` });
+        return res.json({ reply: `From memory:\n${memoryHit}`, agent: 'ghost', intent: 'memory', model: 'ghost_memory', latency_ms: Date.now() - t0 });
+      }
+
       registry.setStatus('scout', 'working');
       try {
         const result = await scout.run({ query: message.trim(), type: 'web', depth: 'quick', store_result: false });

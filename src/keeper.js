@@ -145,12 +145,19 @@ async function chat(threadId, userMessage) {
 
   let thread = await _loadThread(threadId);
 
+  // Grab previous assistant reply before pushing new user message (for correction detection)
+  const prevMessages  = thread.messages;
+  const previousReply = [...prevMessages].reverse().find(m => m.role === 'assistant')?.content ?? null;
+
   thread.messages.push({
     role:    'user',
     content: userMessage,
     ts:      new Date().toISOString(),
   });
   await _saveThread(thread);
+
+  // Detect and store corrections in the background
+  memory.detectAndStoreCorrection(userMessage, previousReply, threadId).catch(() => {});
 
   const beforeLen = thread.messages.length;
   thread = await _maybeSummarise(thread);

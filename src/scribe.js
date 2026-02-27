@@ -21,6 +21,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 const ollama    = require('../openclaw/skills/ollama');
 const warden    = require('./warden');
 const archivist = require('./archivist');
+const db        = require('./db');
+const mini      = require('./skills/openai-mini');
 
 const LOG_FILE       = path.join(__dirname, '../memory/run_log.md');
 const REMINDERS_FILE = path.join(__dirname, '../memory/reminders.json');
@@ -309,6 +311,94 @@ async function statusReport({ agentFilter } = {}) {
   return { report_type: 'status_report', content, logged: true };
 }
 
+// ── Nightly Reflection ────────────────────────────────────────────────────────
+
+const REFLECT_SYSTEM = `You are a memory consolidation agent for Ghost, an AI assistant.
+Review the conversation below and extract any facts worth storing permanently in Ghost's memory.
+
+Focus on: people (names, roles, Discord handles), org facts, league data, decisions made, preferences stated, corrections given.
+Skip: chitchat, questions without clear answers, anything temporary.
+
+Return ONLY a JSON array. Each item:
+{ "key": "unique-slug", "content": "Complete fact as a clear sentence.", "category": "person|org|league|preference|decision|correction|misc" }
+
+If no notable facts, return [].`;
+
+/**
+ * Nightly reflection — review all conversations from the last 24h,
+ * extract facts, and store in ghost_memory.
+ * Runs automatically at 03:00 UTC via the scheduler.
+ */
+async function nightlyReflection() {
+  appendLog('INFO', 'nightly-reflection', 'system', 'started', 'reviewing conversations from last 24h');
+
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  let threads;
+  try {
+    const { rows } = await db.query(
+      `SELECT thread_id, messages FROM conversations WHERE updated_at > $1`,
+      [cutoff],
+    );
+    threads = rows;
+  } catch (err) {
+    appendLog('ERROR', 'nightly-reflection', 'system', 'failed', `db error: ${err.message}`);
+    return;
+  }
+
+  if (!threads.length) {
+    appendLog('INFO', 'nightly-reflection', 'system', 'skipped', 'no conversations updated in last 24h');
+    return;
+  }
+
+  let totalFacts = 0;
+
+  for (const thread of threads) {
+    const messages = thread.messages ?? [];
+    if (messages.length < 2) continue;
+
+    // Build a transcript of recent exchanges (last 20 messages)
+    const recent = messages.slice(-20);
+    const transcript = recent
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => `${m.role === 'user' ? 'User' : 'Ghost'}: ${m.content}`)
+      .join('\n');
+
+    if (!transcript.trim()) continue;
+
+    const { result, escalate } = await mini.tryChat([
+      { role: 'system', content: REFLECT_SYSTEM },
+      { role: 'user',   content: transcript },
+    ], { maxTokens: 512 });
+
+    if (escalate || !result?.message?.content) continue;
+
+    let facts;
+    try {
+      const raw = result.message.content.trim()
+        .replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+      facts = JSON.parse(raw);
+      if (!Array.isArray(facts)) continue;
+    } catch { continue; }
+
+    for (const fact of facts) {
+      if (!fact.key || !fact.content) continue;
+      await db.storeFact({
+        key:      fact.key,
+        content:  fact.content,
+        category: fact.category ?? 'misc',
+        source:   'reflection',
+        threadId: thread.thread_id,
+      }).catch(() => {});
+      totalFacts++;
+    }
+  }
+
+  appendLog('INFO', 'nightly-reflection', 'system', 'success',
+    `threads=${threads.length} facts_stored=${totalFacts}`);
+  console.log(`[Scribe] Nightly reflection complete — ${threads.length} threads reviewed, ${totalFacts} facts stored`);
+  return { threads: threads.length, facts: totalFacts };
+}
+
 // ── Scheduler ─────────────────────────────────────────────────────────────────
 
 let _schedulerStarted = false;
@@ -330,6 +420,13 @@ function start() {
       await _deliverToDiscord(`⏰ **Reminder** \`${reminder.id}\`\n${reminder.text}`);
       markFired(reminder.id);
       appendLog('INFO', 'reminder-fired', 'system', 'success', `id=${reminder.id}`);
+    }
+
+    // Nightly reflection at 03:00 UTC — extract facts from all recent conversations
+    if (hour === 3 && minute === 0) {
+      nightlyReflection().catch(err =>
+        appendLog('ERROR', 'nightly-reflection', 'system', 'failed', err.message)
+      );
     }
 
     // Daily briefing at 08:00 UTC
@@ -378,6 +475,7 @@ module.exports = {
   dailySummary,
   weeklyDigest,
   statusReport,
+  nightlyReflection,
   setReminder,
   cancelReminder,
   loadReminders,
