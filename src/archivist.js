@@ -28,7 +28,8 @@ const fs      = require('fs');
 const path    = require('path');
 const https   = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
-const ollama  = require('../openclaw/skills/ollama');
+const ollama  = require('../openclaw/skills/ollama'); // kept for embed() only
+const mini    = require('./skills/openai-mini');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -164,14 +165,14 @@ async function _synthesize(query, entries, model) {
     return res.content[0]?.text || '';
   }
 
-  // qwen3-coder via Ollama
-  const { result, escalate, reason } = await ollama.tryChat([
+  // gpt-4o-mini (fast, cheap)
+  const { result, escalate, reason } = await mini.tryChat([
     { role: 'system', content: SYNTH_SYSTEM },
     { role: 'user',   content: userMessage },
   ]);
 
   if (escalate) {
-    appendLog('WARN', 'synthesize', 'system', 'ollama-failed', `escalating — ${reason}`);
+    appendLog('WARN', 'synthesize', 'system', 'mini-failed', `escalating — ${reason}`);
     return _synthesize(query, entries, 'claude-sonnet-4-6');
   }
   return result?.message?.content || '';

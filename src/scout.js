@@ -19,8 +19,7 @@ const path    = require('path');
 const https   = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const LOCAL_MODEL = process.env.OLLAMA_MODEL || 'qwen3:8b';
-const ollama  = require('../openclaw/skills/ollama');
+const mini    = require('./skills/openai-mini');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -67,8 +66,8 @@ function detectModel(type, depth, query = '') {
     return { model: 'gpt-4o-mini-search-preview', grok: false, openai: true, reason: 'real-time data query — OpenAI search with current date' };
   }
 
-  // Factual / competitive quick → free local model
-  return { model: LOCAL_MODEL, grok: false, reason: 'factual/quick uses local model' };
+  // Factual / competitive quick → gpt-4o-mini (fast, cheap)
+  return { model: 'gpt-4o-mini', grok: false, reason: 'factual/quick uses gpt-4o-mini' };
 }
 
 // ── LLM callers ───────────────────────────────────────────────────────────────
@@ -163,8 +162,8 @@ async function _claudeChat(userMessage, depth) {
   return res.content[0]?.text || '';
 }
 
-async function _ollamaChat(messages) {
-  const { result, escalate, reason } = await ollama.tryChat(messages);
+async function _miniChat(messages) {
+  const { result, escalate, reason } = await mini.tryChat(messages);
   if (escalate) return { text: null, escalate: true, reason };
   const text = result?.message?.content || '';
   return { text, escalate: false, reason: null };
@@ -210,7 +209,7 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
   if (!query) throw new Error('query is required');
 
   const { model, grok, openai, reason } = detectModel(type, depth, query);
-  const escalated = !grok && !openai && model !== LOCAL_MODEL;
+  const escalated = !grok && !openai && model !== 'gpt-4o-mini';
 
   const userMessage = [
     `Research query: ${query}`,
@@ -235,13 +234,13 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
       actualModel = model;
     } catch (err) {
       appendLog('WARN', 'research', 'system', 'openai-failed',
-        `query="${query.slice(0, 50)}" err=${err.message} — falling back to Ollama`);
-      const ollamaRes = await _ollamaChat([
+        `query="${query.slice(0, 50)}" err=${err.message} — falling back to gpt-4o-mini`);
+      const miniRes = await _miniChat([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user',   content: userMessage },
       ]);
-      rawText     = ollamaRes.escalate ? await _claudeChat(userMessage, depth) : ollamaRes.text;
-      actualModel = ollamaRes.escalate ? 'claude-sonnet-4-6' : LOCAL_MODEL;
+      rawText     = miniRes.escalate ? await _claudeChat(userMessage, depth) : miniRes.text;
+      actualModel = miniRes.escalate ? 'claude-sonnet-4-6' : mini.MODEL;
     }
 
   // ── Path 2: Grok (web/trend prefixed queries)
@@ -254,13 +253,13 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
       actualModel = model;
     } catch (err) {
       appendLog('WARN', 'research', 'system', 'grok-failed',
-        `query="${query.slice(0, 50)}" err=${err.message} — falling back to Ollama`);
-      const ollamaRes = await _ollamaChat([
+        `query="${query.slice(0, 50)}" err=${err.message} — falling back to gpt-4o-mini`);
+      const miniRes = await _miniChat([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user',   content: userMessage },
       ]);
-      rawText     = ollamaRes.escalate ? await _claudeChat(userMessage, depth) : ollamaRes.text;
-      actualModel = ollamaRes.escalate ? 'claude-sonnet-4-6' : LOCAL_MODEL;
+      rawText     = miniRes.escalate ? await _claudeChat(userMessage, depth) : miniRes.text;
+      actualModel = miniRes.escalate ? 'claude-sonnet-4-6' : mini.MODEL;
     }
 
   // ── Path 3: Claude Sonnet (escalated)
@@ -268,19 +267,19 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
     rawText     = await _claudeChat(userMessage, depth);
     actualModel = 'claude-sonnet-4-6';
 
-  // ── Path 3: Ollama (free-first)
+  // ── Path 4: gpt-4o-mini (fast default)
   } else {
-    const ollamaRes = await _ollamaChat([
+    const miniRes = await _miniChat([
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user',   content: userMessage },
     ]);
 
-    if (ollamaRes.escalate) {
+    if (miniRes.escalate) {
       rawText     = await _claudeChat(userMessage, depth);
       actualModel = 'claude-sonnet-4-6';
     } else {
-      rawText     = ollamaRes.text;
-      actualModel = 'qwen3-coder';
+      rawText     = miniRes.text;
+      actualModel = mini.MODEL;
     }
   }
 
@@ -299,8 +298,8 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
     summary,
     sources,
     model_used:        actualModel,
-    escalated:         actualModel !== 'qwen3-coder',
-    escalation_reason: actualModel !== 'qwen3-coder' ? reason : null,
+    escalated:         actualModel !== mini.MODEL,
+    escalation_reason: actualModel !== mini.MODEL ? reason : null,
     stored:            false, // Archivist integration — future
     flagged_urgent,
     logged:            true,

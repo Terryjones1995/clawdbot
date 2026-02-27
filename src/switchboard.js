@@ -20,7 +20,7 @@
 const fs        = require('fs');
 const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
-const ollama    = require('../openclaw/skills/ollama');
+const mini      = require('./skills/openai-mini');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -173,17 +173,17 @@ function parseJSON(raw) {
   }
 }
 
-// ── Pass 2: Ollama ────────────────────────────────────────────────────────────
+// ── Pass 2: gpt-4o-mini ───────────────────────────────────────────────────────
 
 async function ollamaClassify(message, context) {
   const userContent = context
     ? `Context: ${context}\n\nMessage: ${message}`
     : `Message: ${message}`;
 
-  const { result, escalate, reason } = await ollama.tryChat([
+  const { result, escalate, reason } = await mini.tryChat([
     { role: 'system', content: CLASSIFICATION_PROMPT },
     { role: 'user',   content: userContent },
-  ], { params: { num_ctx: 2048, temperature: 0.1 } });
+  ], { params: { temperature: 0.1 } });
 
   if (escalate) return { success: false, reason };
 

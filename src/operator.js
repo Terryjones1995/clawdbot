@@ -30,7 +30,7 @@
 const fs        = require('fs');
 const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
-const ollama    = require('../openclaw/skills/ollama');
+const mini      = require('./skills/openai-mini');
 
 // Worker agents
 const scout     = require('./scout');
@@ -88,8 +88,8 @@ async function decompose(task, context = '') {
     context ? `Context: ${context}` : null,
   ].filter(Boolean).join('\n');
 
-  // Try local model first
-  const { result, escalate } = await ollama.tryChat([
+  // Try gpt-4o-mini first (fast, cheap)
+  const { result, escalate } = await mini.tryChat([
     { role: 'system', content: DECOMPOSE_SYSTEM },
     { role: 'user',   content: userMsg },
   ]);

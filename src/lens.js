@@ -17,7 +17,7 @@ const fs      = require('fs');
 const path    = require('path');
 const https   = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
-const ollama  = require('../openclaw/skills/ollama');
+const mini    = require('./skills/openai-mini');
 const warden  = require('./warden');
 const scribe  = require('./scribe');
 
@@ -189,15 +189,15 @@ async function _interpret(rawData, queryType, model) {
     return res.content[0]?.text || '';
   }
 
-  // qwen3-coder via Ollama
-  const { result, escalate, reason } = await ollama.tryChat([
+  // gpt-4o-mini (fast, cheap)
+  const { result, escalate, reason } = await mini.tryChat([
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user',   content: prompt },
   ]);
 
   if (escalate) {
     // Fallback to Claude Sonnet
-    appendLog('WARN', 'interpret', 'system', 'ollama-failed', `escalating — ${reason}`);
+    appendLog('WARN', 'interpret', 'system', 'mini-failed', `escalating — ${reason}`);
     return _interpret(rawData, queryType, 'claude-sonnet-4-6');
   }
   return result?.message?.content || '';

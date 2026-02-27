@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGhostStore } from '@/store';
 import { cn } from '@/lib/utils';
@@ -31,7 +32,11 @@ interface SidebarProps {
 
 export function Sidebar({ orgId }: SidebarProps) {
   const pathname   = usePathname();
+  const { data: session } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed, wsConnected, agents } = useGhostStore();
+
+  const userName    = session?.user?.name ?? session?.user?.email ?? 'User';
+  const userInitial = userName.charAt(0).toUpperCase();
 
   const onlineCount  = Object.values(agents).filter(a => a.status === 'online' || a.status === 'working').length;
   const workingCount = Object.values(agents).filter(a => a.status === 'working').length;
@@ -182,7 +187,7 @@ export function Sidebar({ orgId }: SidebarProps) {
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
                style={{ background: 'linear-gradient(135deg, #4A90E2, #7C3AED)' }}>
-            T
+            {userInitial}
           </div>
           <AnimatePresence>
             {!sidebarCollapsed && (
@@ -192,7 +197,7 @@ export function Sidebar({ orgId }: SidebarProps) {
                 exit={{ opacity: 0 }}
                 className="flex-1 min-w-0"
               >
-                <p className="text-xs font-medium text-white truncate">Taylor</p>
+                <p className="text-xs font-medium text-white truncate">{userName}</p>
                 <p className="text-[10px] text-ghost-muted/60">Admin</p>
               </motion.div>
             )}

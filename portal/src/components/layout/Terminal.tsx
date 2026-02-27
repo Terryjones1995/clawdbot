@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGhostStore, type TerminalLine } from '@/store';
 import { formatRelative } from '@/lib/utils';
-import { X, Minus, Maximize2, ChevronRight, Loader2, Terminal as TerminalIcon } from 'lucide-react';
+import { X, Minus, Maximize2, ChevronRight, Loader2, Terminal as TerminalIcon, Copy, Check } from 'lucide-react';
 
 const COMMANDS = [
   '/help', '/agents', '/status', '/ping', '/jobs', '/logs tail',
@@ -49,8 +49,21 @@ export function Terminal() {
   const [maximized,   setMaximized]   = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef  = useRef<HTMLInputElement>(null);
+  const bottomRef  = useRef<HTMLDivElement>(null);
+  const inputRef   = useRef<HTMLInputElement>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function copyLine(id: string, text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    });
+  }
+
+  function copyAll() {
+    const text = terminalLines.map(l => `${linePrefix(l.type)}${l.content}`).join('\n');
+    navigator.clipboard.writeText(text);
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -234,6 +247,10 @@ export function Terminal() {
             <div className="flex-1" />
 
             <div className="flex items-center gap-1">
+              <button onClick={copyAll}
+                      className="px-2 py-0.5 text-[10px] text-ghost-muted hover:text-white transition-colors font-mono">
+                COPY ALL
+              </button>
               <button onClick={clearTerminal}
                       className="px-2 py-0.5 text-[10px] text-ghost-muted hover:text-white transition-colors font-mono">
                 CLEAR
@@ -249,10 +266,16 @@ export function Terminal() {
             </div>
           </div>
 
-          {/* Output */}
-          <div className="flex-1 overflow-y-auto p-4 terminal-text space-y-0.5" onClick={() => inputRef.current?.focus()}>
+          {/* Output — click empty space to refocus input, but don't steal focus while selecting text */}
+          <div
+            className="flex-1 overflow-y-auto p-4 terminal-text space-y-0.5"
+            onMouseUp={(e) => {
+              if (window.getSelection()?.toString()) return; // don't steal focus during text selection
+              if (e.target === e.currentTarget) inputRef.current?.focus();
+            }}
+          >
             {terminalLines.map((line) => (
-              <div key={line.id} className="flex gap-2 group">
+              <div key={line.id} className="flex gap-2 group items-start">
                 <span className="text-ghost-muted/30 text-[10px] shrink-0 pt-px font-mono select-none">
                   {new Date(line.ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
@@ -262,6 +285,16 @@ export function Terminal() {
                 >
                   {linePrefix(line.type)}{line.content}
                 </pre>
+                <button
+                  onClick={() => copyLine(line.id, line.content)}
+                  className="opacity-0 group-hover:opacity-100 shrink-0 mt-0.5 text-ghost-muted/40 hover:text-ghost-accent transition-all"
+                  title="Copy"
+                >
+                  {copiedId === line.id
+                    ? <Check size={10} className="text-green-400" />
+                    : <Copy size={10} />
+                  }
+                </button>
               </div>
             ))}
             {loading && (

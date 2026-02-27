@@ -19,6 +19,8 @@ const archivistRoutes = require('./src/routes/archivist');
 const keeperRoutes    = require('./src/routes/keeper');
 const operatorRoutes  = require('./src/routes/operator');
 const codexRoutes     = require('./src/routes/codex');
+const jobsRoutes      = require('./src/routes/jobs');
+const logsRoutes      = require('./src/routes/logs');
 const receptionRoutes = require('./src/routes/reception');
 const requireAuth     = require('./src/middleware/requireAuth');
 const sentinel        = require('./src/sentinel');
@@ -73,6 +75,31 @@ app.use('/api/reception',
   },
   receptionRoutes,
 );
+
+// ── Portal data routes — allow via shared secret OR normal auth ────────────────
+const PORTAL_BYPASS = (req, res, next) => {
+  if (PORTAL_SECRET && req.headers['x-portal-secret'] === PORTAL_SECRET) {
+    req.user = { username: 'portal', role: 'ADMIN' };
+    return next();
+  }
+  requireAuth(req, res, next);
+};
+
+app.use('/api/jobs',          PORTAL_BYPASS, jobsRoutes);
+app.use('/api/logs',          PORTAL_BYPASS, logsRoutes.router);
+app.use('/api/errors',        PORTAL_BYPASS, logsRoutes.errorsRouter);
+app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
+  try {
+    const summary = await scribe.dailySummary({ narrative: false });
+    res.json({
+      briefing: summary.content || 'No briefing available.',
+      period:   summary.date   || new Date().toISOString().slice(0, 10),
+      ts:       new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── Protected routes ──────────────────────────────────────────────────────────
 app.use(requireAuth);

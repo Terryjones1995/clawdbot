@@ -16,7 +16,7 @@
 const fs        = require('fs');
 const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
-const ollama    = require('../openclaw/skills/ollama');
+const mini      = require('./skills/openai-mini');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -100,8 +100,8 @@ function detectModel(task, description, files = [], context = '') {
     return { model: 'claude-sonnet-4-6', reason: `multi-file change (${files.length} files)` };
   }
 
-  // Default: free
-  return { model: 'qwen3-coder', reason: null };
+  // Default: gpt-4o-mini (fast, cheap)
+  return { model: 'gpt-4o-mini', reason: null };
 }
 
 // ── Message builder ───────────────────────────────────────────────────────────
@@ -207,32 +207,32 @@ async function run(input) {
   const { model: targetModel, reason: escalationReason } = detectModel(task, description, files, context);
   const userMessage = buildUserMessage(task, description, files, context, priority);
 
-  let rawResponse  = '';
-  let modelUsed    = targetModel;
-  let escalated    = targetModel !== 'qwen3-coder';
-  let ollamaFailed = false;
+  let rawResponse = '';
+  let modelUsed   = targetModel;
+  let escalated   = targetModel !== 'gpt-4o-mini';
+  let miniFailed  = false;
 
-  // ── qwen3-coder (free first) ──
-  if (targetModel === 'qwen3-coder') {
-    const { result, escalate, reason } = await ollama.tryChat(
+  // ── gpt-4o-mini (fast, cheap default) ──
+  if (targetModel === 'gpt-4o-mini') {
+    const { result, escalate, reason } = await mini.tryChat(
       [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userMessage }]
     );
 
     if (!escalate) {
       rawResponse = result?.message?.content || '';
     } else {
-      // Ollama unavailable — bump to Sonnet
-      ollamaFailed = true;
-      modelUsed    = 'claude-sonnet-4-6';
-      escalated    = true;
-      logEscalation('qwen3-coder', 'claude-sonnet-4-6', `Ollama unavailable: ${reason}`, task);
+      // mini unavailable — bump to Sonnet
+      miniFailed = true;
+      modelUsed  = 'claude-sonnet-4-6';
+      escalated  = true;
+      logEscalation('gpt-4o-mini', 'claude-sonnet-4-6', `mini unavailable: ${reason}`, task);
     }
   }
 
   // ── Claude Sonnet or Opus (escalation path) ──
-  if (targetModel !== 'qwen3-coder' || ollamaFailed) {
-    if (escalationReason && !ollamaFailed) {
-      logEscalation('qwen3-coder', modelUsed, escalationReason, task);
+  if (targetModel !== 'gpt-4o-mini' || miniFailed) {
+    if (escalationReason && !miniFailed) {
+      logEscalation('gpt-4o-mini', modelUsed, escalationReason, task);
     }
     rawResponse = await callClaude(modelUsed, userMessage);
   }
@@ -245,7 +245,7 @@ async function run(input) {
     code_changes:      parsed?.code_changes     || [],
     notes:             parsed?.notes            || '',
     model_used:        modelUsed,
-    escalation_reason: escalated ? (escalationReason || 'Ollama unavailable') : null,
+    escalation_reason: escalated ? (escalationReason || 'mini unavailable') : null,
     logged:            true,
   };
 

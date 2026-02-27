@@ -64,3 +64,31 @@
 - **Resolved At:** null
 - **Resolved By:** null
 - **Resolution Note:** null
+
+---
+
+## [APR-0004] 2026-02-23T17:07:32.225Z
+
+- **Status:** APPROVED
+- **Requesting Agent:** Crow
+- **Action:** post-tweet
+- **Requestor Role:** ADMIN
+- **Payload:** Launch announcement
+- **Reason:** social
+- **Resolved At:** 2026-02-23T17:07:32.865Z
+- **Resolved By:** OWNER
+- **Resolution Note:** smoke test
+
+---
+
+## [APR-0005] 2026-02-23T17:07:32.863Z
+
+- **Status:** PENDING
+- **Requesting Agent:** Helm
+- **Action:** deploy prod
+- **Requestor Role:** ADMIN
+- **Payload:** v1.2.0
+- **Reason:** release
+- **Resolved At:** null
+- **Resolved By:** null
+- **Resolution Note:** null

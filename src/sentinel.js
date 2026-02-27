@@ -15,9 +15,10 @@ const fs   = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 
-const discord     = require('../openclaw/skills/discord');
-const ollama      = require('../openclaw/skills/ollama');
-const heartbeat   = require('./heartbeat');
+const discord          = require('../openclaw/skills/discord');
+const mini             = require('./skills/openai-mini');
+const { instantReply } = require('./skills/instant');
+const heartbeat        = require('./heartbeat');
 const switchboard = require('./switchboard');
 const warden      = require('./warden');
 const scribe      = require('./scribe');
@@ -27,14 +28,16 @@ const lens        = require('./lens');
 const courier     = require('./courier');
 const archivist   = require('./archivist');
 const keeper      = require('./keeper');
+const db          = require('./db');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
 function appendLog(level, action, userRole, outcome, note) {
-  const entry = `[${level}] ${new Date().toISOString()} | agent=Sentinel | action=${action} | user_role=${userRole} | model=qwen3-coder | outcome=${outcome} | escalated=false | note="${note}"\n`;
+  const entry = `[${level}] ${new Date().toISOString()} | agent=Sentinel | action=${action} | user_role=${userRole} | model=gpt-4o-mini | outcome=${outcome} | escalated=false | note="${note}"\n`;
   try { fs.appendFileSync(LOG_FILE, entry); } catch { /* non-fatal */ }
+  db.logEntry({ level, agent: 'Sentinel', action, outcome, user_role: userRole, note }).catch(() => {});
 }
 
 // ── Agent channel map (populated from .env by setup-discord.js) ───────────────
@@ -574,8 +577,8 @@ async function _ollamaChatReply(message, channelId, userId) {
     return await keeper.chat(threadId, message);
   } catch (err) {
     console.error('[Sentinel] Keeper error, falling back:', err.message);
-    // Emergency fallback: stateless Ollama call
-    const { result, escalate } = await ollama.tryChat([
+    // Emergency fallback: gpt-4o-mini stateless
+    const { result, escalate } = await mini.tryChat([
       { role: 'system', content: 'You are Ghost, a chill AI assistant in Discord. Be brief and natural.' },
       { role: 'user',   content: message },
     ]);
@@ -681,25 +684,37 @@ async function handleReceptionMessage(event) {
     return;
   }
 
+  // Signal nexus active → lights up beams on the portal network
+  registry.setStatus('nexus', 'working');
+
   // Image attachments → vision first
   try {
     const handled = await handleVisionMessage(event);
-    if (handled) return;
+    if (handled) { registry.setStatus('nexus', 'idle'); return; }
   } catch (err) {
     await discord.sendMessage(channel_id, `Vision error: ${err.message}`);
+    registry.setStatus('nexus', 'idle');
     return;
   }
 
   // ! commands
   if (content.trim().startsWith('!')) {
     await handleCommand(event);
+    registry.setStatus('nexus', 'idle');
     return;
   }
 
-  // Conversational / casual → Keeper (persistent memory chat)
+  // Conversational / casual → instant reply first, then Keeper
   if (_looksLikeChat(content)) {
+    const quick = instantReply(content);
+    if (quick) {
+      await discord.sendMessage(channel_id, quick);
+      registry.setStatus('nexus', 'idle');
+      return;
+    }
     const reply = await _ollamaChatReply(content, channel_id, user_id);
     await discord.sendMessage(channel_id, reply);
+    registry.setStatus('nexus', 'idle');
     return;
   }
 
@@ -711,13 +726,20 @@ async function handleReceptionMessage(event) {
 
   if (decision.error) {
     await discord.sendMessage(channel_id, `Routing error: ${decision.error}`);
+    registry.setStatus('nexus', 'idle');
     return;
   }
 
-  // Unclassifiable after all passes → fall back to Keeper chat
+  // Unclassifiable after all passes → instant reply or Keeper chat
   if (decision.intent === 'unknown/unclassified') {
-    const reply = await _ollamaChatReply(content, channel_id, user_id);
-    await discord.sendMessage(channel_id, reply);
+    const quick = instantReply(content);
+    if (quick) {
+      await discord.sendMessage(channel_id, quick);
+    } else {
+      const reply = await _ollamaChatReply(content, channel_id, user_id);
+      await discord.sendMessage(channel_id, reply);
+    }
+    registry.setStatus('nexus', 'idle');
     return;
   }
 
@@ -738,6 +760,7 @@ async function handleReceptionMessage(event) {
     await discord.sendMessage(channel_id, `Something went wrong: ${err.message}`);
   } finally {
     try { await routingMsg.delete(); } catch { /* non-fatal */ }
+    registry.setStatus('nexus', 'idle');
   }
 }
 
@@ -783,6 +806,12 @@ async function start() {
       handleCommand(event).catch(err => {
         console.error('[Sentinel] Command error:', err.message);
         appendLog('ERROR', 'command-handler', event.user_role, 'failed', err.message);
+      });
+    } else if (isOwnerDM) {
+      // DMs use reception-style routing (instant → chat → task)
+      handleReceptionMessage(event).catch(err => {
+        console.error('[Sentinel] DM reception error:', err.message);
+        appendLog('ERROR', 'dm-reception', event.user_role, 'failed', err.message);
       });
     } else {
       handleNaturalLanguage(event).catch(err => {

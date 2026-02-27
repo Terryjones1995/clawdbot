@@ -85,4 +85,18 @@ router.delete('/reminder/:id', (req, res) => {
   res.json({ ok: true, id: req.params.id.toUpperCase() });
 });
 
+// GET /api/scribe/brief — daily summary for portal Overview
+router.get('/brief', async (req, res) => {
+  try {
+    const summary = await scribe.dailySummary({ narrative: false });
+    res.json({
+      briefing: summary.content || 'No briefing available.',
+      period:   summary.date   || new Date().toISOString().slice(0, 10),
+      ts:       new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

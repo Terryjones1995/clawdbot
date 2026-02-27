@@ -11,14 +11,21 @@
  */
 
 const AGENTS = [
-  { id: 'ghost',   name: 'Ghost',   role: 'CEO / Brain'           },
-  { id: 'oracle',  name: 'Oracle',  role: 'Operations Manager'    },
-  { id: 'nexus',   name: 'Nexus',   role: 'Reception / Router'    },
-  { id: 'viper',   name: 'Viper',   role: 'Social Media Head'     },
-  { id: 'atlas',   name: 'Atlas',   role: 'Support Head'          },
-  { id: 'pulse',   name: 'Pulse',   role: 'Marketing Head'        },
-  { id: 'scout',   name: 'Scout',   role: 'Intelligence'          },
-  { id: 'courier', name: 'Courier', role: 'Email / Comms'         },
+  { id: 'ghost',       name: 'Ghost',       role: 'Terminal AI / CEO'       },
+  { id: 'switchboard', name: 'Switchboard', role: 'Router / Classifier'     },
+  { id: 'warden',      name: 'Warden',      role: 'Command & Control'       },
+  { id: 'scribe',      name: 'Scribe',      role: 'Ops / Summaries'         },
+  { id: 'archivist',   name: 'Archivist',   role: 'Long-term Memory'        },
+  { id: 'scout',       name: 'Scout',       role: 'Intelligence / Research' },
+  { id: 'forge',       name: 'Forge',       role: 'Dev / Architect'         },
+  { id: 'courier',     name: 'Courier',     role: 'Email / Comms'           },
+  { id: 'lens',        name: 'Lens',        role: 'Analytics'               },
+  { id: 'keeper',      name: 'Keeper',      role: 'Conversation Memory'     },
+  { id: 'sentinel',    name: 'Sentinel',    role: 'Discord Connector'       },
+  { id: 'crow',        name: 'Crow',        role: 'Social Media / X'        },
+  { id: 'operator',    name: 'Operator',    role: 'Task Decomposition'      },
+  { id: 'helm',        name: 'Helm',        role: 'SRE / Deploy'            },
+  { id: 'codex',       name: 'Codex',       role: 'League Knowledge'        },
 ];
 
 // In-memory state

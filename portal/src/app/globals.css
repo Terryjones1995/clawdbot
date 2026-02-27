@@ -111,14 +111,22 @@ body {
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+  overflow: hidden;
 }
+
+/* zoom: 1.25 shrinks the effective viewport — h-screen must be 100vh / 1.25 = 80vh
+   so that the zoomed root div visually fills exactly one browser window height.
+   This eliminates the document-level scrollbar that causes the double-scrollbar. */
+.h-screen { height: 80vh; min-height: 80vh; }
 
 /* ── Scrollbars ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.2); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.4); }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 
 /* ── Background grid ──────────────────────────────────────────────────────── */
 .bg-grid {

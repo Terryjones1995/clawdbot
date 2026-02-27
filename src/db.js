@@ -92,4 +92,18 @@ async function initSchema() {
   console.log('[DB] Schema ready');
 }
 
-module.exports = { pool, query, initSchema };
+/**
+ * Insert a log entry into agent_logs table (non-fatal — won't crash agent on failure).
+ */
+async function logEntry({ level = 'INFO', agent, action, outcome, model = null, user_role = null, note = null } = {}) {
+  if (!process.env.NEON_DATABASE_URL) return; // DB disabled
+  try {
+    await pool.query(
+      `INSERT INTO agent_logs (level, agent, action, outcome, model, user_role, note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [level, agent, action, outcome, model, user_role, note]
+    );
+  } catch { /* non-fatal */ }
+}
+
+module.exports = { pool, query, initSchema, logEntry };

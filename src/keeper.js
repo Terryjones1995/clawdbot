@@ -3,46 +3,45 @@
 /**
  * Keeper — Persistent conversation memory agent
  *
- * Uses Qwen2.5 via Ollama (free, local, no API creds).
+ * Uses Claude Opus 4.6 for main chat (highest capability).
+ * Uses gpt-4o-mini for rolling summarization (cheap).
  * Stores conversations in memory/conversations/ as JSON files.
- * Each thread ID maps to one conversation file.
- *
- * Key capabilities:
- * - Full conversation history persisted across restarts
- * - Rolling summary when history > MAX_MESSAGES
- * - Large context window (Qwen2.5:7b supports 32k tokens)
- * - No external API keys required
+ * Augments context with Pinecone long-term memories via Archivist.
  *
  * Thread ID conventions:
- *   discord:{channelId}:{userId}   — Discord channel conversation
- *   ui:{sessionId}                 — UI-initiated conversation
- *   global:{topic}                 — Global topic thread
+ *   portal-{userId}               — Portal terminal conversation
+ *   discord:{channelId}:{userId}  — Discord channel conversation
+ *   global:{topic}                — Global topic thread
  *
  * Usage:
  *   const keeper = require('./keeper');
- *   const reply = await keeper.chat('discord:123:456', 'Hey, remember when...');
+ *   const reply = await keeper.chat('portal-user123', 'Hey, remember when...');
  */
 
 const fs   = require('fs');
 const path = require('path');
 
-const ollama   = require('../openclaw/skills/ollama');
+const opus     = require('./skills/opus');
+const mini     = require('./skills/openai-mini');
 const registry = require('./agentRegistry');
+const archivist = require('./archivist');
 
 const CONVERSATIONS_DIR = path.join(__dirname, '../memory/conversations');
 const MAX_MESSAGES       = 80;   // summarise old history beyond this
 const KEEP_RECENT        = 20;   // messages kept as-is after summarisation
 const MAX_CONTEXT_MSGS   = 30;   // max messages fed to LLM per request
 
-const KEEPER_SYSTEM = `You are Keeper, Ghost's memory agent. You remember everything across conversations.
-You have access to the full conversation history below. Use it to answer naturally, recall details, and maintain continuity.
-Be concise — 1-3 sentences unless a longer answer is genuinely needed.
-Never say you don't have memory of past conversations unless the history truly doesn't contain the info.`;
+function _ghostSystem() {
+  const today = new Date().toISOString().slice(0, 10);
+  return `You are Ghost, an elite AI operations assistant. You remember everything — use your conversation history.
+You manage a league operations platform (HOF League) and a multi-agent Discord system.
+Sharp, direct, 1-3 sentences unless detail is genuinely needed.
+Current date: ${today}.`;
+}
 
 // ── File helpers ───────────────────────────────────────────────────────────────
 
 function _threadPath(threadId) {
-  // Sanitise: keep alphanumeric, dash, underscore, colon → replace the rest
   const safe = threadId.replace(/[^a-zA-Z0-9_\-:]/g, '_');
   return path.join(CONVERSATIONS_DIR, `${safe}.json`);
 }
@@ -78,7 +77,7 @@ async function _maybeSummarise(thread) {
 
   const summarisePrompt = `Summarise the following conversation fragment into a compact paragraph. Preserve key facts, decisions made, topics discussed, and any personal details shared. Plain text only, no bullet points.\n\n${text}`;
 
-  const { result } = await ollama.tryChat([
+  const { result } = await mini.tryChat([
     { role: 'system', content: 'You are a concise summariser. Output plain text only.' },
     { role: 'user',   content: summarisePrompt },
   ]);
@@ -97,8 +96,11 @@ async function _maybeSummarise(thread) {
 
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function _buildSystemPrompt(thread) {
-  let sys = KEEPER_SYSTEM;
+function _buildSystemPrompt(thread, pineconeContext = null) {
+  let sys = _ghostSystem();
+  if (pineconeContext) {
+    sys += `\n\n## Relevant long-term memories:\n${pineconeContext}`;
+  }
   if (thread.summary) {
     sys += `\n\n## Conversation summary so far:\n${thread.summary}`;
   }
@@ -106,9 +108,7 @@ function _buildSystemPrompt(thread) {
 }
 
 function _buildMessages(thread, userMessage) {
-  // Take last MAX_CONTEXT_MSGS messages
   const recent = thread.messages.slice(-MAX_CONTEXT_MSGS);
-  // Add current user message
   return [
     ...recent.map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: userMessage },
@@ -134,26 +134,64 @@ async function chat(threadId, userMessage) {
   });
   _saveThread(thread);
 
-  // Summarise if needed
+  // Summarise if needed — track if summarisation happened to push to Pinecone
+  const beforeLen = thread.messages.length;
   thread = await _maybeSummarise(thread);
+  const justSummarised = beforeLen > MAX_MESSAGES && thread.messages.length <= KEEP_RECENT;
 
-  const systemPrompt = _buildSystemPrompt(thread);
-  const messages     = _buildMessages(thread, ''); // last message is already in thread
+  // Push new summary to Pinecone long-term memory (non-fatal, background)
+  if (justSummarised && thread.summary) {
+    archivist.store({
+      type:         'conversation',
+      content:      thread.summary,
+      tags:         [threadId],
+      source_agent: 'keeper',
+      ttl_days:     180,
+    }).catch(() => {}); // non-fatal
+  }
 
-  // Use the full thread (with summary as system context) for inference
-  const { result, escalate } = await ollama.tryChat([
+  // Augment with relevant Pinecone memories (non-fatal)
+  let pineconeContext = null;
+  try {
+    const { results } = await archivist.retrieve({
+      query:         userMessage,
+      type_filter:   'conversation',
+      top_k:         3,
+      output_format: 'raw',
+    });
+    const goodHits = (results || []).filter(r => r.score > 0.7);
+    if (goodHits.length > 0) {
+      pineconeContext = goodHits.map(r => r.content).join('\n\n---\n\n');
+    }
+  } catch { /* Pinecone/Ollama unavailable — non-fatal */ }
+
+  const systemPrompt = _buildSystemPrompt(thread, pineconeContext);
+  const messages     = _buildMessages(
+    { ...thread, messages: thread.messages.slice(0, -1) }, // exclude the just-pushed user msg
+    userMessage,
+  );
+
+  let opusResult = await opus.tryChat([
     { role: 'system', content: systemPrompt },
-    ..._buildMessages({ ...thread, messages: thread.messages.slice(0, -1) }, userMessage),
-  ], {
-    params: {
-      num_ctx:     2048,  // smaller ctx = much faster CPU inference
-      temperature: 0.7,
-    },
-  });
+    ...messages,
+  ]);
 
-  const reply = (escalate || !result?.message?.content)
-    ? "I'm here. What's on your mind?"
-    : result.message.content.trim();
+  let reply;
+  if (!opusResult.escalate && opusResult.result?.message?.content) {
+    reply = opusResult.result.message.content.trim();
+  } else {
+    // Opus failed (likely no credits) — fall back to gpt-4o-mini
+    if (opusResult.escalate) {
+      console.warn('[Keeper] Opus failed, falling back to mini:', opusResult.reason);
+    }
+    const { result: miniResult, escalate: miniEscalate } = await mini.tryChat([
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ]);
+    reply = (!miniEscalate && miniResult?.message?.content)
+      ? miniResult.message.content.trim()
+      : "I'm having trouble connecting to my AI models right now. Please check the API keys.";
+  }
 
   // Store assistant reply
   thread.messages.push({
@@ -169,7 +207,6 @@ async function chat(threadId, userMessage) {
 
 /**
  * Get conversation history for a thread.
- * Returns { threadId, summary, messages (last N), total }.
  */
 function getHistory(threadId, limit = 50) {
   const thread = _loadThread(threadId);
@@ -181,7 +218,7 @@ function getHistory(threadId, limit = 50) {
       content: m.content,
       ts:      m.ts,
     })),
-    total:    thread.messages.length,
+    total: thread.messages.length,
   };
 }
 
@@ -209,7 +246,7 @@ function listThreads() {
 }
 
 /**
- * Add a system note to a thread (e.g. "User prefers short answers").
+ * Add a system note to a thread.
  */
 function addNote(threadId, note) {
   const thread = _loadThread(threadId);

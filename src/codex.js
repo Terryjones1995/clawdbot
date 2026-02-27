@@ -18,7 +18,7 @@
 
 const fs   = require('fs');
 const path = require('path');
-const ollama = require('../openclaw/skills/ollama');
+const mini = require('./skills/openai-mini');
 
 const LOG_FILE   = path.join(__dirname, '../memory/run_log.md');
 const LEAGUE_DIR = path.join(__dirname, 'Leagues/HOF-LEAGUE-United');
@@ -150,9 +150,8 @@ async function answer({ question, org_name = 'HOF LEAGUE', context = '', code_se
   const { kb, rules } = loadKnowledgeBase(org_name);
   const systemPrompt  = buildSystemPrompt(kb, rules, org_name);
 
-  // Build user message — prefix /no_think to skip qwen3 reasoning mode for support Qs
-  let userMsg = `/no_think\n\n${question}`;
-  if (context) userMsg = `/no_think\n\n[Context: ${context}]\n\nQuestion: ${question}`;
+  let userMsg = question;
+  if (context) userMsg = `[Context: ${context}]\n\nQuestion: ${question}`;
 
   // If code_search requested (admin/dev questions), find relevant code snippets
   if (code_search) {
@@ -171,24 +170,19 @@ async function answer({ question, org_name = 'HOF LEAGUE', context = '', code_se
     { role: 'user',   content: userMsg },
   ];
 
-  // Try qwen3:8b first (free)
-  const { result, escalate, reason } = await ollama.tryChat(messages, {
+  // Try gpt-4o-mini first (fast, cheap)
+  const { result, escalate, reason } = await mini.tryChat(messages, {
     params: { temperature: 0.3 },
   });
 
   if (!escalate && result?.message?.content) {
     const text = result.message.content.trim();
-    // Strip thinking tags — /no_think should prevent them, but strip as fallback
-    const clean = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    if (clean.length > 10) {
-      appendLog('INFO', 'answer', 'codex', 'success', `model=qwen3:8b q="${question.slice(0, 60)}"`);
-      return { answer: clean, model: 'qwen3:8b', logged: true };
+    if (text.length > 10) {
+      appendLog('INFO', 'answer', 'codex', 'success', `model=gpt-4o-mini q="${question.slice(0, 60)}"`);
+      return { answer: text, model: 'gpt-4o-mini', logged: true };
     }
-    // Log what we actually got so we can debug
-    console.warn('[Codex] qwen3 response too short or empty. escalating.',
-      `raw_len=${text.length} clean_len=${clean.length} preview="${text.slice(0, 80)}"`);
   } else if (escalate) {
-    console.warn('[Codex] ollama.tryChat escalated:', reason);
+    console.warn('[Codex] mini.tryChat escalated:', reason);
   }
 
   // Escalate to Grok (xai) — faster than Claude, credits always available
