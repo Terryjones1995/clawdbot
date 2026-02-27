@@ -20,9 +20,11 @@
  *   memory.extractAndStore(userMessage, assistantReply, threadId).catch(() => {});
  */
 
+const crypto = require('crypto');
 const db     = require('../db');
 const mini   = require('./openai-mini');
 const ollama = require('../../openclaw/skills/ollama');
+const redis  = require('../redis');
 
 const EXTRACT_SYSTEM = `You are a fact extractor for Ghost, an AI assistant managing a league operations platform (HOF League) and Discord server.
 
@@ -164,7 +166,16 @@ async function extractAndStore(userMessage, assistantReply, threadId) {
  * @param {string} query    — the user's message
  * @param {number} limit    — max facts to include (default 15)
  */
+const FACTS_TTL = 60; // 60 seconds
+
 async function getRelevantFacts(query, limit = 15) {
+  // Check Redis cache first (avoids Ollama embed + pgvector query)
+  const cacheKey = `facts:${crypto.createHash('sha256').update(`${query}:${limit}`).digest('hex')}`;
+  const cached = await redis.get(cacheKey);
+  if (cached !== null) {
+    return cached === '' ? null : cached;
+  }
+
   try {
     // Try to generate an embedding for semantic retrieval
     let queryEmbedding = null;
@@ -173,7 +184,10 @@ async function getRelevantFacts(query, limit = 15) {
     } catch { /* Ollama unavailable — fall back to ILIKE */ }
 
     const rows = await db.getFacts(query, limit, queryEmbedding);
-    if (!rows.length) return null;
+    if (!rows.length) {
+      await redis.set(cacheKey, '', FACTS_TTL); // cache negative result
+      return null;
+    }
 
     // Group by category for cleaner injection
     const grouped = {};
@@ -189,7 +203,9 @@ async function getRelevantFacts(query, limit = 15) {
       facts.forEach(f => lines.push(`• ${f}`));
     }
 
-    return lines.join('\n');
+    const result = lines.join('\n');
+    await redis.set(cacheKey, result, FACTS_TTL);
+    return result;
   } catch {
     return null; // non-fatal — DB unavailable
   }

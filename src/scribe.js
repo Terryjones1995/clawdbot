@@ -182,7 +182,7 @@ async function dailySummary({ date, narrative = false } = {}) {
 
   const entries  = readLogEntries({ fromDate, toDate: fromDate });
   const stats    = statsFromEntries(entries);
-  const pending  = warden.getPending();
+  const pending  = await warden.getPending();
   const reminders = loadReminders().filter(r =>
     !r.fired && r.due_at.slice(0, 10) <= target
   );
@@ -282,7 +282,7 @@ async function statusReport({ agentFilter } = {}) {
   const today   = new Date().toISOString().slice(0, 10);
   const entries = readLogEntries({ fromDate: today, agentFilter });
   const stats   = statsFromEntries(entries);
-  const pending = warden.getPending();
+  const pending = await warden.getPending();
 
   const port    = process.env.OPENCLAW_PORT || 18789;
   const content = [

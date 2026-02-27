@@ -19,6 +19,7 @@ const discord          = require('../openclaw/skills/discord');
 const mini             = require('./skills/openai-mini');
 const { instantReply } = require('./skills/instant');
 const heartbeat        = require('./heartbeat');
+const redis            = require('./redis');
 const switchboard = require('./switchboard');
 const warden      = require('./warden');
 const scribe      = require('./scribe');
@@ -301,7 +302,7 @@ async function handleLensMessage(event, plain = false) {
   const text = event.content.trim().toLowerCase();
 
   if (text === 'alerts' || text === 'status' || text === 'check') {
-    const alerts = lens.systemAlerts();
+    const alerts = await lens.systemAlerts();
     if (plain) {
       const msg = alerts.length === 0
         ? 'All systems nominal. No thresholds breached.'
@@ -476,7 +477,7 @@ async function handleCommand(event) {
 
   if (text === '!status') {
     const port    = process.env.OPENCLAW_PORT || 18789;
-    const pending = warden.getPending();
+    const pending = await warden.getPending();
     const embed   = new EmbedBuilder()
       .setColor(0x57F287)
       .setTitle('✅ Ghost — Online')
@@ -495,7 +496,7 @@ async function handleCommand(event) {
       await discord.sendMessage(channel_id, '❌ Insufficient permissions.');
       return;
     }
-    const pending = warden.getPending();
+    const pending = await warden.getPending();
     if (pending.length === 0) {
       await discord.sendMessage(channel_id, '✅ No pending approvals.');
     } else {
@@ -520,7 +521,7 @@ async function handleCommand(event) {
     }
     const decision = approvalMatch[1].toLowerCase();
     const id       = approvalMatch[2].toUpperCase();
-    const result   = warden.resolve(id, decision, 'OWNER');
+    const result   = await warden.resolve(id, decision, 'OWNER');
 
     if (!result.ok) {
       await discord.sendMessage(channel_id, `⚠️ ${result.error}`);
@@ -775,6 +776,15 @@ const ADMIN_INTENT_RE = /\b(kick|ban|timeout|mute|dm\s+<@|assign\s+role|remove\s
 
 async function handleMentionMessage(event) {
   const { channel_id, content, user_id, user_role, raw } = event;
+
+  // Per-user rate limit: max 5 @mentions per 5 seconds
+  try {
+    const count = await redis.incr(`ratelimit:${user_id}`, 5);
+    if (count !== null && count > 5) {
+      await discord.sendMessage(channel_id, 'Easy there — slow down a bit.');
+      return;
+    }
+  } catch { /* Redis unavailable — skip rate limiting */ }
 
   // Strip the @Ghost mention from the message
   const botId   = discord.client?.user?.id;

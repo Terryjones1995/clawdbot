@@ -44,9 +44,9 @@ router.post('/triage', (req, res) => {
 
 // GET /api/lens/alerts
 // Check local system thresholds (no PostHog required).
-router.get('/alerts', (req, res) => {
+router.get('/alerts', async (req, res) => {
   try {
-    const alerts = lens.systemAlerts();
+    const alerts = await lens.systemAlerts();
     res.json({
       alert_count: alerts.length,
       alerts,

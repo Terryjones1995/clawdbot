@@ -68,7 +68,7 @@ router.post('/admins', async (req, res) => {
       } catch { /* not resolvable — store as-is */ }
     }
     await db.addBotAdmin(userId, resolvedTag, req.user?.username || 'portal');
-    botAdmins.add(userId);
+    await botAdmins.add(userId);
     return res.json({ ok: true, userId, username: resolvedTag });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -80,7 +80,7 @@ router.delete('/admins/:userId', async (req, res) => {
   const { userId } = req.params;
   try {
     await db.removeBotAdmin(userId);
-    botAdmins.remove(userId);
+    await botAdmins.remove(userId);
     return res.json({ ok: true, userId });
   } catch (err) {
     return res.status(500).json({ error: err.message });

@@ -216,11 +216,11 @@ async function _interpret(rawData, queryType, model) {
  *
  * @returns {Array<{ metric, value, threshold, message, level }>}
  */
-function systemAlerts() {
+async function systemAlerts() {
   const alerts = [];
 
   // Approval queue backlog
-  const pending = warden.getPending();
+  const pending = await warden.getPending();
   if (pending.length > 10) {
     alerts.push({
       metric:    'approval_queue_backlog',
@@ -325,7 +325,7 @@ async function run({
   const summary = await _interpret(rawResult, query_type, model);
 
   // Check for anomalies in the alerts system
-  const alerts     = systemAlerts();
+  const alerts     = await systemAlerts();
   const hasAlert   = alerts.length > 0;
 
   appendLog('INFO', 'query', 'system', 'success',

@@ -35,29 +35,29 @@ router.post('/gate', async (req, res) => {
 });
 
 // GET /api/warden/pending
-router.get('/pending', (req, res) => {
+router.get('/pending', async (req, res) => {
   try {
-    res.json(warden.getPending());
+    res.json(await warden.getPending());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // GET /api/warden/queue/:id
-router.get('/queue/:id', (req, res) => {
-  const item = warden.getById(req.params.id.toUpperCase());
+router.get('/queue/:id', async (req, res) => {
+  const item = await warden.getById(req.params.id.toUpperCase());
   if (!item) return res.status(404).json({ error: 'Not found.' });
   res.json(item);
 });
 
 // POST /api/warden/resolve/:id
-router.post('/resolve/:id', (req, res) => {
+router.post('/resolve/:id', async (req, res) => {
   const { decision, note } = req.body;
   if (!decision || !['approve', 'deny'].includes(decision)) {
     return res.status(400).json({ error: 'decision must be "approve" or "deny".' });
   }
 
-  const result = warden.resolve(
+  const result = await warden.resolve(
     req.params.id.toUpperCase(),
     decision,
     req.user?.username || 'OWNER',

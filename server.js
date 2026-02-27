@@ -31,6 +31,7 @@ const heartbeat       = require('./src/heartbeat');
 const registry        = require('./src/agentRegistry');
 const db              = require('./src/db');
 const botAdmins       = require('./src/botAdmins');
+const redis           = require('./src/redis');
 
 const app    = express();
 const server = http.createServer(app);
@@ -167,6 +168,9 @@ server.listen(PORT, () => {
   db.initSchema()
     .then(() => botAdmins.load())
     .catch(err => console.error('[DB] Schema init failed:', err.message));
+  redis.waitReady(5000).then(ok =>
+    console.log(`[Redis] ${ok ? 'Connected ✓' : 'Unavailable — fallbacks active'}`)
+  );
   heartbeat.start();
   sentinel.start().catch(err => console.error('[Sentinel] Failed to start:', err.message));
   scribe.start();

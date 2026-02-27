@@ -23,6 +23,7 @@ const memory    = require('./skills/memory');
 const registry  = require('./agentRegistry');
 const archivist = require('./archivist');
 const db        = require('./db');
+const redis     = require('./redis');
 
 // Legacy JSON path — only used for one-time migration of existing threads
 const CONVERSATIONS_DIR = path.join(__dirname, '../memory/conversations');
@@ -40,17 +41,29 @@ Current date: ${today}.`;
 
 // ── Thread I/O (Neon) ──────────────────────────────────────────────────────────
 
+const THREAD_TTL = 86400; // 24 hours
+
 async function _loadThread(threadId) {
+  // Try Redis cache first
+  const cacheKey = `thread:${threadId}`;
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch { /* corrupt cache — fall through */ }
+  }
+
   try {
     const row = await db.getThread(threadId);
     if (row) {
-      return {
+      const thread = {
         threadId,
         messages:  row.messages  ?? [],
         summary:   row.summary   ?? null,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
+      // Warm cache
+      await redis.set(cacheKey, JSON.stringify(thread), THREAD_TTL);
+      return thread;
     }
   } catch (err) {
     console.warn('[Keeper] Neon load failed, checking local file:', err.message);
@@ -81,12 +94,14 @@ async function _loadThread(threadId) {
 }
 
 async function _saveThread(thread) {
+  // Write-through: Neon first, then refresh Redis cache
   await db.upsertThread({
     threadId:  thread.threadId,
     messages:  thread.messages,
     summary:   thread.summary,
     createdAt: thread.createdAt,
   });
+  await redis.set(`thread:${thread.threadId}`, JSON.stringify(thread), THREAD_TTL);
 }
 
 // ── Summarisation ─────────────────────────────────────────────────────────────

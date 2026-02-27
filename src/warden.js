@@ -21,9 +21,11 @@
 const fs        = require('fs');
 const path      = require('path');
 const archivist = require('./archivist');
+const redis     = require('./redis');
 
-const APPROVALS = path.join(__dirname, '../memory/approvals.md');
-const LOG_FILE  = path.join(__dirname, '../memory/run_log.md');
+const APPROVALS    = path.join(__dirname, '../memory/approvals.md');
+const LOG_FILE     = path.join(__dirname, '../memory/run_log.md');
+const REDIS_QUEUE  = 'warden:approvals';
 
 // Dangerous action keywords — always queue for non-OWNER
 const DANGEROUS_ACTIONS = [
@@ -45,46 +47,87 @@ function isDangerous(action, payload = '') {
 
 // ── Approval ID ───────────────────────────────────────────────────────────────
 
-function nextId() {
-  const content = readApprovals();
+async function nextId() {
+  // Try Redis: scan hash keys for highest APR-NNNN, fall back to markdown scan
+  const all = await redis.hgetall(REDIS_QUEUE);
+  if (all && Object.keys(all).length > 0) {
+    const max = Object.keys(all).reduce((m, k) => {
+      const n = parseInt(k.replace('APR-', ''), 10);
+      return isNaN(n) ? m : Math.max(m, n);
+    }, 0);
+    return `APR-${String(max + 1).padStart(4, '0')}`;
+  }
+  // Fallback: scan markdown file for existing IDs
+  const content = _readApprovalsFile();
   const matches = [...content.matchAll(/## \[APR-(\d+)\]/g)];
   const max = matches.reduce((m, r) => Math.max(m, parseInt(r[1], 10)), 0);
   return `APR-${String(max + 1).padStart(4, '0')}`;
 }
 
-// ── Approvals file ────────────────────────────────────────────────────────────
+// ── Markdown file (append-only audit log — never read for queue state) ────────
 
-function readApprovals() {
+function _readApprovalsFile() {
   if (!fs.existsSync(APPROVALS)) return '';
   return fs.readFileSync(APPROVALS, 'utf8');
 }
 
-function appendApproval(entry) {
-  fs.appendFileSync(APPROVALS, `\n---\n\n${entry}\n`);
+function _appendAuditLog(entry) {
+  try { fs.appendFileSync(APPROVALS, `\n---\n\n${entry}\n`); } catch { /* non-fatal */ }
 }
 
-function getPending() {
-  const content = readApprovals();
+// ── Redis-backed queue ────────────────────────────────────────────────────────
+
+async function _storeApproval(id, obj) {
+  await redis.hset(REDIS_QUEUE, id, JSON.stringify(obj));
+}
+
+async function _getApproval(id) {
+  const raw = await redis.hget(REDIS_QUEUE, id);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+async function _getAllApprovals() {
+  const all = await redis.hgetall(REDIS_QUEUE);
+  if (!all) return [];
+  return Object.values(all).map(v => { try { return JSON.parse(v); } catch { return null; } }).filter(Boolean);
+}
+
+// ── Public queue API ──────────────────────────────────────────────────────────
+
+async function getPending() {
+  // Redis path
+  const all = await _getAllApprovals();
+  if (all.length > 0 || await redis.ping()) {
+    return all.filter(e => e.status === 'PENDING');
+  }
+
+  // Fallback: parse markdown file
+  const content = _readApprovalsFile();
   const blocks  = [...content.matchAll(
     /## \[([A-Z0-9-]+)\] (\S+)\n\n([\s\S]*?)(?=\n---|\n## \[|$)/g
   )];
-
   return blocks
-    .map(m => parseBlock(m[1], m[2], m[3]))
+    .map(m => _parseBlock(m[1], m[2], m[3]))
     .filter(b => b && b.status === 'PENDING');
 }
 
-function getById(id) {
-  const content = readApprovals();
+async function getById(id) {
+  // Redis path
+  const entry = await _getApproval(id);
+  if (entry) return entry;
+
+  // Fallback: parse markdown file
+  const content = _readApprovalsFile();
   const re = new RegExp(
     `## \\[${id}\\] (\\S+)\\n\\n([\\s\\S]*?)(?=\\n---|\\n## \\[|$)`
   );
   const m = content.match(re);
   if (!m) return null;
-  return parseBlock(id, m[1], m[2]);
+  return _parseBlock(id, m[1], m[2]);
 }
 
-function parseBlock(id, timestamp, body) {
+function _parseBlock(id, timestamp, body) {
   const field = (name) => {
     const m = body.match(new RegExp(`\\*\\*${name}:\\*\\*\\s*(.+)`));
     return m ? m[1].trim() : null;
@@ -104,26 +147,35 @@ function parseBlock(id, timestamp, body) {
   };
 }
 
-function resolveEntry(id, decision, resolvedBy, note = '') {
-  let content = readApprovals();
-
+async function resolveEntry(id, decision, resolvedBy, note = '') {
   const status = decision === 'approve' ? 'APPROVED' : 'DENIED';
   const ts     = new Date().toISOString();
 
+  // Redis path
+  const entry = await _getApproval(id);
+  if (entry) {
+    if (entry.status !== 'PENDING') return false;
+    entry.status          = status;
+    entry.resolved_at     = ts;
+    entry.resolved_by     = resolvedBy;
+    entry.resolution_note = note || 'none';
+    await _storeApproval(id, entry);
+    return true;
+  }
+
+  // Fallback: update markdown file in-place
+  let content = _readApprovalsFile();
   const blockRe = new RegExp(
     `(## \\[${id}\\][\\s\\S]*?- \\*\\*Status:\\*\\*) PENDING` +
     `([\\s\\S]*?- \\*\\*Resolved At:\\*\\*) null` +
     `([\\s\\S]*?- \\*\\*Resolved By:\\*\\*) null` +
     `([\\s\\S]*?- \\*\\*Resolution Note:\\*\\*) null`
   );
-
   if (!blockRe.test(content)) return false;
-
   content = content.replace(
     blockRe,
     `$1 ${status}$2 ${ts}$3 ${resolvedBy}$4 ${note || 'none'}`
   );
-
   fs.writeFileSync(APPROVALS, content);
   return true;
 }
@@ -222,13 +274,31 @@ async function gate(req) {
   }
 
   // ── ADMIN + dangerous (or any other role): queue for OWNER review ──
-  const approvalId     = nextId();
+  const approvalId     = await nextId();
+  const ts             = new Date().toISOString();
   const payloadSummary = typeof payload === 'string'
     ? payload.slice(0, 120)
     : JSON.stringify(payload).slice(0, 120);
 
-  const entry = [
-    `## [${approvalId}] ${new Date().toISOString()}`,
+  // Store structured entry in Redis hash
+  const approvalObj = {
+    id:               approvalId,
+    timestamp:        ts,
+    status:           'PENDING',
+    requesting_agent,
+    action,
+    requestor_role:   user_role,
+    payload:          payloadSummary,
+    reason,
+    resolved_at:      null,
+    resolved_by:      null,
+    resolution_note:  null,
+  };
+  await _storeApproval(approvalId, approvalObj);
+
+  // Append to markdown file as append-only audit log
+  const mdEntry = [
+    `## [${approvalId}] ${ts}`,
     '',
     `- **Status:** PENDING`,
     `- **Requesting Agent:** ${requesting_agent}`,
@@ -240,8 +310,8 @@ async function gate(req) {
     `- **Resolved By:** null`,
     `- **Resolution Note:** null`,
   ].join('\n');
+  _appendAuditLog(mdEntry);
 
-  appendApproval(entry);
   log('BLOCK', 'gate', user_role, 'queued',
     `id=${approvalId} agent=${requesting_agent} action=${action} dangerous=${dangerous}`);
 
@@ -274,12 +344,12 @@ async function gate(req) {
  *
  * @returns {{ ok, decision, id, error }}
  */
-function resolve(id, decision, resolvedBy = 'OWNER', note = '') {
-  const item = getById(id);
+async function resolve(id, decision, resolvedBy = 'OWNER', note = '') {
+  const item = await getById(id);
   if (!item) return { ok: false, error: `No approval found with ID ${id}` };
   if (item.status !== 'PENDING') return { ok: false, error: `${id} is already ${item.status}` };
 
-  const ok = resolveEntry(id, decision, resolvedBy, note);
+  const ok = await resolveEntry(id, decision, resolvedBy, note);
   if (!ok) return { ok: false, error: `Could not update ${id} — check approvals.md format` };
 
   const level = decision === 'approve' ? 'APPROVE' : 'DENY';
