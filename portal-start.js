@@ -1,7 +1,7 @@
 /**
- * portal-start.js — PM2-compatible Next.js server starter (Windows safe)
+ * portal-start.js — PM2-compatible Next.js server starter
  *
- * PM2 cannot run bash shebang scripts (.bin/next) directly on Windows.
+ * PM2 cannot run the Next.js .bin/next shebang script directly.
  * This script starts the Next.js server by importing the server module
  * directly, bypassing the shebang wrapper.
  */

@@ -1,213 +1,320 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useGhostStore } from '@/store';
 import { agentColor, agentEmoji, formatRelative, statusColor } from '@/lib/utils';
 import { AgentState } from '@/store';
 import {
-  Activity, Zap, AlertTriangle, Clock,
-  Server, ArrowUpRight, FileText, Loader2,
+  Activity, Zap, AlertTriangle, Clock, Server, FileText,
+  Loader2, Wifi, WifiOff, Database, Bot, Cpu, Radio,
+  ChevronRight, TrendingUp, Shield, MemoryStick,
 } from 'lucide-react';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
-const stagger = {
-  container: { animate: { transition: { staggerChildren: 0.07 } } },
-  item:      { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0, transition: { duration: 0.4 } } },
-};
+// ── Animations ────────────────────────────────────────────────────────────────
 
-function KpiCard({ label, value, sub, icon: Icon, color, trend }: {
+const fade = {
+  hidden:  { opacity: 0, y: 12 },
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: i * 0.06 } }),
+} as const;
+
+// ── Live Clock ────────────────────────────────────────────────────────────────
+
+function LiveClock() {
+  const [time, setTime] = useState('');
+  const [date, setDate] = useState('');
+
+  useEffect(() => {
+    function tick() {
+      const now = new Date();
+      setTime(now.toLocaleTimeString('en-US', { hour12: false }));
+      setDate(now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }));
+    }
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="text-right hidden sm:block">
+      <p className="text-sm font-mono text-white tabular-nums tracking-wider">{time}</p>
+      <p className="text-[10px] text-ghost-muted font-mono mt-0.5">{date}</p>
+    </div>
+  );
+}
+
+// ── KPI Card ──────────────────────────────────────────────────────────────────
+
+function KpiCard({ label, value, sub, icon: Icon, color, i }: {
   label: string; value: string | number; sub?: string;
-  icon: any; color: string; trend?: string;
+  icon: any; color: string; i: number;
 }) {
   return (
-    <motion.div variants={stagger.item}
-      whileHover={{ y: -2, boxShadow: `0 8px 30px ${color}20` }}
-      className="glass rounded-2xl p-5 relative overflow-hidden cursor-default"
-      style={{ border: `1px solid ${color}20` }}
+    <motion.div
+      custom={i} variants={fade} initial="hidden" animate="visible"
+      whileHover={{ y: -3, transition: { duration: 0.2 } }}
+      className="relative rounded-2xl p-5 overflow-hidden cursor-default group"
+      style={{
+        background: 'rgba(255,255,255,0.03)',
+        border: `1px solid ${color}18`,
+        boxShadow: `inset 0 1px 0 ${color}10`,
+      }}
     >
-      <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
-           style={{ background: `linear-gradient(90deg, transparent, ${color}80, transparent)` }} />
-      <div className="flex items-start justify-between mb-3">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-             style={{ background: `${color}15`, border: `1px solid ${color}25` }}>
-          <Icon size={16} style={{ color }} />
+      {/* Top glow bar */}
+      <div className="absolute top-0 left-0 right-0 h-px"
+           style={{ background: `linear-gradient(90deg, transparent, ${color}60, transparent)` }} />
+      {/* Corner glow */}
+      <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+           style={{ background: `radial-gradient(circle, ${color}12, transparent 70%)` }} />
+
+      <div className="flex items-start justify-between mb-4">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+             style={{ background: `${color}12`, border: `1px solid ${color}20` }}>
+          <Icon size={15} style={{ color }} />
         </div>
-        {trend && (
-          <span className="text-[10px] font-mono text-green-400 flex items-center gap-0.5">
-            <ArrowUpRight size={10} />{trend}
-          </span>
-        )}
+        <TrendingUp size={10} style={{ color: `${color}50` }} className="mt-1" />
       </div>
-      <p className="text-2xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>{value}</p>
-      <p className="text-xs text-ghost-muted mt-1">{label}</p>
-      {sub && <p className="text-[10px] text-ghost-muted/50 mt-0.5">{sub}</p>}
+
+      <p className="text-2xl font-bold text-white tabular-nums leading-none mb-1.5"
+         style={{ fontFamily: 'Space Grotesk' }}>{value}</p>
+      <p className="text-xs text-ghost-muted">{label}</p>
+      {sub && <p className="text-[10px] text-ghost-muted/40 mt-0.5 font-mono">{sub}</p>}
     </motion.div>
   );
 }
 
-function AgentCard({ agent }: { agent: AgentState }) {
+// ── Agent Row ─────────────────────────────────────────────────────────────────
+
+function AgentRow({ agent, i }: { agent: AgentState; i: number }) {
   const color     = agentColor(agent.id);
+  const sColor    = statusColor(agent.status);
   const lastEvent = agent.events[agent.events.length - 1];
 
+  const statusLabel: Record<string, string> = {
+    online: 'Online', idle: 'Idle', working: 'Working', error: 'Error', offline: 'Offline',
+  };
+
   return (
-    <motion.div variants={stagger.item} whileHover={{ scale: 1.01 }}
-      className="glass glass-hover rounded-xl p-4 flex items-center gap-3 cursor-pointer"
-      style={{ border: 'rgba(255,255,255,0.06) solid 1px' }}>
-      <div className="relative shrink-0">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
-             style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
-          {agentEmoji(agent.id)}
-        </div>
-        <span className={`status-dot absolute -bottom-0.5 -right-0.5 w-2 h-2 ${agent.status}`} />
+    <motion.div
+      custom={i} variants={fade} initial="hidden" animate="visible"
+      whileHover={{ backgroundColor: 'rgba(255,255,255,0.025)', x: 2, transition: { duration: 0.15 } }}
+      className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-default transition-all"
+    >
+      {/* Avatar */}
+      <div className="relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm"
+           style={{ background: `${color}12`, border: `1px solid ${color}20` }}>
+        {agentEmoji(agent.id)}
+        <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-ghost-bg"
+              style={{ background: sColor }} />
       </div>
+
+      {/* Name + Role */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>{agent.name}</p>
-          <span className="text-[9px] px-1.5 py-0.5 rounded-full capitalize font-mono"
-                style={{ background: `${statusColor(agent.status)}18`, color: statusColor(agent.status), border: `1px solid ${statusColor(agent.status)}30` }}>
-            {agent.status}
-          </span>
-        </div>
-        <p className="text-[10px] text-ghost-muted truncate">{agent.role}</p>
+        <p className="text-xs font-semibold text-white leading-none mb-0.5"
+           style={{ fontFamily: 'Space Grotesk' }}>{agent.name}</p>
+        <p className="text-[10px] text-ghost-muted/60 truncate">{agent.role}</p>
       </div>
+
+      {/* Status badge */}
+      <span className="shrink-0 text-[9px] font-mono px-2 py-0.5 rounded-full"
+            style={{ background: `${sColor}12`, color: sColor, border: `1px solid ${sColor}25` }}>
+        {statusLabel[agent.status] ?? agent.status}
+      </span>
+
+      {/* Last seen */}
       {lastEvent && (
-        <p className="text-[9px] text-ghost-muted/40 truncate max-w-[100px] hidden lg:block">
+        <span className="hidden xl:block text-[9px] text-ghost-muted/30 font-mono shrink-0 w-16 text-right">
           {formatRelative(lastEvent.ts)}
-        </p>
+        </span>
       )}
     </motion.div>
   );
 }
+
+// ── Activity Feed ─────────────────────────────────────────────────────────────
 
 function ActivityFeed() {
   const { agents } = useGhostStore();
   const events = Object.values(agents)
     .flatMap(a => a.events.map(e => ({ ...e, agentName: a.name, agentId: a.id })))
     .sort((a, b) => b.ts.localeCompare(a.ts))
-    .slice(0, 20);
+    .slice(0, 30);
 
   if (events.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-32 text-ghost-muted/40">
-        <Activity size={20} className="mb-2" />
-        <p className="text-xs">Waiting for activity...</p>
+      <div className="flex flex-col items-center justify-center py-10 text-ghost-muted/25">
+        <Radio size={18} className="mb-2" />
+        <p className="text-[10px] font-mono">Awaiting agent activity...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-1">
-      {events.map((e, i) => (
-        <motion.div key={`${e.agentId}-${e.ts}-${i}`}
-          initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: i * 0.03 }}
-          className="flex items-start gap-3 py-1.5 px-2 rounded-lg hover:bg-white/[0.03] transition-all">
-          <span className="text-base shrink-0">{agentEmoji(e.agentId)}</span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium" style={{ color: agentColor(e.agentId) }}>{e.agentName}</span>
-              <span className="text-[9px] text-ghost-muted/40 font-mono">{formatRelative(e.ts)}</span>
-            </div>
-            <p className="text-[11px] text-ghost-muted truncate">{e.message}</p>
-          </div>
-        </motion.div>
-      ))}
+    <div className="space-y-0.5">
+      <AnimatePresence initial={false}>
+        {events.map((e, i) => {
+          const color = agentColor(e.agentId);
+          const typeColor: Record<string, string> = {
+            success: '#10B981', error: '#EF4444', warning: '#F59E0B', info: '#64748B',
+          };
+          return (
+            <motion.div
+              key={`${e.agentId}-${e.ts}-${i}`}
+              initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.02 }}
+              className="flex items-start gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.02] transition-colors group"
+            >
+              {/* Dot */}
+              <div className="mt-1 shrink-0 w-1.5 h-1.5 rounded-full"
+                   style={{ background: typeColor[e.type] ?? '#64748B' }} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[10px] font-semibold" style={{ color, fontFamily: 'Space Grotesk' }}>
+                    {e.agentName}
+                  </span>
+                  <span className="text-[9px] text-ghost-muted/30 font-mono">{formatRelative(e.ts)}</span>
+                </div>
+                <p className="text-[10px] text-ghost-muted/70 truncate leading-relaxed">{e.message}</p>
+              </div>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 }
+
+// ── Health Item ───────────────────────────────────────────────────────────────
+
+function HealthItem({ label, status, detail, icon: Icon, ping }: {
+  label: string; status: 'up' | 'down' | 'checking';
+  detail: string; icon: any; ping?: number;
+}) {
+  const color = status === 'up' ? '#10B981' : status === 'down' ? '#EF4444' : '#F59E0B';
+  const dot   = status === 'up' ? 'bg-emerald-400' : status === 'down' ? 'bg-red-400' : 'bg-amber-400';
+
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-white/[0.02] transition-colors">
+      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+           style={{ background: `${color}10`, border: `1px solid ${color}20` }}>
+        <Icon size={12} style={{ color }} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-white font-medium leading-none mb-0.5"
+           style={{ fontFamily: 'Space Grotesk' }}>{label}</p>
+        <p className="text-[9px] text-ghost-muted/50 font-mono truncate">{detail}</p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {ping !== undefined && status === 'up' && (
+          <span className="text-[9px] font-mono text-ghost-muted/40">{ping}ms</span>
+        )}
+        <span className={`w-1.5 h-1.5 rounded-full ${dot} ${status === 'checking' ? 'animate-pulse' : ''}`} />
+      </div>
+    </div>
+  );
+}
+
+// ── Daily Brief ───────────────────────────────────────────────────────────────
 
 function DailyBrief() {
   const [brief,   setBrief]   = useState<string | null>(null);
-  const [stats,   setStats]   = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [ts,      setTs]      = useState<string | null>(null);
 
-  const fetch_ = useCallback(async () => {
-    try {
-      const res  = await fetch('/api/brief');
-      const data = await res.json();
-      setBrief(data.briefing || null);
-      setStats(data.stats || null);
-      setTs(data.ts || null);
-    } catch { /* Ghost offline */ }
-    finally { setLoading(false); }
+  useEffect(() => {
+    async function fetchBrief() {
+      try {
+        const res  = await fetch('/api/brief');
+        const data = await res.json();
+        setBrief(data.briefing || null);
+        setTs(data.ts || null);
+      } catch { /* Ghost offline */ }
+      finally { setLoading(false); }
+    }
+    fetchBrief();
   }, []);
 
-  useEffect(() => { fetch_(); }, [fetch_]);
-
   return (
-    <div className="glass rounded-2xl p-5" style={{ border: '1px solid rgba(0,212,255,0.08)' }}>
-      <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2" style={{ fontFamily: 'Space Grotesk' }}>
-        <FileText size={14} className="text-ghost-accent" />
-        Daily Brief
-        {ts && <span className="text-[9px] font-mono text-ghost-muted/40 ml-auto">{new Date(ts).toLocaleTimeString()}</span>}
-      </h3>
-
-      {loading ? (
-        <div className="flex items-center gap-2 text-ghost-muted/40 py-4">
-          <Loader2 size={13} className="animate-spin" />
-          <span className="text-xs">Loading brief...</span>
+    <div className="rounded-2xl overflow-hidden"
+         style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(0,212,255,0.08)' }}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+        <div className="flex items-center gap-2">
+          <FileText size={12} className="text-ghost-accent" />
+          <span className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>
+            Daily Brief
+          </span>
         </div>
-      ) : brief ? (
-        <div>
-          <p className="text-xs text-ghost-muted leading-relaxed whitespace-pre-wrap">{brief}</p>
-          {stats && (
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {Object.entries(stats as Record<string, number>).slice(0, 6).map(([k, v]) => (
-                <div key={k} className="bg-white/[0.03] rounded-lg p-2 text-center">
-                  <p className="text-sm font-bold text-ghost-accent" style={{ fontFamily: 'Space Grotesk' }}>{v}</p>
-                  <p className="text-[9px] text-ghost-muted capitalize">{k.replace(/_/g, ' ')}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : (
-        <p className="text-xs text-ghost-muted/40 italic">No briefing available. Ghost may be offline.</p>
-      )}
+        {ts && (
+          <span className="text-[9px] font-mono text-ghost-muted/30">
+            {new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+      </div>
+      <div className="p-4">
+        {loading ? (
+          <div className="flex items-center gap-2 text-ghost-muted/30 py-3">
+            <Loader2 size={11} className="animate-spin" />
+            <span className="text-[10px] font-mono">Fetching briefing...</span>
+          </div>
+        ) : brief ? (
+          <p className="text-[11px] text-ghost-muted/80 leading-relaxed whitespace-pre-wrap">{brief}</p>
+        ) : (
+          <p className="text-[10px] text-ghost-muted/30 italic font-mono py-3 text-center">
+            No briefing available
+          </p>
+        )}
+      </div>
     </div>
   );
 }
 
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
 export default function OverviewPage() {
   const { agents, wsConnected } = useGhostStore();
+
   const [uptime,        setUptime]        = useState('--:--:--');
   const [uptimeSeconds, setUptimeSeconds] = useState(0);
   const [tasksToday,    setTasksToday]    = useState<number | null>(null);
   const [errorsToday,   setErrorsToday]   = useState<number | null>(null);
+  const [gatewayPing,   setGatewayPing]   = useState<number | undefined>(undefined);
+  const [gatewayOnline, setGatewayOnline] = useState<'up' | 'down' | 'checking'>('checking');
 
-  // Fetch real server uptime
-  useEffect(() => {
-    async function fetchUptime() {
-      try {
-        const r = await fetch('/api/heartbeat');
-        if (r.ok) {
-          const d = await r.json();
-          setUptimeSeconds(d.uptime_seconds ?? 0);
-        }
-      } catch { /* Ghost may be offline */ }
+  // Gateway + uptime
+  const checkGateway = useCallback(async () => {
+    const start = Date.now();
+    try {
+      const r = await fetch('/api/heartbeat', { cache: 'no-store' });
+      const ping = Date.now() - start;
+      if (r.ok) {
+        const d = await r.json();
+        setGatewayPing(ping);
+        setGatewayOnline('up');
+        setUptimeSeconds(d.uptime_seconds ?? 0);
+      } else {
+        setGatewayOnline('down');
+      }
+    } catch {
+      setGatewayOnline('down');
     }
-    fetchUptime();
-    const poll = setInterval(fetchUptime, 30_000);
-    return () => clearInterval(poll);
   }, []);
 
-  // Fetch today's job/error counts
+  useEffect(() => {
+    checkGateway();
+    const t = setInterval(checkGateway, 30_000);
+    return () => clearInterval(t);
+  }, [checkGateway]);
+
+  // Tasks + errors
   useEffect(() => {
     async function fetchCounts() {
       try {
         const [jobsRes, errRes] = await Promise.all([
-          fetch('/api/jobs?limit=200'),
-          fetch('/api/errors?limit=50'),
+          fetch('/api/jobs?limit=1'),
+          fetch('/api/errors?limit=1'),
         ]);
-        if (jobsRes.ok) {
-          const d = await jobsRes.json();
-          setTasksToday(d.total ?? 0);
-        }
-        if (errRes.ok) {
-          const d = await errRes.json();
-          setErrorsToday(d.total ?? 0);
-        }
+        if (jobsRes.ok) { const d = await jobsRes.json(); setTasksToday(d.total ?? 0); }
+        if (errRes.ok)  { const d = await errRes.json();  setErrorsToday(d.total  ?? 0); }
       } catch { /* Ghost offline */ }
     }
     fetchCounts();
@@ -215,7 +322,7 @@ export default function OverviewPage() {
     return () => clearInterval(t);
   }, []);
 
-  // Tick uptime every second
+  // Uptime ticker
   useEffect(() => {
     if (uptimeSeconds === 0) return;
     let s = uptimeSeconds;
@@ -232,105 +339,163 @@ export default function OverviewPage() {
   const agentList    = Object.values(agents);
   const onlineCount  = agentList.filter(a => a.status !== 'offline').length;
   const workingCount = agentList.filter(a => a.status === 'working').length;
+  const errorCount   = agentList.filter(a => a.status === 'error').length;
+
+  const healthItems = [
+    { label: 'Ghost Gateway',    icon: Server,    status: gatewayOnline,                         detail: `port 18789`,     ping: gatewayPing },
+    { label: 'WebSocket',        icon: Wifi,      status: wsConnected ? 'up' : 'down' as any,   detail: 'live agent feed' },
+    { label: 'Discord — Sentinel', icon: Bot,     status: (onlineCount > 0 ? 'up' : 'down') as any, detail: 'Ghost#6982' },
+    { label: 'Neon Database',    icon: Database,  status: 'up' as any,                           detail: 'PostgreSQL · us-east-1' },
+    { label: 'Pinecone Memory',  icon: MemoryStick, status: 'up' as any,                         detail: 'Vector · ghost ns' },
+    { label: 'Ollama',           icon: Cpu,       status: 'up' as any,                           detail: 'nomic-embed-text' },
+  ];
 
   return (
-    <div className="p-6 max-w-screen-2xl mx-auto">
+    <div className="p-5 pb-10 max-w-screen-2xl mx-auto space-y-5">
 
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <span className={`status-dot ${wsConnected ? 'online' : 'offline'}`} />
-          <p className="text-xs text-ghost-muted tracking-wider uppercase font-mono">
-            {wsConnected ? 'Live · All systems nominal' : 'Offline · Reconnecting...'}
-          </p>
-        </div>
-        <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>System Overview</h2>
-        <p className="text-xs text-ghost-muted mt-0.5">Operation Ghost · Mission Control Center</p>
-      </motion.div>
-
-      {/* KPI row */}
-      <motion.div variants={stagger.container} initial="initial" animate="animate"
-        className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Agents Online"  value={onlineCount}               sub={`of ${agentList.length} total`} icon={Zap}           color="#00D4FF" />
-        <KpiCard label="Active Now"     value={workingCount}              sub="processing tasks"               icon={Activity}      color="#F59E0B" />
-        <KpiCard label="Tasks Today"    value={tasksToday ?? '…'}         sub="from agent_logs"                icon={Server}        color="#10B981" />
-        <KpiCard label="Server Uptime"  value={uptime}                    sub="Ghost gateway"                  icon={Clock}         color="#7C3AED" />
-      </motion.div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-
-        {/* Agent grid */}
-        <div className="xl:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>Agent Network</h3>
-            <span className="text-xs text-ghost-muted font-mono">{agentList.length} agents</span>
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+        className="flex items-center justify-between"
+      >
+        <div>
+          <div className="flex items-center gap-2.5 mb-1">
+            <div className={`w-2 h-2 rounded-full ${gatewayOnline === 'up' ? 'bg-emerald-400' : gatewayOnline === 'down' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`} />
+            <span className="text-[10px] font-mono text-ghost-muted tracking-widest uppercase">
+              {gatewayOnline === 'up' ? 'All Systems Operational' : gatewayOnline === 'down' ? 'Gateway Unreachable' : 'Connecting...'}
+            </span>
           </div>
-          <motion.div variants={stagger.container} initial="initial" animate="animate"
-            className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {agentList.map(agent => <AgentCard key={agent.id} agent={agent} />)}
+          <h1 className="text-2xl font-bold text-white tracking-tight" style={{ fontFamily: 'Space Grotesk' }}>
+            Mission Control
+          </h1>
+          <p className="text-xs text-ghost-muted/60 mt-0.5 font-mono">Operation Ghost · Agent Intelligence Platform</p>
+        </div>
+        <LiveClock />
+      </motion.div>
+
+      {/* ── KPI Row ──────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard i={0} label="Agents Online"  value={onlineCount}           sub={`${agentList.length} total`}   icon={Zap}      color="#00D4FF" />
+        <KpiCard i={1} label="Active Now"     value={workingCount}          sub="processing tasks"              icon={Activity} color="#F59E0B" />
+        <KpiCard i={2} label="Tasks Logged"   value={tasksToday ?? '…'}     sub="agent_logs table"              icon={Shield}   color="#10B981" />
+        <KpiCard i={3} label="Uptime"         value={uptime}                sub="Ghost gateway"                 icon={Clock}    color="#7C3AED" />
+      </div>
+
+      {/* ── Main Grid ────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+
+        {/* Left: Agents + Activity */}
+        <div className="xl:col-span-2 space-y-5">
+
+          {/* Agent Network */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="rounded-2xl overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+              <div className="flex items-center gap-2">
+                <Bot size={12} className="text-ghost-accent" />
+                <span className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>
+                  Agent Network
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                {errorCount > 0 && (
+                  <span className="text-[9px] font-mono text-red-400 flex items-center gap-1">
+                    <AlertTriangle size={8} />{errorCount} error{errorCount > 1 ? 's' : ''}
+                  </span>
+                )}
+                <span className="text-[9px] font-mono text-ghost-muted/40">{agentList.length} agents</span>
+              </div>
+            </div>
+
+            <div className="p-2 grid grid-cols-1 sm:grid-cols-2 gap-0.5">
+              {agentList.map((agent, i) => (
+                <AgentRow key={agent.id} agent={agent} i={i} />
+              ))}
+            </div>
           </motion.div>
 
-          {/* Live activity feed */}
-          <div className="glass rounded-2xl p-5 mt-4">
-            <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2" style={{ fontFamily: 'Space Grotesk' }}>
-              <Activity size={14} className="text-ghost-accent" />
-              Live Activity
-            </h3>
-            <div className="max-h-48 overflow-y-auto">
+          {/* Live Activity */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+            className="rounded-2xl overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+              <div className="flex items-center gap-2">
+                <Activity size={12} className="text-ghost-accent" />
+                <span className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>
+                  Live Activity
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[9px] font-mono text-ghost-muted/40">real-time</span>
+              </div>
+            </div>
+            <div className="p-2 max-h-56 overflow-y-auto">
               <ActivityFeed />
             </div>
-          </div>
+          </motion.div>
         </div>
 
-        {/* Right column */}
-        <div className="space-y-4">
+        {/* Right: Health + Brief */}
+        <div className="space-y-5">
 
-          {/* System health */}
-          <div className="glass rounded-2xl p-5">
-            <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2" style={{ fontFamily: 'Space Grotesk' }}>
-              <Server size={14} className="text-ghost-accent" />
-              System Health
-            </h3>
-            <div className="space-y-3">
-              {[
-                { label: 'Ghost Gateway',   status: wsConnected,       detail: 'port 18789' },
-                { label: 'OpenAI (mini)',   status: true,              detail: 'gpt-4o-mini' },
-                { label: 'Grok',           status: true,              detail: 'web research' },
-                { label: 'Pinecone Memory',status: true,              detail: 'AWS us-east-1' },
-                { label: 'Neon Database',  status: true,              detail: 'PostgreSQL' },
-                { label: 'Discord Bot',    status: onlineCount > 0,   detail: 'Ghost#6982' },
-              ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`status-dot w-1.5 h-1.5 ${item.status ? 'online' : 'error'}`} />
-                    <span className="text-xs text-ghost-muted">{item.label}</span>
-                  </div>
-                  <span className="text-[10px] font-mono text-ghost-muted/50">{item.detail}</span>
-                </div>
+          {/* System Health */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+            className="rounded-2xl overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+              <div className="flex items-center gap-2">
+                <Server size={12} className="text-ghost-accent" />
+                <span className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>
+                  System Health
+                </span>
+              </div>
+              <span className="text-[9px] font-mono text-ghost-muted/40">
+                {healthItems.filter(h => h.status === 'up').length}/{healthItems.length} online
+              </span>
+            </div>
+
+            <div className="p-2">
+              {healthItems.map((item) => (
+                <HealthItem key={item.label} {...item} />
               ))}
+
               {errorsToday !== null && errorsToday > 0 && (
-                <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                <div className="mt-2 mx-1 flex items-center justify-between px-3 py-2 rounded-xl"
+                     style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}>
                   <div className="flex items-center gap-2">
-                    <AlertTriangle size={11} className="text-red-400" />
-                    <span className="text-xs text-red-400/80">Errors today</span>
+                    <AlertTriangle size={10} className="text-red-400" />
+                    <span className="text-[10px] text-red-400/80">Errors today</span>
                   </div>
-                  <span className="text-[10px] font-mono text-red-400">{errorsToday}</span>
+                  <span className="text-[10px] font-mono text-red-400 font-bold">{errorsToday}</span>
                 </div>
               )}
             </div>
-          </div>
+          </motion.div>
 
-          {/* Daily brief */}
-          <DailyBrief />
+          {/* Daily Brief */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+          >
+            <DailyBrief />
+          </motion.div>
 
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="mt-8 pt-4 border-t border-white/5 flex items-center justify-between text-[10px] text-ghost-muted/30 font-mono">
-        <span>Operation Ghost · Mission Control</span>
-        <span>v2.0 · {new Date().getFullYear()}</span>
+      {/* ── Footer ───────────────────────────────────────────────────────────── */}
+      <div className="pt-4 border-t border-white/[0.04] flex items-center justify-between">
+        <span className="text-[9px] font-mono text-ghost-muted/20 tracking-widest">OPERATION GHOST · MISSION CONTROL</span>
+        <span className="text-[9px] font-mono text-ghost-muted/20">v2.0 · {new Date().getFullYear()}</span>
       </div>
+
     </div>
   );
 }

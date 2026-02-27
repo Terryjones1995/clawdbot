@@ -206,6 +206,111 @@ class DiscordConnector {
     }
   }
 
+  // ── Role Management ───────────────────────────────────────────────────────
+
+  /** List all roles in the guild. */
+  async listRoles() {
+    this._assertReady();
+    const guild = await this.client.guilds.fetch(this.guildId);
+    await guild.roles.fetch();
+    return guild.roles.cache
+      .filter(r => r.name !== '@everyone')
+      .map(r => ({ id: r.id, name: r.name, color: r.hexColor, position: r.position }))
+      .sort((a, b) => b.position - a.position);
+  }
+
+  /** Create a new guild role. */
+  async createRole(name, { color = null, hoist = false, mentionable = false } = {}) {
+    this._assertReady();
+    try {
+      const guild = await this.client.guilds.fetch(this.guildId);
+      const role  = await guild.roles.create({
+        name,
+        ...(color ? { color } : {}),
+        hoist,
+        mentionable,
+        reason: 'Created via Ghost portal',
+      });
+      this._log('INFO', 'create-role', 'system', 'success', `role="${name}" id=${role.id}`);
+      return role;
+    } catch (err) {
+      this._log('ERROR', 'create-role', 'system', 'failed', err.message);
+      throw err;
+    }
+  }
+
+  /** Delete a guild role by name (case-insensitive). */
+  async deleteRole(name) {
+    this._assertReady();
+    try {
+      const guild = await this.client.guilds.fetch(this.guildId);
+      await guild.roles.fetch();
+      const role = guild.roles.cache.find(r => r.name.toLowerCase() === name.toLowerCase());
+      if (!role) throw new Error(`Role "${name}" not found`);
+      await role.delete('Deleted via Ghost portal');
+      this._log('INFO', 'delete-role', 'system', 'success', `role="${name}"`);
+      return role;
+    } catch (err) {
+      this._log('ERROR', 'delete-role', 'system', 'failed', err.message);
+      throw err;
+    }
+  }
+
+  /** Assign a role to a user by role name (case-insensitive). */
+  async assignRole(userId, roleName) {
+    this._assertReady();
+    try {
+      const guild  = await this.client.guilds.fetch(this.guildId);
+      await guild.roles.fetch();
+      const role   = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+      if (!role) throw new Error(`Role "${roleName}" not found`);
+      const member = await guild.members.fetch(userId);
+      await member.roles.add(role, 'Assigned via Ghost portal');
+      this._log('INFO', 'assign-role', 'system', 'success', `user=${userId} role="${roleName}"`);
+    } catch (err) {
+      this._log('ERROR', 'assign-role', 'system', 'failed', err.message);
+      throw err;
+    }
+  }
+
+  /** Remove a role from a user by role name. */
+  async removeRole(userId, roleName) {
+    this._assertReady();
+    try {
+      const guild  = await this.client.guilds.fetch(this.guildId);
+      await guild.roles.fetch();
+      const role   = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+      if (!role) throw new Error(`Role "${roleName}" not found`);
+      const member = await guild.members.fetch(userId);
+      await member.roles.remove(role, 'Removed via Ghost portal');
+      this._log('INFO', 'remove-role', 'system', 'success', `user=${userId} role="${roleName}"`);
+    } catch (err) {
+      this._log('ERROR', 'remove-role', 'system', 'failed', err.message);
+      throw err;
+    }
+  }
+
+  /** Create a text channel. */
+  async createChannel(name, { topic = '', categoryId = null } = {}) {
+    this._assertReady();
+    try {
+      const guild   = await this.client.guilds.fetch(this.guildId);
+      const { ChannelType } = require('discord.js');
+      const channel = await guild.channels.create({
+        name,
+        type: ChannelType.GuildText,
+        ...(topic ? { topic } : {}),
+        ...(categoryId ? { parent: categoryId } : {}),
+        reason: 'Created via Ghost portal',
+      });
+      this._log('INFO', 'create-channel', 'system', 'success', `channel="${name}" id=${channel.id}`);
+      return channel;
+    } catch (err) {
+      this._log('ERROR', 'create-channel', 'system', 'failed', err.message);
+      throw err;
+    }
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
 
   _assertReady() {

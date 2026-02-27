@@ -19,8 +19,9 @@ const fs      = require('fs');
 const path    = require('path');
 const https   = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
-const mini    = require('./skills/openai-mini');
-const warden  = require('./warden');
+const mini      = require('./skills/openai-mini');
+const warden    = require('./warden');
+const archivist = require('./archivist');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -172,6 +173,14 @@ async function _sendTransactional({ to, subject, body_text, template_id, user_ro
     appendLog('INFO', 'send-transactional', user_role, 'sent',
       `to=${recipients[0]} subject="${subject.slice(0, 40)}" resend_id=${resendId}`);
 
+    archivist.store({
+      type:         'agent_output',
+      content:      `Email sent to ${recipients[0]}\nSubject: ${subject}\n${body_text ? 'Body: ' + body_text.slice(0, 500) : ''}`,
+      tags:         ['email', 'transactional', 'sent'],
+      source_agent: 'Courier',
+      ttl_days:     180,
+    }).catch(() => {});
+
     return {
       action:      'send_transactional',
       status:      'sent',
@@ -215,6 +224,14 @@ async function _draftCampaign({ subject, body_text, user_role }) {
 
   appendLog('INFO', 'draft-campaign', user_role, 'drafted',
     `subject="${subject.slice(0, 40)}" model=${model}`);
+
+  archivist.store({
+    type:         'agent_output',
+    content:      `Campaign Draft\nSubject: ${subject}\n\n${draft}`,
+    tags:         ['email', 'campaign', 'draft', model],
+    source_agent: 'Courier',
+    ttl_days:     90,
+  }).catch(() => {});
 
   return {
     action:     'draft_campaign',

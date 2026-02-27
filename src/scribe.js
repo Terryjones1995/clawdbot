@@ -20,6 +20,7 @@ const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const ollama    = require('../openclaw/skills/ollama');
 const warden    = require('./warden');
+const archivist = require('./archivist');
 
 const LOG_FILE       = path.join(__dirname, '../memory/run_log.md');
 const REMINDERS_FILE = path.join(__dirname, '../memory/reminders.json');
@@ -215,6 +216,15 @@ async function dailySummary({ date, narrative = false } = {}) {
   const content = await synthesise(template, narrative || stats.total > 100);
 
   appendLog('INFO', 'daily-summary', 'system', 'success', `date=${fromDate} entries=${stats.total}`);
+
+  archivist.store({
+    type:         'agent_output',
+    content:      `Daily Briefing ${fromDate}:\n${content}`,
+    tags:         ['daily_summary', fromDate],
+    source_agent: 'Scribe',
+    ttl_days:     365,
+  }).catch(() => {});
+
   return { report_type: 'daily_summary', content, date: fromDate, logged: true };
 }
 
@@ -254,6 +264,15 @@ async function weeklyDigest({ weekStart, narrative = false } = {}) {
   const content = await synthesise(template, narrative);
 
   appendLog('INFO', 'weekly-digest', 'system', 'success', `week=${start} entries=${stats.total}`);
+
+  archivist.store({
+    type:         'agent_output',
+    content:      `Weekly Digest ${start} → ${end}:\n${content}`,
+    tags:         ['weekly_digest', start],
+    source_agent: 'Scribe',
+    ttl_days:     365,
+  }).catch(() => {});
+
   return { report_type: 'weekly_digest', content, week_start: start, logged: true };
 }
 
@@ -278,6 +297,15 @@ async function statusReport({ agentFilter } = {}) {
   ].join('\n');
 
   appendLog('INFO', 'status-report', 'system', 'success', `entries_today=${stats.total}`);
+
+  archivist.store({
+    type:         'agent_output',
+    content:      `Status Report ${new Date().toISOString().slice(0, 10)}:\n${content}`,
+    tags:         ['status_report', today],
+    source_agent: 'Scribe',
+    ttl_days:     90,
+  }).catch(() => {});
+
   return { report_type: 'status_report', content, logged: true };
 }
 

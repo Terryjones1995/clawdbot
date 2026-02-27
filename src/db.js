@@ -89,6 +89,42 @@ async function initSchema() {
     CREATE INDEX IF NOT EXISTS agent_logs_agent_idx ON agent_logs (agent)
   `);
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      thread_id   TEXT PRIMARY KEY,
+      messages    JSONB NOT NULL DEFAULT '[]',
+      summary     TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS conversations_updated_idx ON conversations (updated_at DESC)
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS ghost_memory (
+      id          BIGSERIAL PRIMARY KEY,
+      key         TEXT UNIQUE NOT NULL,
+      content     TEXT NOT NULL,
+      category    TEXT NOT NULL DEFAULT 'misc',
+      source      TEXT NOT NULL DEFAULT 'conversation',
+      thread_id   TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS ghost_memory_fts_idx
+      ON ghost_memory USING gin(to_tsvector('english', content))
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS ghost_memory_updated_idx ON ghost_memory (updated_at DESC)
+  `);
+
   console.log('[DB] Schema ready');
 }
 
@@ -106,4 +142,92 @@ async function logEntry({ level = 'INFO', agent, action, outcome, model = null, 
   } catch { /* non-fatal */ }
 }
 
-module.exports = { pool, query, initSchema, logEntry };
+// ── Conversation thread helpers ───────────────────────────────────────────────
+
+/**
+ * Load a conversation thread from Neon.
+ * Returns null if not found.
+ */
+async function getThread(threadId) {
+  const { rows } = await query(
+    'SELECT * FROM conversations WHERE thread_id = $1',
+    [threadId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Upsert a conversation thread into Neon.
+ */
+async function upsertThread({ threadId, messages, summary, createdAt }) {
+  await query(
+    `INSERT INTO conversations (thread_id, messages, summary, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (thread_id) DO UPDATE
+       SET messages   = EXCLUDED.messages,
+           summary    = EXCLUDED.summary,
+           updated_at = NOW()`,
+    [threadId, JSON.stringify(messages), summary ?? null, createdAt ?? new Date().toISOString()],
+  );
+}
+
+/**
+ * List all threads ordered by most recently updated.
+ */
+async function listThreads() {
+  const { rows } = await query(
+    `SELECT thread_id, summary, updated_at,
+            jsonb_array_length(messages) AS message_count
+     FROM conversations
+     ORDER BY updated_at DESC`,
+  );
+  return rows;
+}
+
+// ── Ghost Memory helpers ──────────────────────────────────────────────────────
+
+/**
+ * Upsert a fact into ghost_memory.
+ * If the key already exists, update content + updated_at.
+ */
+async function storeFact({ key, content, category = 'misc', source = 'conversation', threadId = null }) {
+  await query(
+    `INSERT INTO ghost_memory (key, content, category, source, thread_id)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (key) DO UPDATE
+       SET content    = EXCLUDED.content,
+           category   = EXCLUDED.category,
+           source     = EXCLUDED.source,
+           updated_at = NOW()`,
+    [key, content, category, source, threadId],
+  );
+}
+
+/**
+ * Retrieve facts relevant to a query using full-text search.
+ * Falls back to most-recently-updated facts when nothing matches.
+ * @param {string} queryText  — the user's message to match against
+ * @param {number} limit      — max facts to return (default 15)
+ */
+async function getFacts(queryText = '', limit = 15) {
+  const { rows } = await query(
+    `SELECT content, category, updated_at,
+            CASE WHEN $1 != '' AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)
+                 THEN 1 ELSE 0 END AS relevant
+     FROM ghost_memory
+     ORDER BY relevant DESC, updated_at DESC
+     LIMIT $2`,
+    [queryText, limit],
+  );
+  return rows;
+}
+
+/**
+ * Get all stored facts (for inspection/debugging).
+ */
+async function getAllFacts() {
+  const { rows } = await query('SELECT * FROM ghost_memory ORDER BY category, updated_at DESC');
+  return rows;
+}
+
+module.exports = { pool, query, initSchema, logEntry, getThread, upsertThread, listThreads, storeFact, getFacts, getAllFacts };

@@ -18,8 +18,9 @@
  *   // result: { decision, reason, release_to, approval_id, logged }
  */
 
-const fs   = require('fs');
-const path = require('path');
+const fs        = require('fs');
+const path      = require('path');
+const archivist = require('./archivist');
 
 const APPROVALS = path.join(__dirname, '../memory/approvals.md');
 const LOG_FILE  = path.join(__dirname, '../memory/run_log.md');
@@ -247,6 +248,15 @@ async function gate(req) {
   // Notify OWNER via Discord (best-effort, non-blocking)
   notifyOwner(approvalId, action, requesting_agent, payloadSummary).catch(() => {});
 
+  // Store to Archivist — non-blocking, non-fatal
+  archivist.store({
+    type:         'approval',
+    content:      `Approval Request ${approvalId}\nAgent: ${requesting_agent}\nAction: ${action}\nRole: ${user_role}\nPayload: ${payloadSummary}\nReason: ${reason}`,
+    tags:         ['approval', 'pending', requesting_agent],
+    source_agent: 'Warden',
+    ttl_days:     365,
+  }).catch(() => {});
+
   return {
     decision:    'queued',
     reason:      `Queued for OWNER review — dangerous=${dangerous}`,
@@ -275,6 +285,14 @@ function resolve(id, decision, resolvedBy = 'OWNER', note = '') {
   const level = decision === 'approve' ? 'APPROVE' : 'DENY';
   log(level, `warden-${decision}`, resolvedBy, 'success',
     `id=${id} agent=${item.requesting_agent} action=${item.action}`);
+
+  archivist.store({
+    type:         'decision',
+    content:      `Approval Decision ${id}\nOutcome: ${decision.toUpperCase()}\nAgent: ${item.requesting_agent}\nAction: ${item.action}\nResolved by: ${resolvedBy}\nNote: ${note || 'none'}`,
+    tags:         ['decision', decision, item.requesting_agent],
+    source_agent: 'Warden',
+    ttl_days:     365,
+  }).catch(() => {});
 
   return { ok: true, decision, id };
 }

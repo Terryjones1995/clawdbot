@@ -3,33 +3,32 @@
 /**
  * Keeper — Persistent conversation memory agent
  *
- * Uses Claude Opus 4.6 for main chat (highest capability).
- * Uses gpt-4o-mini for rolling summarization (cheap).
- * Stores conversations in memory/conversations/ as JSON files.
+ * Stores conversation threads in Neon PostgreSQL (conversations table).
+ * Auto-migrates existing local JSON files on first access.
+ * Uses gpt-4o-mini for rolling summarisation (cheap).
  * Augments context with Pinecone long-term memories via Archivist.
  *
  * Thread ID conventions:
  *   portal-{userId}               — Portal terminal conversation
  *   discord:{channelId}:{userId}  — Discord channel conversation
  *   global:{topic}                — Global topic thread
- *
- * Usage:
- *   const keeper = require('./keeper');
- *   const reply = await keeper.chat('portal-user123', 'Hey, remember when...');
  */
 
 const fs   = require('fs');
 const path = require('path');
 
-const opus     = require('./skills/opus');
-const mini     = require('./skills/openai-mini');
-const registry = require('./agentRegistry');
+const ollama    = require('../openclaw/skills/ollama');
+const mini      = require('./skills/openai-mini');
+const memory    = require('./skills/memory');
+const registry  = require('./agentRegistry');
 const archivist = require('./archivist');
+const db        = require('./db');
 
+// Legacy JSON path — only used for one-time migration of existing threads
 const CONVERSATIONS_DIR = path.join(__dirname, '../memory/conversations');
-const MAX_MESSAGES       = 80;   // summarise old history beyond this
-const KEEP_RECENT        = 20;   // messages kept as-is after summarisation
-const MAX_CONTEXT_MSGS   = 30;   // max messages fed to LLM per request
+const MAX_MESSAGES       = 80;
+const KEEP_RECENT        = 20;
+const MAX_CONTEXT_MSGS   = 30;
 
 function _ghostSystem() {
   const today = new Date().toISOString().slice(0, 10);
@@ -39,18 +38,38 @@ Sharp, direct, 1-3 sentences unless detail is genuinely needed.
 Current date: ${today}.`;
 }
 
-// ── File helpers ───────────────────────────────────────────────────────────────
+// ── Thread I/O (Neon) ──────────────────────────────────────────────────────────
 
-function _threadPath(threadId) {
-  const safe = threadId.replace(/[^a-zA-Z0-9_\-:]/g, '_');
-  return path.join(CONVERSATIONS_DIR, `${safe}.json`);
-}
-
-function _loadThread(threadId) {
-  const p = _threadPath(threadId);
+async function _loadThread(threadId) {
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    const row = await db.getThread(threadId);
+    if (row) {
+      return {
+        threadId,
+        messages:  row.messages  ?? [],
+        summary:   row.summary   ?? null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    }
+  } catch (err) {
+    console.warn('[Keeper] Neon load failed, checking local file:', err.message);
+  }
+
+  // Not in Neon — check for legacy JSON file and auto-migrate
+  const filePath = path.join(CONVERSATIONS_DIR, `${threadId.replace(/[^a-zA-Z0-9_\-:]/g, '_')}.json`);
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    console.log(`[Keeper] Migrating thread "${threadId}" from JSON to Neon`);
+    await db.upsertThread({
+      threadId,
+      messages:  data.messages  ?? [],
+      summary:   data.summary   ?? null,
+      createdAt: data.createdAt ?? new Date().toISOString(),
+    });
+    return data;
   } catch {
+    // No local file either — return a fresh thread
     return {
       threadId,
       messages:  [],
@@ -61,10 +80,13 @@ function _loadThread(threadId) {
   }
 }
 
-function _saveThread(thread) {
-  fs.mkdirSync(CONVERSATIONS_DIR, { recursive: true });
-  thread.updatedAt = new Date().toISOString();
-  fs.writeFileSync(_threadPath(thread.threadId), JSON.stringify(thread, null, 2));
+async function _saveThread(thread) {
+  await db.upsertThread({
+    threadId:  thread.threadId,
+    messages:  thread.messages,
+    summary:   thread.summary,
+    createdAt: thread.createdAt,
+  });
 }
 
 // ── Summarisation ─────────────────────────────────────────────────────────────
@@ -88,7 +110,7 @@ async function _maybeSummarise(thread) {
       ? `${thread.summary}\n\n---\n\n${newSummary}`
       : newSummary;
     thread.messages = thread.messages.slice(-KEEP_RECENT);
-    _saveThread(thread);
+    await _saveThread(thread);
   }
 
   return thread;
@@ -96,14 +118,11 @@ async function _maybeSummarise(thread) {
 
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function _buildSystemPrompt(thread, pineconeContext = null) {
+function _buildSystemPrompt(thread, pineconeContext = null, factsContext = null) {
   let sys = _ghostSystem();
-  if (pineconeContext) {
-    sys += `\n\n## Relevant long-term memories:\n${pineconeContext}`;
-  }
-  if (thread.summary) {
-    sys += `\n\n## Conversation summary so far:\n${thread.summary}`;
-  }
+  if (factsContext)    sys += `\n\n## What Ghost knows (persistent memory):\n${factsContext}`;
+  if (pineconeContext) sys += `\n\n## Relevant long-term memories:\n${pineconeContext}`;
+  if (thread.summary)  sys += `\n\n## Conversation summary so far:\n${thread.summary}`;
   return sys;
 }
 
@@ -124,22 +143,19 @@ function _buildMessages(thread, userMessage) {
 async function chat(threadId, userMessage) {
   registry.setStatus('keeper', 'working');
 
-  let thread = _loadThread(threadId);
+  let thread = await _loadThread(threadId);
 
-  // Store incoming user message
   thread.messages.push({
     role:    'user',
     content: userMessage,
     ts:      new Date().toISOString(),
   });
-  _saveThread(thread);
+  await _saveThread(thread);
 
-  // Summarise if needed — track if summarisation happened to push to Pinecone
   const beforeLen = thread.messages.length;
   thread = await _maybeSummarise(thread);
   const justSummarised = beforeLen > MAX_MESSAGES && thread.messages.length <= KEEP_RECENT;
 
-  // Push new summary to Pinecone long-term memory (non-fatal, background)
   if (justSummarised && thread.summary) {
     archivist.store({
       type:         'conversation',
@@ -147,10 +163,13 @@ async function chat(threadId, userMessage) {
       tags:         [threadId],
       source_agent: 'keeper',
       ttl_days:     180,
-    }).catch(() => {}); // non-fatal
+    }).catch(() => {});
   }
 
-  // Augment with relevant Pinecone memories (non-fatal)
+  // Fetch relevant facts from ghost_memory (persistent knowledge)
+  const factsContext = await memory.getRelevantFacts(userMessage).catch(() => null);
+
+  // Augment with relevant Pinecone memories
   let pineconeContext = null;
   try {
     const { results } = await archivist.retrieve({
@@ -163,43 +182,39 @@ async function chat(threadId, userMessage) {
     if (goodHits.length > 0) {
       pineconeContext = goodHits.map(r => r.content).join('\n\n---\n\n');
     }
-  } catch { /* Pinecone/Ollama unavailable — non-fatal */ }
+  } catch { /* non-fatal */ }
 
-  const systemPrompt = _buildSystemPrompt(thread, pineconeContext);
+  const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext);
   const messages     = _buildMessages(
-    { ...thread, messages: thread.messages.slice(0, -1) }, // exclude the just-pushed user msg
+    { ...thread, messages: thread.messages.slice(0, -1) },
     userMessage,
   );
 
-  let opusResult = await opus.tryChat([
-    { role: 'system', content: systemPrompt },
-    ...messages,
-  ]);
+  // Primary: Ollama (free, local/Tailscale) → gpt-4o-mini fallback
+  const allMsgs = [{ role: 'system', content: systemPrompt }, ...messages];
+  const { result: ollamaResult, escalate: ollamaEscalate, reason: ollamaReason } =
+    await ollama.tryChat(allMsgs, { params: { num_ctx: 8192 } });
 
   let reply;
-  if (!opusResult.escalate && opusResult.result?.message?.content) {
-    reply = opusResult.result.message.content.trim();
+  if (!ollamaEscalate && ollamaResult?.message?.content) {
+    reply = ollamaResult.message.content.trim();
   } else {
-    // Opus failed (likely no credits) — fall back to gpt-4o-mini
-    if (opusResult.escalate) {
-      console.warn('[Keeper] Opus failed, falling back to mini:', opusResult.reason);
-    }
-    const { result: miniResult, escalate: miniEscalate } = await mini.tryChat([
-      { role: 'system', content: systemPrompt },
-      ...messages,
-    ]);
+    console.warn('[Keeper] Ollama failed, falling back to mini:', ollamaReason);
+    const { result: miniResult, escalate: miniEscalate } = await mini.tryChat(allMsgs);
     reply = (!miniEscalate && miniResult?.message?.content)
       ? miniResult.message.content.trim()
       : "I'm having trouble connecting to my AI models right now. Please check the API keys.";
   }
 
-  // Store assistant reply
   thread.messages.push({
     role:    'assistant',
     content: reply,
     ts:      new Date().toISOString(),
   });
-  _saveThread(thread);
+  await _saveThread(thread);
+
+  // Extract and store facts from this exchange in the background (non-blocking)
+  memory.extractAndStore(userMessage, reply, threadId).catch(() => {});
 
   registry.setStatus('keeper', 'idle');
   return reply;
@@ -208,8 +223,8 @@ async function chat(threadId, userMessage) {
 /**
  * Get conversation history for a thread.
  */
-function getHistory(threadId, limit = 50) {
-  const thread = _loadThread(threadId);
+async function getHistory(threadId, limit = 50) {
+  const thread = await _loadThread(threadId);
   return {
     threadId,
     summary:  thread.summary,
@@ -225,21 +240,15 @@ function getHistory(threadId, limit = 50) {
 /**
  * List all known thread IDs.
  */
-function listThreads() {
+async function listThreads() {
   try {
-    fs.mkdirSync(CONVERSATIONS_DIR, { recursive: true });
-    return fs.readdirSync(CONVERSATIONS_DIR)
-      .filter(f => f.endsWith('.json'))
-      .map(f => {
-        const thread = JSON.parse(fs.readFileSync(path.join(CONVERSATIONS_DIR, f), 'utf8'));
-        return {
-          threadId:  thread.threadId,
-          messages:  thread.messages.length,
-          updatedAt: thread.updatedAt,
-          summary:   !!thread.summary,
-        };
-      })
-      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    const rows = await db.listThreads();
+    return rows.map(r => ({
+      threadId:     r.thread_id,
+      messages:     r.message_count,
+      updatedAt:    r.updated_at,
+      summary:      !!r.summary,
+    }));
   } catch {
     return [];
   }
@@ -248,23 +257,23 @@ function listThreads() {
 /**
  * Add a system note to a thread.
  */
-function addNote(threadId, note) {
-  const thread = _loadThread(threadId);
+async function addNote(threadId, note) {
+  const thread = await _loadThread(threadId);
   thread.messages.push({
     role:    'system',
     content: `[Note] ${note}`,
     ts:      new Date().toISOString(),
   });
-  _saveThread(thread);
+  await _saveThread(thread);
 }
 
 /**
  * Clear a thread's history (keeps summary if any).
  */
-function clearThread(threadId) {
-  const thread = _loadThread(threadId);
+async function clearThread(threadId) {
+  const thread = await _loadThread(threadId);
   thread.messages = [];
-  _saveThread(thread);
+  await _saveThread(thread);
 }
 
 module.exports = { chat, getHistory, listThreads, addNote, clearThread };

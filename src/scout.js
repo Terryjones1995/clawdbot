@@ -19,7 +19,8 @@ const path    = require('path');
 const https   = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
 
-const mini    = require('./skills/openai-mini');
+const mini      = require('./skills/openai-mini');
+const archivist = require('./archivist');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -291,6 +292,15 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
   appendLog('INFO', 'research', 'system', 'success',
     `type=${type} depth=${depth} model=${actualModel} sources=${sources.length} query="${query.slice(0, 60)}"`);
 
+  // Store to Archivist — non-blocking, non-fatal
+  archivist.store({
+    type:         'research',
+    content:      `Query: ${query}\n\n${summary}${sources.length ? '\n\nSources:\n' + sources.join('\n') : ''}`,
+    tags:         [type, depth, actualModel],
+    source_agent: 'Scout',
+    ttl_days:     90,
+  }).catch(() => {});
+
   return {
     query,
     type,
@@ -300,7 +310,7 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
     model_used:        actualModel,
     escalated:         actualModel !== mini.MODEL,
     escalation_reason: actualModel !== mini.MODEL ? reason : null,
-    stored:            false, // Archivist integration — future
+    stored:            true,
     flagged_urgent,
     logged:            true,
   };

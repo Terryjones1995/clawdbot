@@ -9,9 +9,9 @@ The bot account is **Ghost#6982**. PM2 app name is `ghost`.
 
 ## Tech Stack
 
-- **Runtime**: Node.js, Express, PM2 (Windows service via pm2-windows-startup)
+- **Runtime**: Node.js, Express, PM2 (Linux service via PM2 + systemd)
 - **Discord**: discord.js, bot runs in one guild only (DISCORD_GUILD_ID)
-- **Default AI**: Ollama + qwen2.5-coder:7b (local, free, always try first)
+- **Default AI**: Ollama + qwen3-coder (local, free, always try first)
 - **Real-time / web queries**: OpenAI gpt-4o-mini-search-preview (cheapest with date awareness)
 - **Web / trend research**: Grok grok-4-1-fast-reasoning (via xai API)
 - **Deep synthesis / escalation**: Claude Sonnet (claude-sonnet-4-6)
@@ -52,7 +52,7 @@ logs/out.log, logs/error.log     — PM2 output logs
 
 ## Model Routing Rules (free-first, non-negotiable)
 
-1. **Default**: qwen2.5-coder:7b via Ollama (free, local)
+1. **Default**: qwen3-coder via Ollama (free, local)
 2. **Real-time data** (weather, temp, prices, news, scores): gpt-4o-mini-search-preview + inject today's date
 3. **Web / trend queries**: Grok grok-4-1-fast-reasoning
 4. **Deep competitive / trend synthesis**: Claude Sonnet
@@ -98,27 +98,76 @@ DISCORD_CH_RECEPTION
 ANTHROPIC_API_KEY
 OPENAI_API_KEY
 GROK_API_KEY
-OLLAMA_MODEL=qwen2.5-coder:7b
+OLLAMA_MODEL=qwen3-coder
 OLLAMA_HOST=http://localhost:11434
 OLLAMA_EMBED_MODEL=nomic-embed-text
 IDLE_SHUTDOWN_MINUTES=120
+DISCORD_CH_RECEPTION=
+GROK_API_KEY=
+PORTAL_SECRET=
+```
+
+## Linux Deployment (AlmaLinux 9)
+
+```bash
+# 1. Install PM2 globally (once per server)
+npm install -g pm2
+
+# 2. Install project dependencies
+npm install
+
+# 3. Copy and fill secrets
+cp .env.example .env
+# edit .env — never commit it
+
+# 4. Start Ghost under PM2
+npm run pm2:start        # starts both ghost and ghost-portal
+
+# 5. Persist across reboots via systemd (run once)
+pm2 startup systemd      # prints a command — run it as root/sudo
+pm2 save                 # saves the current process list
+
+# 6. Verify
+npm run pm2:status
+npm run pm2:logs
+curl http://localhost:18789/api/heartbeat
 ```
 
 ## Common Commands
 
 ```bash
 npm run pm2:status      # check if ghost is running
-npm run pm2:restart     # apply code changes
+npm run pm2:restart     # apply code changes (ghost only)
 npm run pm2:logs        # tail live logs
 npm run pm2:stop        # stop the bot
+npm run portal:restart  # restart portal only
+pm2 restart all         # restart both apps
+```
+
+## Safe Restart Workflow
+
+```bash
+# After any code change to server.js or src/:
+npm run pm2:restart
+
+# After portal changes:
+npm run portal:restart
+
+# Full reset (clears PM2 state):
+pm2 delete all && npm run pm2:start
+
+# Kill a stuck process (Linux):
+kill -9 <PID>
+# Or via PM2 (preferred):
+pm2 stop ghost && pm2 start ecosystem.config.js
 ```
 
 ## Notes
 
-- Ollama runs at localhost:11434; models: qwen2.5-coder:7b, nomic-embed-text
+- Ollama runs at localhost:11434; models: qwen3-coder, nomic-embed-text
 - PM2 auto-restarts on crash; daily cron restart at 4am UTC; max 450MB RAM
 - Heartbeat idle-shutdown after 120min inactivity → PM2 restarts immediately
-- Windows platform — use PowerShell for process kills: `powershell -Command "Stop-Process -Id X -Force"`
+- Platform: AlmaLinux 9 / systemd — use `kill -9 <PID>` for stuck processes
 
 ---
 

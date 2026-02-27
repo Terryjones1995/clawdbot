@@ -230,6 +230,14 @@ async function run({ task, context = '', workers: forceWorkers, dry_run = false 
   appendLog('INFO', 'complete', 'system', 'success',
     `task="${task.slice(0, 60)}" workers=${subtasks.length} success=${successCount} duration=${duration}ms`);
 
+  archivist.store({
+    type:         'agent_output',
+    content:      `Operator Task: ${task}\nWorkers: ${subtasks.map(s => s.worker).join(', ')}\n\n${summary}`,
+    tags:         ['orchestration', ...subtasks.map(s => s.worker)],
+    source_agent: 'Operator',
+    ttl_days:     90,
+  }).catch(() => {});
+
   return {
     task,
     subtasks:      subtasks.map(s => ({ worker: s.worker, label: s.label })),

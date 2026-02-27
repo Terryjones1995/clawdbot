@@ -17,6 +17,7 @@ const fs        = require('fs');
 const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const mini      = require('./skills/openai-mini');
+const archivist = require('./archivist');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -257,6 +258,15 @@ async function run(input) {
     escalated,
     `files=${files.length} priority=${priority}`
   );
+
+  // Store to Archivist — non-blocking, non-fatal
+  archivist.store({
+    type:         'agent_output',
+    content:      `Task: ${task} — ${description}\n\nPlan:\n${result.plan}${result.notes ? '\n\nNotes: ' + result.notes : ''}`,
+    tags:         [task, priority, modelUsed],
+    source_agent: 'Forge',
+    ttl_days:     180,
+  }).catch(() => {});
 
   return result;
 }
