@@ -59,19 +59,21 @@ class DiscordConnector {
     this.client.on('messageCreate', (message) => {
       if (message.author.bot) return;
 
-      // Ignore messages from other guilds — only respond in configured guild or DMs
-      if (message.guild && message.guild.id !== this.guildId) return;
+      // Allow all guilds — responses are scoped per-guild in sentinel
+      // (Primary guild gets full agent routing; all guilds get @mention responses)
 
       const userRole = this._resolveRole(message.author.id, message.member);
       const event = {
-        event:     'message',
-        channel:   message.channel.name || 'dm',
+        event:      'message',
+        channel:    message.channel.name || 'dm',
         channel_id: message.channel.id,
-        user:      message.author.tag,
-        user_id:   message.author.id,
-        user_role: userRole,
-        content:   message.content,
-        raw:       message,
+        guild_id:   message.guild?.id ?? null,
+        is_primary: message.guild?.id === this.guildId,
+        user:       message.author.tag,
+        user_id:    message.author.id,
+        user_role:  userRole,
+        content:    message.content,
+        raw:        message,
       };
 
       this._handlers.forEach(fn => {
@@ -94,6 +96,11 @@ class DiscordConnector {
 
   _resolveRole(userId, member) {
     if (userId === this.ownerUserId) return 'OWNER';
+    // Check portal-managed admin list (independent of Discord roles)
+    try {
+      const botAdmins = require('../../src/botAdmins');
+      if (botAdmins.isAdmin(userId)) return 'ADMIN';
+    } catch { /* botAdmins module not loaded yet — ignore */ }
     if (member) {
       const names = member.roles.cache.map(r => r.name.toLowerCase());
       if (names.includes('admin'))  return 'ADMIN';
@@ -180,10 +187,10 @@ class DiscordConnector {
   }
 
   /** Kick a member. Warden-gated. */
-  async kickUser(userId, reason = 'No reason provided') {
+  async kickUser(userId, reason = 'No reason provided', guildId = null) {
     this._assertReady();
     try {
-      const guild  = await this.client.guilds.fetch(this.guildId);
+      const guild  = await this.client.guilds.fetch(guildId || this.guildId);
       const member = await guild.members.fetch(userId);
       await member.kick(reason);
       this._log('INFO', 'kick-user', 'system', 'success', `user=${userId} reason="${reason}"`);
@@ -194,10 +201,10 @@ class DiscordConnector {
   }
 
   /** Ban a member. Warden-gated. */
-  async banUser(userId, reason = 'No reason provided') {
+  async banUser(userId, reason = 'No reason provided', guildId = null) {
     this._assertReady();
     try {
-      const guild = await this.client.guilds.fetch(this.guildId);
+      const guild = await this.client.guilds.fetch(guildId || this.guildId);
       await guild.bans.create(userId, { reason });
       this._log('INFO', 'ban-user', 'system', 'success', `user=${userId} reason="${reason}"`);
     } catch (err) {
@@ -209,9 +216,9 @@ class DiscordConnector {
   // ── Role Management ───────────────────────────────────────────────────────
 
   /** List all roles in the guild. */
-  async listRoles() {
+  async listRoles(guildId = null) {
     this._assertReady();
-    const guild = await this.client.guilds.fetch(this.guildId);
+    const guild = await this.client.guilds.fetch(guildId || this.guildId);
     await guild.roles.fetch();
     return guild.roles.cache
       .filter(r => r.name !== '@everyone')
@@ -220,10 +227,10 @@ class DiscordConnector {
   }
 
   /** Create a new guild role. */
-  async createRole(name, { color = null, hoist = false, mentionable = false } = {}) {
+  async createRole(name, { color = null, hoist = false, mentionable = false } = {}, guildId = null) {
     this._assertReady();
     try {
-      const guild = await this.client.guilds.fetch(this.guildId);
+      const guild = await this.client.guilds.fetch(guildId || this.guildId);
       const role  = await guild.roles.create({
         name,
         ...(color ? { color } : {}),
@@ -240,10 +247,10 @@ class DiscordConnector {
   }
 
   /** Delete a guild role by name (case-insensitive). */
-  async deleteRole(name) {
+  async deleteRole(name, guildId = null) {
     this._assertReady();
     try {
-      const guild = await this.client.guilds.fetch(this.guildId);
+      const guild = await this.client.guilds.fetch(guildId || this.guildId);
       await guild.roles.fetch();
       const role = guild.roles.cache.find(r => r.name.toLowerCase() === name.toLowerCase());
       if (!role) throw new Error(`Role "${name}" not found`);
@@ -257,10 +264,10 @@ class DiscordConnector {
   }
 
   /** Assign a role to a user by role name (case-insensitive). */
-  async assignRole(userId, roleName) {
+  async assignRole(userId, roleName, guildId = null) {
     this._assertReady();
     try {
-      const guild  = await this.client.guilds.fetch(this.guildId);
+      const guild  = await this.client.guilds.fetch(guildId || this.guildId);
       await guild.roles.fetch();
       const role   = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
       if (!role) throw new Error(`Role "${roleName}" not found`);
@@ -274,10 +281,10 @@ class DiscordConnector {
   }
 
   /** Remove a role from a user by role name. */
-  async removeRole(userId, roleName) {
+  async removeRole(userId, roleName, guildId = null) {
     this._assertReady();
     try {
-      const guild  = await this.client.guilds.fetch(this.guildId);
+      const guild  = await this.client.guilds.fetch(guildId || this.guildId);
       await guild.roles.fetch();
       const role   = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
       if (!role) throw new Error(`Role "${roleName}" not found`);
@@ -291,10 +298,10 @@ class DiscordConnector {
   }
 
   /** Delete a channel by name or ID. */
-  async deleteChannel(nameOrId) {
+  async deleteChannel(nameOrId, guildId = null) {
     this._assertReady();
     try {
-      const guild = await this.client.guilds.fetch(this.guildId);
+      const guild = await this.client.guilds.fetch(guildId || this.guildId);
       await guild.channels.fetch();
       const channel = guild.channels.cache.get(nameOrId)
         ?? guild.channels.cache.find(c => c.name.toLowerCase() === (nameOrId || '').toLowerCase());
@@ -309,10 +316,10 @@ class DiscordConnector {
   }
 
   /** Timeout (mute) a member for durationMinutes. Requires MODERATE_MEMBERS permission. */
-  async timeoutUser(userId, durationMinutes = 10, reason = 'Timed out by Ghost') {
+  async timeoutUser(userId, durationMinutes = 10, reason = 'Timed out by Ghost', guildId = null) {
     this._assertReady();
     try {
-      const guild  = await this.client.guilds.fetch(this.guildId);
+      const guild  = await this.client.guilds.fetch(guildId || this.guildId);
       const member = await guild.members.fetch(userId);
       const until  = new Date(Date.now() + durationMinutes * 60_000);
       await member.disableCommunicationUntil(until, reason);
@@ -324,10 +331,10 @@ class DiscordConnector {
     }
   }
 
-  /** List members in the primary guild. Returns up to limit results. */
-  async listMembers(limit = 100) {
+  /** List members in a guild. Returns up to limit results. */
+  async listMembers(limit = 100, guildId = null) {
     this._assertReady();
-    const guild   = await this.client.guilds.fetch(this.guildId);
+    const guild   = await this.client.guilds.fetch(guildId || this.guildId);
     const members = await guild.members.fetch({ limit });
     return [...members.values()].map(m => ({
       id:          m.id,
@@ -339,9 +346,9 @@ class DiscordConnector {
   }
 
   /** Find a guild member by username, display name, or @mention snowflake. */
-  async findMemberByName(query) {
+  async findMemberByName(query, guildId = null) {
     this._assertReady();
-    const guild   = await this.client.guilds.fetch(this.guildId);
+    const guild   = await this.client.guilds.fetch(guildId || this.guildId);
     const members = await guild.members.fetch();
     const lower   = (query || '').toLowerCase().replace(/[<@!>]/g, '');
     // Try ID match first (from mention extraction)
@@ -412,10 +419,10 @@ class DiscordConnector {
   }
 
   /** Create a text channel. */
-  async createChannel(name, { topic = '', categoryId = null } = {}) {
+  async createChannel(name, { topic = '', categoryId = null } = {}, guildId = null) {
     this._assertReady();
     try {
-      const guild   = await this.client.guilds.fetch(this.guildId);
+      const guild   = await this.client.guilds.fetch(guildId || this.guildId);
       const { ChannelType } = require('discord.js');
       const channel = await guild.channels.create({
         name,

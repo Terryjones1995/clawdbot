@@ -163,6 +163,15 @@ async function initSchema() {
     CREATE INDEX IF NOT EXISTS message_feedback_thread_idx ON message_feedback (thread_id)
   `);
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS portal_admins (
+      user_id    TEXT PRIMARY KEY,
+      username   TEXT,
+      added_by   TEXT NOT NULL DEFAULT 'owner',
+      added_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   console.log('[DB] Schema ready');
 }
 
@@ -380,10 +389,35 @@ async function storeFeedback({ threadId, contentHash, rating, note = null }) {
   );
 }
 
+// ── Portal Admin helpers ──────────────────────────────────────────────────────
+
+async function listBotAdmins() {
+  const { rows } = await query(
+    'SELECT user_id, username, added_by, added_at FROM portal_admins ORDER BY added_at DESC',
+  );
+  return rows;
+}
+
+async function addBotAdmin(userId, username = null, addedBy = 'owner') {
+  await query(
+    `INSERT INTO portal_admins (user_id, username, added_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id) DO UPDATE
+       SET username = COALESCE(EXCLUDED.username, portal_admins.username),
+           added_by = EXCLUDED.added_by`,
+    [userId, username, addedBy],
+  );
+}
+
+async function removeBotAdmin(userId) {
+  await query('DELETE FROM portal_admins WHERE user_id = $1', [userId]);
+}
+
 module.exports = {
   pool, query, initSchema, logEntry,
   getThread, upsertThread, listThreads,
   storeFact, getFacts, getAllFacts,
   getProfile, upsertProfile,
   storeFeedback,
+  listBotAdmins, addBotAdmin, removeBotAdmin,
 };

@@ -85,12 +85,12 @@ async function _parse(text) {
 /**
  * Resolve a user_id from parsed command.
  * If user_id already set (from @mention), use it.
- * If username set, look up by name.
+ * If username set, look up by name in the target guild.
  */
-async function _resolveUserId(parsed) {
+async function _resolveUserId(parsed, guildId = null) {
   if (parsed.user_id) return parsed.user_id;
   if (parsed.username) {
-    const found = await discord.findMemberByName(parsed.username);
+    const found = await discord.findMemberByName(parsed.username, guildId);
     if (!found) throw new Error(`No member found matching "${parsed.username}". Try @mentioning them directly.`);
     return found.id;
   }
@@ -102,9 +102,10 @@ async function _resolveUserId(parsed) {
  *
  * @param {string} text       - raw command text (with @mention prefix already stripped in sentinel)
  * @param {string} userRole   - OWNER | ADMIN | AGENT | MEMBER
+ * @param {string|null} guildId - Discord guild ID to target (null = primary guild)
  * @returns {Promise<string>} - reply to send back to user
  */
-async function run(text, userRole = 'OWNER') {
+async function run(text, userRole = 'OWNER', guildId = null) {
   let parsed;
   try {
     parsed = await _parse(text);
@@ -146,83 +147,83 @@ async function run(text, userRole = 'OWNER') {
     switch (parsed.action) {
 
       case 'list_roles': {
-        const roles = await discord.listRoles();
+        const roles = await discord.listRoles(guildId);
         if (!roles.length) return 'No roles found in the server.';
         return `**Roles (${roles.length}):**\n${roles.map(r => `• ${r.name}`).join('\n')}`;
       }
 
       case 'list_members': {
-        const members = await discord.listMembers(100);
+        const members = await discord.listMembers(100, guildId);
         const shown   = members.slice(0, 30);
         const lines   = shown.map(m => `• **${m.displayName}** \`${m.username}\``);
         return `**Members (${members.length} total, showing ${shown.length}):**\n${lines.join('\n')}`;
       }
 
       case 'find_user': {
-        const found = await discord.findMemberByName(parsed.query || '');
+        const found = await discord.findMemberByName(parsed.query || '', guildId);
         if (!found) return `No member found matching \`${parsed.query}\`.`;
         return `**${found.displayName}** (@${found.username})\nID: \`${found.id}\`\nRoles: ${found.roles.join(', ') || 'none'}`;
       }
 
       case 'create_role': {
-        const role = await discord.createRole(parsed.role_name, { color: parsed.color });
+        const role = await discord.createRole(parsed.role_name, { color: parsed.color }, guildId);
         return `✅ Role **${role.name}** created.`;
       }
 
       case 'delete_role': {
-        await discord.deleteRole(parsed.role_name);
+        await discord.deleteRole(parsed.role_name, guildId);
         return `✅ Role **${parsed.role_name}** deleted.`;
       }
 
       case 'assign_role': {
-        const uid = await _resolveUserId(parsed);
+        const uid = await _resolveUserId(parsed, guildId);
         if (!uid) return `Need a user to assign the role to. Try "@Ghost assign role ${parsed.role_name} to @username".`;
-        await discord.assignRole(uid, parsed.role_name);
+        await discord.assignRole(uid, parsed.role_name, guildId);
         return `✅ Role **${parsed.role_name}** assigned.`;
       }
 
       case 'remove_role': {
-        const uid = await _resolveUserId(parsed);
+        const uid = await _resolveUserId(parsed, guildId);
         if (!uid) return `Need a user to remove the role from. Try "@Ghost remove role ${parsed.role_name} from @username".`;
-        await discord.removeRole(uid, parsed.role_name);
+        await discord.removeRole(uid, parsed.role_name, guildId);
         return `✅ Role **${parsed.role_name}** removed.`;
       }
 
       case 'create_channel': {
-        const ch = await discord.createChannel(parsed.channel_name, { topic: parsed.topic });
+        const ch = await discord.createChannel(parsed.channel_name, { topic: parsed.topic }, guildId);
         return `✅ Channel **#${ch.name}** created.`;
       }
 
       case 'delete_channel': {
-        await discord.deleteChannel(parsed.channel_name);
+        await discord.deleteChannel(parsed.channel_name, guildId);
         return `✅ Channel **#${parsed.channel_name}** deleted.`;
       }
 
       case 'kick_user': {
-        const uid = await _resolveUserId(parsed);
+        const uid = await _resolveUserId(parsed, guildId);
         if (!uid) return `Need a user to kick. Try "@Ghost kick @username".`;
-        await discord.kickUser(uid, parsed.reason || 'Kicked by Ghost');
+        await discord.kickUser(uid, parsed.reason || 'Kicked by Ghost', guildId);
         return `✅ User kicked. Reason: ${parsed.reason || 'none'}`;
       }
 
       case 'ban_user': {
-        const uid = await _resolveUserId(parsed);
+        const uid = await _resolveUserId(parsed, guildId);
         if (!uid) return `Need a user to ban. Try "@Ghost ban @username".`;
-        await discord.banUser(uid, parsed.reason || 'Banned by Ghost');
+        await discord.banUser(uid, parsed.reason || 'Banned by Ghost', guildId);
         return `✅ User banned. Reason: ${parsed.reason || 'none'}`;
       }
 
       case 'timeout_user':
       case 'mute_user': {
-        const uid  = await _resolveUserId(parsed);
+        const uid  = await _resolveUserId(parsed, guildId);
         if (!uid) return `Need a user to timeout. Try "@Ghost timeout @username 10 minutes".`;
         const mins = parsed.duration_minutes || 10;
-        await discord.timeoutUser(uid, mins, parsed.reason || 'Timed out by Ghost');
+        await discord.timeoutUser(uid, mins, parsed.reason || 'Timed out by Ghost', guildId);
         return `✅ User timed out for **${mins} minutes**. Reason: ${parsed.reason || 'none'}`;
       }
 
       case 'dm_user': {
-        const uid = await _resolveUserId(parsed);
+        const uid = await _resolveUserId(parsed, guildId);
         if (!uid) return `Need a user to DM. Try "@Ghost dm @username your message".`;
         if (!parsed.message) return `No message content to send.`;
         await discord.sendDM(uid, parsed.message);

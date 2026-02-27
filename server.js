@@ -30,6 +30,7 @@ const scribe          = require('./src/scribe');
 const heartbeat       = require('./src/heartbeat');
 const registry        = require('./src/agentRegistry');
 const db              = require('./src/db');
+const botAdmins       = require('./src/botAdmins');
 
 const app    = express();
 const server = http.createServer(app);
@@ -163,7 +164,9 @@ registry.subscribe((agentId, update) => {
 // ── Boot ───────────────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
   console.log(`OpenClaw gateway running on http://localhost:${PORT}`);
-  db.initSchema().catch(err => console.error('[DB] Schema init failed:', err.message));
+  db.initSchema()
+    .then(() => botAdmins.load())
+    .catch(err => console.error('[DB] Schema init failed:', err.message));
   heartbeat.start();
   sentinel.start().catch(err => console.error('[Sentinel] Failed to start:', err.message));
   scribe.start();

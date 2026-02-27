@@ -796,7 +796,7 @@ async function handleMentionMessage(event) {
   // Admin command path — ADMIN/OWNER with admin intent keywords
   if ((user_role === 'OWNER' || user_role === 'ADMIN') && ADMIN_INTENT_RE.test(text)) {
     try {
-      const reply = await discordAdmin.run(text, user_role);
+      const reply = await discordAdmin.run(text, user_role, event.guild_id);
       await discord.sendMessage(channel_id, reply);
       appendLog('INFO', 'mention-admin', user_role, 'success', `cmd="${text.slice(0, 60)}"`);
     } catch (err) {

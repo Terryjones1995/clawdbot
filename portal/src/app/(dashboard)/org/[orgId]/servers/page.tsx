@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Server, Users, Hash, Shield, RefreshCw, Crown, Mic, MessageSquare } from 'lucide-react';
+import { Server, Users, Hash, Shield, RefreshCw, Crown, Mic, MessageSquare, UserPlus, Trash2, ShieldCheck } from 'lucide-react';
 import { formatRelative } from '@/lib/utils';
 
 interface DiscordChannel {
@@ -27,6 +27,14 @@ interface DiscordGuild {
   channels:    DiscordChannel[];
   roles:       DiscordRole[];
   features:    string[];
+}
+
+interface BotAdmin {
+  user_id:     string;
+  username:    string | null;
+  discord_tag: string | null;
+  added_by:    string;
+  added_at:    string;
 }
 
 const stagger = {
@@ -76,6 +84,158 @@ function GuildIcon({ guild }: { guild: DiscordGuild }) {
   );
 }
 
+// ── Bot Admins Panel ──────────────────────────────────────────────────────────
+
+function BotAdminsPanel() {
+  const [admins,    setAdmins]    = useState<BotAdmin[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [inputId,   setInputId]   = useState('');
+  const [adding,    setAdding]    = useState(false);
+  const [error,     setError]     = useState<string | null>(null);
+  const [success,   setSuccess]   = useState<string | null>(null);
+
+  const fetchAdmins = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res  = await fetch('/api/discord/admins', { cache: 'no-store' });
+      const data = await res.json();
+      setAdmins(data.admins ?? []);
+    } catch {
+      /* silently fail */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAdmins(); }, [fetchAdmins]);
+
+  const handleAdd = async () => {
+    const userId = inputId.trim();
+    if (!userId || !/^\d{17,20}$/.test(userId)) {
+      setError('Enter a valid Discord user ID (17-20 digits). Right-click a user in Discord → Copy ID.');
+      return;
+    }
+    setAdding(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res  = await fetch('/api/discord/admins', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to add admin.');
+      } else {
+        setInputId('');
+        setSuccess(`Added ${data.username ?? userId} as bot admin.`);
+        await fetchAdmins();
+      }
+    } catch {
+      setError('Could not reach Ghost.');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (userId: string) => {
+    try {
+      await fetch(`/api/discord/admins/${userId}`, { method: 'DELETE' });
+      setAdmins(prev => prev.filter(a => a.user_id !== userId));
+    } catch { /* non-fatal */ }
+  };
+
+  return (
+    <div className="glass rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(124,58,237,0.2)' }}>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+        <ShieldCheck size={15} className="text-purple-400 shrink-0" />
+        <div className="flex-1">
+          <p className="text-sm font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Bot Admins</p>
+          <p className="text-[10px] text-ghost-muted">Discord user IDs granted admin privileges across all servers</p>
+        </div>
+        <span className="text-[10px] font-mono text-purple-400 px-2 py-0.5 rounded"
+              style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.2)' }}>
+          {admins.length} admin{admins.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Add admin input */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={inputId}
+            onChange={e => { setInputId(e.target.value); setError(null); setSuccess(null); }}
+            onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }}
+            placeholder="Discord user ID (e.g. 123456789012345678)"
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-mono placeholder:text-ghost-muted/40 focus:outline-none focus:border-purple-500/50 transition-colors"
+          />
+          <button
+            onClick={handleAdd}
+            disabled={adding || !inputId.trim()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white transition-all disabled:opacity-40"
+            style={{ background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.4)' }}
+          >
+            <UserPlus size={12} />
+            {adding ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+
+        {error   && <p className="text-[10px] text-red-400 font-mono">{error}</p>}
+        {success && <p className="text-[10px] text-green-400 font-mono">{success}</p>}
+
+        {/* Admin list */}
+        {loading ? (
+          <div className="text-[10px] text-ghost-muted/40 font-mono text-center py-4">Loading admins…</div>
+        ) : admins.length === 0 ? (
+          <div className="text-[10px] text-ghost-muted/40 font-mono text-center py-4">
+            No portal admins yet. Add a Discord user ID above to grant admin privileges.
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {admins.map(admin => (
+              <div
+                key={admin.user_id}
+                className="flex items-center gap-3 py-2 px-3 rounded-lg group hover:bg-white/5 transition-all"
+              >
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-purple-300"
+                  style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.25)' }}
+                >
+                  {(admin.discord_tag ?? admin.username ?? admin.user_id).charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-white font-medium truncate">
+                    {admin.discord_tag ?? admin.username ?? admin.user_id}
+                  </p>
+                  <p className="text-[9px] text-ghost-muted/50 font-mono">ID: {admin.user_id} · Added by {admin.added_by}</p>
+                </div>
+                <button
+                  onClick={() => handleRemove(admin.user_id)}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-ghost-muted/40 hover:text-red-400 transition-all"
+                  title="Remove admin"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Info */}
+        <p className="text-[9px] text-ghost-muted/40 font-mono leading-relaxed">
+          Portal admins can @mention Ghost in any Discord server and run admin commands (kick, ban, timeout, role management, etc.).
+          To find a user ID in Discord: enable Developer Mode → right-click user → Copy User ID.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
 export default function ServersPage() {
   const [guilds,      setGuilds]      = useState<DiscordGuild[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -94,7 +254,6 @@ export default function ServersPage() {
       } else {
         const list: DiscordGuild[] = data.guilds ?? [];
         setGuilds(list);
-        // Auto-expand primary guild
         const primary = list.find(g => g.isPrimary);
         if (primary && !expanded) setExpanded(primary.id);
       }
@@ -112,9 +271,9 @@ export default function ServersPage() {
   const totalChannels = guilds.reduce((s, g) => s + g.channels.length, 0);
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
+    <div className="p-6 max-w-screen-xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Server size={16} className="text-ghost-accent" />
@@ -133,7 +292,7 @@ export default function ServersPage() {
       </div>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: 'Guilds',   value: loading ? '—' : guilds.length,   color: '#00D4FF' },
           { label: 'Members',  value: loading ? '—' : totalMembers,    color: '#10B981' },
@@ -293,13 +452,16 @@ export default function ServersPage() {
         </motion.div>
       )}
 
+      {/* Bot Admins Panel */}
+      <BotAdminsPanel />
+
       {/* Footer notice */}
-      <div className="mt-6 glass rounded-xl p-4 flex items-center gap-3"
+      <div className="glass rounded-xl p-4 flex items-center gap-3"
            style={{ border: '1px solid rgba(0,212,255,0.08)' }}>
         <Shield size={14} className="text-ghost-accent shrink-0" />
         <p className="text-[10px] text-ghost-muted">
-          <span className="text-white font-medium">Bot responds in the PRIMARY guild.</span>{' '}
-          Ghost can @mention respond anywhere in the primary server. Other guilds are visible but commands only execute in the configured DISCORD_GUILD_ID.
+          <span className="text-white font-medium">@Ghost responds to everyone in any server.</span>{' '}
+          Bot admins and users with the &quot;admin&quot; Discord role can run privileged commands. Dangerous actions (kick/ban) require OWNER approval via Warden.
         </p>
       </div>
     </div>
