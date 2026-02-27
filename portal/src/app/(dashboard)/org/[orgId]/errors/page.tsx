@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, CheckCircle2, RefreshCw, Zap, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RefreshCw, Zap, ChevronDown, ChevronUp, Loader2, Wrench } from 'lucide-react';
 import { formatRelative } from '@/lib/utils';
 
 interface ErrorEntry {
@@ -32,10 +32,30 @@ function LevelBadge({ level }: { level: string }) {
 }
 
 export default function ErrorsPage() {
-  const [errors,   setErrors]   = useState<ErrorEntry[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [filter,   setFilter]   = useState<'all' | 'error' | 'warn'>('all');
+  const [errors,    setErrors]    = useState<ErrorEntry[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [expanded,  setExpanded]  = useState<string | null>(null);
+  const [filter,    setFilter]    = useState<'all' | 'error' | 'warn'>('all');
+  const [fixing,    setFixing]    = useState<string | null>(null);
+  const [fixResult, setFixResult] = useState<Record<string, string>>({});
+
+  const triggerAutoFix = useCallback(async (err: ErrorEntry) => {
+    setFixing(err.id);
+    setFixResult(prev => ({ ...prev, [err.id]: '' }));
+    try {
+      const res  = await fetch('/api/forge/autofix', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ errorNote: err.note || `${err.action}: ${err.outcome}` }),
+      });
+      const data = await res.json();
+      setFixResult(prev => ({ ...prev, [err.id]: data.summary || data.error || 'Done.' }));
+    } catch {
+      setFixResult(prev => ({ ...prev, [err.id]: 'Request failed — Ghost offline?' }));
+    } finally {
+      setFixing(null);
+    }
+  }, []);
 
   const fetchErrors = useCallback(async () => {
     try {
@@ -176,6 +196,24 @@ export default function ErrorsPage() {
                           <pre className="text-[10px] text-ghost-muted/70 font-mono whitespace-pre-wrap bg-black/30 p-3 rounded-lg">
                             {err.note}
                           </pre>
+                        </div>
+                      )}
+                      {err.level === 'ERROR' && (
+                        <div className="flex items-center gap-3 pt-1">
+                          <button
+                            onClick={() => triggerAutoFix(err)}
+                            disabled={fixing === err.id}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+                            style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.2)', color: '#00D4FF' }}>
+                            {fixing === err.id
+                              ? <><Loader2 size={11} className="animate-spin" /> Fixing…</>
+                              : <><Wrench size={11} /> Auto-Fix with o4-mini</>}
+                          </button>
+                          {fixResult[err.id] && (
+                            <span className={`text-[10px] font-mono ${fixResult[err.id].startsWith('Fixed') ? 'text-green-400' : 'text-red-400'}`}>
+                              {fixResult[err.id]}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>

@@ -13,11 +13,16 @@
  *   const result = await forge.run({ task, description, files, context, priority });
  */
 
-const fs        = require('fs');
-const path      = require('path');
-const Anthropic = require('@anthropic-ai/sdk');
-const mini      = require('./skills/openai-mini');
-const archivist = require('./archivist');
+const fs             = require('fs');
+const path           = require('path');
+const { execSync }   = require('child_process');
+const Anthropic      = require('@anthropic-ai/sdk');
+const mini           = require('./skills/openai-mini');
+const codexModel     = require('./skills/openai-codex');
+const archivist      = require('./archivist');
+const db             = require('./db');
+
+const ROOT_DIR = path.join(__dirname, '..');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -100,6 +105,9 @@ function detectModel(task, description, files = [], context = '') {
   if (files.length >= 3) {
     return { model: 'claude-sonnet-4-6', reason: `multi-file change (${files.length} files)` };
   }
+
+  // Bug fixes: o4-mini (reasoning model, much better at debugging)
+  if (task === 'bug-fix') return { model: 'o4-mini', reason: 'bug-fix uses o4-mini reasoning model' };
 
   // Default: gpt-4o-mini (fast, cheap)
   return { model: 'gpt-4o-mini', reason: null };
@@ -213,6 +221,20 @@ async function run(input) {
   let escalated   = targetModel !== 'gpt-4o-mini';
   let miniFailed  = false;
 
+  // ── o4-mini (reasoning model — bug fixes) ──
+  if (targetModel === 'o4-mini') {
+    const { text, escalate, reason } = await codexModel.fixCode(SYSTEM_PROMPT, userMessage, 8192);
+    if (!escalate) {
+      rawResponse = text;
+    } else {
+      // o4-mini unavailable — fall through to Claude Sonnet
+      miniFailed = true;
+      modelUsed  = 'claude-sonnet-4-6';
+      escalated  = true;
+      logEscalation('o4-mini', 'claude-sonnet-4-6', `o4-mini unavailable: ${reason}`, task);
+    }
+  }
+
   // ── gpt-4o-mini (fast, cheap default) ──
   if (targetModel === 'gpt-4o-mini') {
     const { result, escalate, reason } = await mini.tryChat(
@@ -231,9 +253,9 @@ async function run(input) {
   }
 
   // ── Claude Sonnet or Opus (escalation path) ──
-  if (targetModel !== 'gpt-4o-mini' || miniFailed) {
+  if ((targetModel !== 'gpt-4o-mini' && targetModel !== 'o4-mini') || miniFailed) {
     if (escalationReason && !miniFailed) {
-      logEscalation('gpt-4o-mini', modelUsed, escalationReason, task);
+      logEscalation(targetModel, modelUsed, escalationReason, task);
     }
     rawResponse = await callClaude(modelUsed, userMessage);
   }
@@ -271,4 +293,141 @@ async function run(input) {
   return result;
 }
 
-module.exports = { run, detectModel };
+// ── Auto-fix ──────────────────────────────────────────────────────────────────
+
+const AUTOFIX_SYSTEM = `You are Forge, an expert Node.js/JavaScript debugger for the Ghost AI system.
+You will receive an error message and the full contents of the broken file.
+Your job is to output the COMPLETE fixed file — every line, no placeholders, no "// ... rest of file".
+The fix must be minimal and surgical — change only what is needed to resolve the error.
+
+Rules:
+1. Output ONLY the fixed file content. No explanation, no markdown fences, no JSON wrapper.
+2. Preserve all existing logic, formatting, and comments unless they are wrong.
+3. If the error is in an import/require, fix only that import.
+4. If you cannot determine the fix with confidence, output the original file unchanged.`;
+
+// Parse an error note/stack to extract a likely file path
+function _extractFilePath(note = '', action = '') {
+  // Look for src/something.js patterns in error note
+  const patterns = [
+    /src\/[\w/.-]+\.js/g,
+    /openclaw\/[\w/.-]+\.js/g,
+    /portal\/[\w/.-]+\.[jt]sx?/g,
+  ];
+  for (const p of patterns) {
+    const m = note.match(p) || action.match(p);
+    if (m) return m[0];
+  }
+  return null;
+}
+
+/**
+ * Auto-fix: read recent errors, identify the broken file, fix it with o4-mini,
+ * write it to disk, and restart Ghost.
+ *
+ * @param {object} opts
+ *   - errorNote  {string}  specific error text (optional — fetched from DB if not given)
+ *   - filePath   {string}  override file path to fix (optional)
+ *   - restart    {boolean} restart ghost after fix (default true)
+ *
+ * @returns {{ fixed, filePath, model_used, summary, patch }}
+ */
+async function autoFix({ errorNote, filePath, restart = true } = {}) {
+  // Step 1: get the error to fix
+  let targetError = errorNote;
+  let targetFile  = filePath;
+
+  if (!targetError) {
+    // Fetch most recent ERROR from agent_logs
+    const { rows } = await db.query(
+      `SELECT note, action, agent FROM agent_logs WHERE level = 'ERROR' ORDER BY ts DESC LIMIT 5`
+    );
+    if (!rows.length) return { fixed: false, summary: 'No errors found in agent_logs.' };
+
+    // Use the first entry that has a recognisable file path
+    for (const row of rows) {
+      const fp = _extractFilePath(row.note || '', row.action || '');
+      if (fp) {
+        targetError = row.note;
+        targetFile  = targetFile || fp;
+        break;
+      }
+    }
+    if (!targetError) {
+      targetError = rows[0].note;
+    }
+  }
+
+  if (!targetFile) {
+    return {
+      fixed:   false,
+      summary: `Could not identify which file to fix from error:\n${targetError}`,
+      model_used: 'none',
+    };
+  }
+
+  // Step 2: read the file
+  const absPath = path.isAbsolute(targetFile)
+    ? targetFile
+    : path.join(ROOT_DIR, targetFile);
+
+  let originalContent;
+  try {
+    originalContent = fs.readFileSync(absPath, 'utf8');
+  } catch (err) {
+    return { fixed: false, summary: `Cannot read file ${targetFile}: ${err.message}`, model_used: 'none' };
+  }
+
+  // Step 3: call o4-mini to generate the fix
+  const userPrompt = `ERROR:\n${targetError}\n\nFILE: ${targetFile}\n\`\`\`js\n${originalContent}\n\`\`\``;
+
+  const { text: fixedContent, escalate, reason } = await codexModel.fixCode(AUTOFIX_SYSTEM, userPrompt, 16384);
+
+  if (escalate || !fixedContent.trim()) {
+    return {
+      fixed:      false,
+      filePath:   targetFile,
+      model_used: 'o4-mini',
+      summary:    `o4-mini failed to generate a fix: ${reason}`,
+    };
+  }
+
+  // Strip any accidental markdown fences
+  const clean = fixedContent.replace(/^```(?:js|javascript|typescript)?\n?/i, '').replace(/\n?```$/, '').trim();
+
+  // Sanity check — must look like JS (has 'use strict' or require or function or const)
+  if (!/\b(require|const|function|module\.exports|'use strict'|import )\b/.test(clean)) {
+    return {
+      fixed:      false,
+      filePath:   targetFile,
+      model_used: 'o4-mini',
+      summary:    'Fix output did not look like valid JS — not applied for safety.',
+    };
+  }
+
+  // Step 4: write the fix
+  fs.writeFileSync(absPath, clean, 'utf8');
+
+  log('autofix', 'system', 'o4-mini', 'applied', true, `file=${targetFile}`);
+
+  // Step 5: restart Ghost
+  let restartMsg = '';
+  if (restart) {
+    try {
+      execSync('pm2 restart ghost', { timeout: 15000 });
+      restartMsg = ' Ghost restarted.';
+    } catch (err) {
+      restartMsg = ` Restart failed: ${err.message}`;
+    }
+  }
+
+  return {
+    fixed:      true,
+    filePath:   targetFile,
+    model_used: 'o4-mini',
+    summary:    `Fixed \`${targetFile}\` using o4-mini.${restartMsg}`,
+    patch:      `Original ${originalContent.split('\n').length} lines → Fixed ${clean.split('\n').length} lines`,
+  };
+}
+
+module.exports = { run, detectModel, autoFix };

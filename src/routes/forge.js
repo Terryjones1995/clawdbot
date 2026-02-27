@@ -35,6 +35,21 @@ router.post('/', async (req, res) => {
   }
 });
 
+// POST /api/forge/autofix — read last error from agent_logs, fix the file with o4-mini
+router.post('/autofix', async (req, res) => {
+  const { errorNote, filePath, restart } = req.body || {};
+  try {
+    const result = await forge.autoFix({
+      errorNote: errorNote || undefined,
+      filePath:  filePath  || undefined,
+      restart:   restart !== undefined ? !!restart : true,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/forge/triage — returns which model would be used, no LLM call
 router.post('/triage', (req, res) => {
   const { task, description, files, context } = req.body;
