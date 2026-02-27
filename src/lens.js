@@ -20,6 +20,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const mini    = require('./skills/openai-mini');
 const warden  = require('./warden');
 const scribe  = require('./scribe');
+const helm    = require('./helm');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -259,6 +260,12 @@ async function systemAlerts() {
       });
     }
   }
+
+  // Helm infra alerts (PM2, disk, memory, Redis)
+  try {
+    const helmAlerts = await helm.quickAlerts();
+    alerts.push(...helmAlerts);
+  } catch { /* non-fatal — Helm unavailable */ }
 
   return alerts;
 }

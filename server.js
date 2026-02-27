@@ -24,6 +24,7 @@ const logsRoutes      = require('./src/routes/logs');
 const receptionRoutes = require('./src/routes/reception');
 const feedbackRoutes  = require('./src/routes/feedback');
 const discordRoutes   = require('./src/routes/discord');
+const helmRoutes      = require('./src/routes/helm');
 const requireAuth     = require('./src/middleware/requireAuth');
 const sentinel        = require('./src/sentinel');
 const scribe          = require('./src/scribe');
@@ -122,6 +123,7 @@ app.use('/api/archivist', archivistRoutes);
 app.use('/api/keeper',    keeperRoutes);
 app.use('/api/operator',  operatorRoutes);
 app.use('/api/codex',     codexRoutes);
+app.use('/api/helm',      helmRoutes);
 
 // ── SPA catch-all — serve React app for any non-API route ─────────────────────
 app.get('*', (req, res) => {

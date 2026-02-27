@@ -31,6 +31,8 @@ const archivist   = require('./archivist');
 const keeper          = require('./keeper');
 const db              = require('./db');
 const discordAdmin    = require('./discordAdminHandler');
+const registry        = require('./agentRegistry');
+const helm            = require('./helm');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -54,6 +56,7 @@ function getAgentChannelMap() {
     [process.env.DISCORD_CH_LENS]:        'Lens',
     [process.env.DISCORD_CH_COURIER]:     'Courier',
     [process.env.DISCORD_CH_ARCHIVIST]:   'Archivist',
+    [process.env.DISCORD_CH_HELM]:        'Helm',
   };
 }
 
@@ -403,6 +406,24 @@ async function handleArchivistMessage(event, plain = false) {
   }
 }
 
+async function handleHelmMessage(event, plain = false) {
+  const text   = event.content.trim();
+  const result = await helm.run({ task: text, user_role: event.user_role });
+
+  if (plain) {
+    await discord.sendMessage(event.channel_id, (result.summary || 'Done.').slice(0, 2000));
+  } else {
+    const embed = new EmbedBuilder()
+      .setColor(0x10B981)
+      .setTitle('⚙️ Helm — SRE Status')
+      .setDescription((result.summary || 'No data.').slice(0, 3000))
+      .addFields([{ name: '🤖 Model', value: `\`${result.model_used || 'none'}\``, inline: true }])
+      .setFooter({ text: 'Ghost AI • Helm' })
+      .setTimestamp();
+    await discord.send(event.channel_id, { embeds: [embed] });
+  }
+}
+
 async function handleWardenMessage(event) {
   // Warden channel supports same !commands as #commands
   await handleCommand(event);
@@ -431,6 +452,7 @@ async function handleAgentMessage(event, agentName, plain = false) {
       case 'Archivist':    await handleArchivistMessage(event, plain);   break;
       case 'Warden':       await handleWardenMessage(event);             break;
       case 'Switchboard':  await handleSwitchboardMessage(event);       break;
+      case 'Helm':         await handleHelmMessage(event, plain);       break;
       default:
         await discord.sendMessage(event.channel_id, `⚠️ No handler for ${agentName}.`);
     }
@@ -666,6 +688,7 @@ const AGENT_HANDLERS = {
   Archivist:   (ev, plain) => handleArchivistMessage(ev, plain),
   Warden:      (ev)        => handleWardenMessage(ev),
   Switchboard: (ev)        => handleNaturalLanguage(ev),
+  Helm:        (ev, plain) => handleHelmMessage(ev, plain),
 };
 
 // Short messages that look conversational — handled by Ollama before Switchboard
