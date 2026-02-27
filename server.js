@@ -22,6 +22,7 @@ const codexRoutes     = require('./src/routes/codex');
 const jobsRoutes      = require('./src/routes/jobs');
 const logsRoutes      = require('./src/routes/logs');
 const receptionRoutes = require('./src/routes/reception');
+const feedbackRoutes  = require('./src/routes/feedback');
 const requireAuth     = require('./src/middleware/requireAuth');
 const sentinel        = require('./src/sentinel');
 const scribe          = require('./src/scribe');
@@ -85,6 +86,7 @@ const PORTAL_BYPASS = (req, res, next) => {
   requireAuth(req, res, next);
 };
 
+app.use('/api/feedback',      PORTAL_BYPASS, feedbackRoutes);
 app.use('/api/jobs',          PORTAL_BYPASS, jobsRoutes);
 app.use('/api/logs',          PORTAL_BYPASS, logsRoutes.router);
 app.use('/api/errors',        PORTAL_BYPASS, logsRoutes.errorsRouter);

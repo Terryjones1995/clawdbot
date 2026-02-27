@@ -194,6 +194,56 @@ function _parseResponse(text) {
   };
 }
 
+// ── Research fact extraction ──────────────────────────────────────────────────
+
+/**
+ * Extract 2-3 durable facts from a research result and store in ghost_memory.
+ * Skips web/trend types — those go stale quickly.
+ * Non-blocking, non-fatal.
+ *
+ * @param {string} query
+ * @param {string} summary
+ * @param {string} type
+ */
+async function _extractResearchFacts(query, summary, type) {
+  if (type === 'web' || type === 'trend') return; // real-time data goes stale
+
+  const prompt = `Extract 2-3 factual, durable facts from this research result. Skip opinions, estimates, or time-sensitive info.
+Return ONLY a JSON array: [{"key": "research:slug", "content": "Fact as a complete sentence.", "category": "misc"}]
+If no durable facts exist, return [].
+
+Query: ${query}
+Result: ${summary.slice(0, 800)}`;
+
+  const miniRes = await _miniChat([
+    { role: 'system', content: 'You are a fact extractor. Return only a valid JSON array, nothing else.' },
+    { role: 'user',   content: prompt },
+  ]);
+  if (miniRes.escalate || !miniRes.text) return;
+
+  let facts;
+  try {
+    const raw = miniRes.text.trim()
+      .replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    facts = JSON.parse(raw);
+    if (!Array.isArray(facts)) return;
+  } catch { return; }
+
+  for (const fact of facts) {
+    if (!fact.key || !fact.content) continue;
+    await db.storeFact({
+      key:      fact.key,
+      content:  fact.content,
+      category: fact.category ?? 'misc',
+      source:   'research',
+    }).catch(() => {});
+  }
+
+  if (facts.length > 0) {
+    console.log(`[Scout] Stored ${facts.length} research fact(s) for: ${query.slice(0, 50)}`);
+  }
+}
+
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 /**
@@ -329,6 +379,9 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
 
   appendLog('INFO', 'research', 'system', 'success',
     `type=${type} depth=${depth} model=${actualModel} sources=${sources.length} query="${query.slice(0, 60)}"`);
+
+  // Extract and store durable facts from factual/competitive research (non-blocking)
+  _extractResearchFacts(query, summary, type).catch(() => {});
 
   // Store to Archivist — non-blocking, non-fatal
   archivist.store({

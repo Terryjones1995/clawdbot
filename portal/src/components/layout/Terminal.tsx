@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGhostStore, type TerminalLine } from '@/store';
 import { formatRelative } from '@/lib/utils';
-import { X, Minus, Maximize2, ChevronRight, Loader2, Terminal as TerminalIcon, Copy, Check } from 'lucide-react';
+import { X, Minus, Maximize2, ChevronRight, Loader2, Terminal as TerminalIcon, Copy, Check, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 const COMMANDS = [
   '/help', '/agents', '/status', '/ping', '/jobs', '/logs tail',
@@ -51,7 +51,8 @@ export function Terminal() {
 
   const bottomRef  = useRef<HTMLDivElement>(null);
   const inputRef   = useRef<HTMLInputElement>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedId,  setCopiedId]  = useState<string | null>(null);
+  const [feedback,  setFeedback]  = useState<Record<string, number>>({});
 
   function copyLine(id: string, text: string) {
     navigator.clipboard.writeText(text).then(() => {
@@ -63,6 +64,17 @@ export function Terminal() {
   function copyAll() {
     const text = terminalLines.map(l => `${linePrefix(l.type)}${l.content}`).join('\n');
     navigator.clipboard.writeText(text);
+  }
+
+  async function sendFeedback(lineId: string, content: string, rating: number) {
+    setFeedback(f => ({ ...f, [lineId]: rating }));
+    try {
+      await fetch('/api/feedback', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ threadId: 'portal-unknown', content, rating }),
+      });
+    } catch { /* non-fatal */ }
   }
 
   useEffect(() => {
@@ -295,6 +307,24 @@ export function Terminal() {
                     : <Copy size={10} />
                   }
                 </button>
+                {line.type === 'output' && (
+                  <>
+                    <button
+                      onClick={() => sendFeedback(line.id, line.content, 1)}
+                      className={`opacity-0 group-hover:opacity-100 shrink-0 mt-0.5 transition-all ${feedback[line.id] === 1 ? 'text-green-400' : 'text-ghost-muted/40 hover:text-green-400'}`}
+                      title="Good response"
+                    >
+                      <ThumbsUp size={10} />
+                    </button>
+                    <button
+                      onClick={() => sendFeedback(line.id, line.content, -1)}
+                      className={`opacity-0 group-hover:opacity-100 shrink-0 mt-0.5 transition-all ${feedback[line.id] === -1 ? 'text-red-400' : 'text-ghost-muted/40 hover:text-red-400'}`}
+                      title="Bad response"
+                    >
+                      <ThumbsDown size={10} />
+                    </button>
+                  </>
+                )}
               </div>
             ))}
             {loading && (

@@ -57,6 +57,13 @@ async function query(text, params) {
  * Called once at server startup.
  */
 async function initSchema() {
+  // Enable pgvector extension (non-fatal — requires pgvector installed on Neon)
+  try {
+    await query(`CREATE EXTENSION IF NOT EXISTS vector`);
+  } catch (err) {
+    console.warn('[DB] pgvector extension unavailable — semantic search disabled:', err.message);
+  }
+
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id           SERIAL PRIMARY KEY,
@@ -125,6 +132,37 @@ async function initSchema() {
     CREATE INDEX IF NOT EXISTS ghost_memory_updated_idx ON ghost_memory (updated_at DESC)
   `);
 
+  // Add embedding column if pgvector is available (non-fatal)
+  try {
+    await query(`ALTER TABLE ghost_memory ADD COLUMN IF NOT EXISTS embedding vector(768)`);
+  } catch (err) {
+    console.warn('[DB] Could not add embedding column (pgvector may be unavailable):', err.message);
+  }
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id    TEXT PRIMARY KEY,
+      username   TEXT,
+      data       JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS message_feedback (
+      id           BIGSERIAL PRIMARY KEY,
+      thread_id    TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      rating       SMALLINT NOT NULL,
+      note         TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS message_feedback_thread_idx ON message_feedback (thread_id)
+  `);
+
   console.log('[DB] Schema ready');
 }
 
@@ -188,19 +226,35 @@ async function listThreads() {
 
 /**
  * Upsert a fact into ghost_memory.
- * If the key already exists, update content + updated_at.
+ * If the key already exists, update content + updated_at (and embedding if provided).
+ * @param {number[]|null} embedding — optional 768-dim vector from nomic-embed-text
  */
-async function storeFact({ key, content, category = 'misc', source = 'conversation', threadId = null }) {
-  await query(
-    `INSERT INTO ghost_memory (key, content, category, source, thread_id)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (key) DO UPDATE
-       SET content    = EXCLUDED.content,
-           category   = EXCLUDED.category,
-           source     = EXCLUDED.source,
-           updated_at = NOW()`,
-    [key, content, category, source, threadId],
-  );
+async function storeFact({ key, content, category = 'misc', source = 'conversation', threadId = null, embedding = null }) {
+  if (embedding && Array.isArray(embedding)) {
+    const embStr = `[${embedding.join(',')}]`;
+    await query(
+      `INSERT INTO ghost_memory (key, content, category, source, thread_id, embedding)
+       VALUES ($1, $2, $3, $4, $5, $6::vector)
+       ON CONFLICT (key) DO UPDATE
+         SET content    = EXCLUDED.content,
+             category   = EXCLUDED.category,
+             source     = EXCLUDED.source,
+             embedding  = COALESCE(EXCLUDED.embedding, ghost_memory.embedding),
+             updated_at = NOW()`,
+      [key, content, category, source, threadId, embStr],
+    );
+  } else {
+    await query(
+      `INSERT INTO ghost_memory (key, content, category, source, thread_id)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (key) DO UPDATE
+         SET content    = EXCLUDED.content,
+             category   = EXCLUDED.category,
+             source     = EXCLUDED.source,
+             updated_at = NOW()`,
+      [key, content, category, source, threadId],
+    );
+  }
 }
 
 // Common English stop words to ignore when matching facts
@@ -217,15 +271,35 @@ const STOP_WORDS = new Set([
 ]);
 
 /**
- * Retrieve facts relevant to a query using word-overlap matching.
- * Uses ILIKE for broad matching — more lenient than strict FTS AND.
- * Falls back to most-recently-updated facts when no keywords match.
+ * Retrieve facts relevant to a query.
+ * If queryEmbedding is provided, uses pgvector cosine similarity (semantic search).
+ * Falls back to ILIKE keyword matching when no embeddings or vector search fails.
  *
- * @param {string} queryText  — the user's message to match against
- * @param {number} limit      — max facts to return (default 15)
+ * @param {string}       queryText       — the user's message to match against
+ * @param {number}       limit           — max facts to return (default 15)
+ * @param {number[]|null} queryEmbedding — optional 768-dim embedding for semantic search
  */
-async function getFacts(queryText = '', limit = 15) {
-  // Extract meaningful keywords (length > 3, not stop words)
+async function getFacts(queryText = '', limit = 15, queryEmbedding = null) {
+  // Semantic vector search (pgvector) — preferred when embeddings are available
+  if (queryEmbedding && Array.isArray(queryEmbedding)) {
+    try {
+      const embStr = `[${queryEmbedding.join(',')}]`;
+      const { rows } = await query(
+        `SELECT content, category, updated_at, 1 AS relevant
+         FROM ghost_memory
+         WHERE embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector
+         LIMIT $2`,
+        [embStr, limit],
+      );
+      if (rows.length > 0) return rows;
+      // If no rows have embeddings yet, fall through to ILIKE
+    } catch (err) {
+      console.warn('[DB] Vector search failed, falling back to ILIKE:', err.message);
+    }
+  }
+
+  // ILIKE keyword fallback — extract meaningful keywords (length > 3, not stop words)
   const keywords = (queryText || '').toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
@@ -263,4 +337,53 @@ async function getAllFacts() {
   return rows;
 }
 
-module.exports = { pool, query, initSchema, logEntry, getThread, upsertThread, listThreads, storeFact, getFacts, getAllFacts };
+// ── User Profile helpers ──────────────────────────────────────────────────────
+
+/**
+ * Get a user's profile. Returns null if not found.
+ */
+async function getProfile(userId) {
+  const { rows } = await query(
+    'SELECT user_id, username, data FROM user_profiles WHERE user_id = $1',
+    [userId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Merge data into a user's profile (shallow JSONB merge).
+ */
+async function upsertProfile(userId, data, username = null) {
+  await query(
+    `INSERT INTO user_profiles (user_id, username, data, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (user_id) DO UPDATE
+       SET data       = user_profiles.data || EXCLUDED.data,
+           username   = COALESCE(EXCLUDED.username, user_profiles.username),
+           updated_at = NOW()`,
+    [userId, username, JSON.stringify(data)],
+  );
+}
+
+// ── Feedback helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Store thumbs up/down feedback for a Ghost reply.
+ * @param {{ threadId, contentHash, rating, note }} params
+ *   rating: 1 = good, -1 = bad
+ */
+async function storeFeedback({ threadId, contentHash, rating, note = null }) {
+  await query(
+    `INSERT INTO message_feedback (thread_id, content_hash, rating, note)
+     VALUES ($1, $2, $3, $4)`,
+    [threadId, contentHash, rating, note],
+  );
+}
+
+module.exports = {
+  pool, query, initSchema, logEntry,
+  getThread, upsertThread, listThreads,
+  storeFact, getFacts, getAllFacts,
+  getProfile, upsertProfile,
+  storeFeedback,
+};

@@ -118,8 +118,9 @@ async function _maybeSummarise(thread) {
 
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function _buildSystemPrompt(thread, pineconeContext = null, factsContext = null) {
+function _buildSystemPrompt(thread, pineconeContext = null, factsContext = null, profileContext = null) {
   let sys = _ghostSystem();
+  if (profileContext)  sys += `\n\n## User profile:\n${profileContext}`;
   if (factsContext)    sys += `\n\n## What Ghost knows (persistent memory):\n${factsContext}`;
   if (pineconeContext) sys += `\n\n## Relevant long-term memories:\n${pineconeContext}`;
   if (thread.summary)  sys += `\n\n## Conversation summary so far:\n${thread.summary}`;
@@ -176,6 +177,22 @@ async function chat(threadId, userMessage) {
   // Fetch relevant facts from ghost_memory (persistent knowledge)
   const factsContext = await memory.getRelevantFacts(userMessage).catch(() => null);
 
+  // Load user profile (person + preference facts in structured JSONB)
+  let profileContext = null;
+  try {
+    const userId = threadId.startsWith('portal-') ? threadId.slice(7)
+      : threadId.startsWith('discord:') ? threadId.split(':')[2]
+      : null;
+    if (userId) {
+      const profile = await db.getProfile(userId);
+      if (profile?.data && Object.keys(profile.data).length > 0) {
+        profileContext = Object.entries(profile.data)
+          .map(([k, v]) => `• ${k.replace(/_/g, ' ')}: ${v}`)
+          .join('\n');
+      }
+    }
+  } catch { /* non-fatal */ }
+
   // Augment with relevant Pinecone memories
   let pineconeContext = null;
   try {
@@ -191,7 +208,7 @@ async function chat(threadId, userMessage) {
     }
   } catch { /* non-fatal */ }
 
-  const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext);
+  const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext, profileContext);
   const messages     = _buildMessages(
     { ...thread, messages: thread.messages.slice(0, -1) },
     userMessage,

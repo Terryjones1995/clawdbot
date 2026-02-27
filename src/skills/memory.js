@@ -20,8 +20,9 @@
  *   memory.extractAndStore(userMessage, assistantReply, threadId).catch(() => {});
  */
 
-const db   = require('../db');
-const mini = require('./openai-mini');
+const db     = require('../db');
+const mini   = require('./openai-mini');
+const ollama = require('../../openclaw/skills/ollama');
 
 const EXTRACT_SYSTEM = `You are a fact extractor for Ghost, an AI assistant managing a league operations platform (HOF League) and Discord server.
 
@@ -40,10 +41,48 @@ Skip:
 - Chitchat with no lasting value
 
 Return ONLY a JSON array. Each item:
-{ "key": "unique-slug-identifier", "content": "Complete fact as a clear sentence.", "category": "person|org|league|preference|decision|misc" }
+{ "key": "category:normalized_topic", "content": "Complete fact as a clear sentence.", "category": "person|org|league|preference|decision|misc" }
 
-The key must be a stable, unique slug (e.g. "user-taylor-role", "hof-season-3-start", "team-raptors-captain").
+KEY FORMAT — use category:normalized_topic with underscores (no dashes), e.g.:
+  preference:favorite_color, preference:communication_style
+  person:taylor_discord_username, person:taylor_role
+  org:hof_league_season, league:season_3_start_date
+  decision:payment_method
+
+The same concept must ALWAYS produce the same key. Use the category prefix + a stable snake_case topic.
 If no notable facts found, return [].`;
+
+/**
+ * Extract userId from a threadId.
+ * portal-{userId} → userId
+ * discord:{channelId}:{userId} → userId
+ */
+function _extractUserId(threadId) {
+  if (!threadId) return null;
+  if (threadId.startsWith('portal-')) return threadId.slice(7);
+  const parts = threadId.split(':');
+  if (parts[0] === 'discord' && parts.length === 3) return parts[2];
+  return null;
+}
+
+/**
+ * Delete conflicting facts in the same category/topic before upserting.
+ * Prevents "favorite color is blue" AND "favorite color is red" coexisting.
+ * Matches on category + first two underscore-segments of topic.
+ */
+async function _sweepConflicts(key, category) {
+  const colonIdx = key.indexOf(':');
+  if (colonIdx === -1) return;
+  const topic = key.slice(colonIdx + 1);
+  const parts = topic.split('_');
+  if (parts.length < 2) return;
+  // Match keys with same category and same first two topic words but different full key
+  const prefix = `${category}:${parts.slice(0, 2).join('_')}%`;
+  await db.query(
+    'DELETE FROM ghost_memory WHERE category = $1 AND key LIKE $2 AND key != $3',
+    [category, prefix, key],
+  ).catch(() => {});
+}
 
 /**
  * Extract facts from a conversation exchange and store them in Neon.
@@ -74,15 +113,41 @@ async function extractAndStore(userMessage, assistantReply, threadId) {
     return; // model returned garbage — skip silently
   }
 
+  const userId = _extractUserId(threadId);
+  const profileData = {};
+
   for (const fact of facts) {
     if (!fact.key || !fact.content) continue;
+    const category = fact.category ?? 'misc';
+
+    // Conflict sweep — remove stale facts with same category+topic prefix
+    await _sweepConflicts(fact.key, category);
+
+    // Generate embedding for semantic search (non-fatal — Ollama may be unavailable)
+    let embedding = null;
+    try {
+      embedding = await ollama.embed(fact.content);
+    } catch { /* non-fatal — store without embedding */ }
+
     await db.storeFact({
       key:      fact.key,
       content:  fact.content,
-      category: fact.category ?? 'misc',
+      category,
       source:   'conversation',
       threadId,
+      embedding,
     }).catch(() => {});
+
+    // Collect profile-relevant facts (person + preference categories)
+    if ((category === 'person' || category === 'preference') && userId) {
+      const topicKey = fact.key.split(':')[1] || fact.key;
+      profileData[topicKey] = fact.content;
+    }
+  }
+
+  // Merge profile-relevant facts into user_profiles
+  if (Object.keys(profileData).length > 0 && userId) {
+    db.upsertProfile(userId, profileData).catch(() => {});
   }
 
   if (facts.length > 0) {
@@ -92,6 +157,7 @@ async function extractAndStore(userMessage, assistantReply, threadId) {
 
 /**
  * Retrieve facts relevant to the current user message.
+ * Tries semantic vector search first (Ollama embedding), falls back to ILIKE.
  * Returns a formatted string ready to inject into the system prompt,
  * or null if no facts are stored yet.
  *
@@ -100,7 +166,13 @@ async function extractAndStore(userMessage, assistantReply, threadId) {
  */
 async function getRelevantFacts(query, limit = 15) {
   try {
-    const rows = await db.getFacts(query, limit);
+    // Try to generate an embedding for semantic retrieval
+    let queryEmbedding = null;
+    try {
+      queryEmbedding = await ollama.embed(query);
+    } catch { /* Ollama unavailable — fall back to ILIKE */ }
+
+    const rows = await db.getFacts(query, limit, queryEmbedding);
     if (!rows.length) return null;
 
     // Group by category for cleaner injection
