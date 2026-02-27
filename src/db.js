@@ -1,5 +1,10 @@
 'use strict';
 
+const { EventEmitter } = require('events');
+
+/** Emits 'error-logged' with the entry object whenever level=ERROR is stored. */
+const events = new EventEmitter();
+
 /**
  * db.js — Neon PostgreSQL connection pool
  *
@@ -186,6 +191,9 @@ async function logEntry({ level = 'INFO', agent, action, outcome, model = null, 
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [level, agent, action, outcome, model, user_role, note]
     );
+    if (level === 'ERROR') {
+      events.emit('error-logged', { level, agent, action, outcome, model, note });
+    }
   } catch { /* non-fatal */ }
 }
 
@@ -414,7 +422,7 @@ async function removeBotAdmin(userId) {
 }
 
 module.exports = {
-  pool, query, initSchema, logEntry,
+  pool, query, initSchema, logEntry, events,
   getThread, upsertThread, listThreads,
   storeFact, getFacts, getAllFacts,
   getProfile, upsertProfile,

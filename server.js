@@ -25,6 +25,7 @@ const receptionRoutes = require('./src/routes/reception');
 const feedbackRoutes  = require('./src/routes/feedback');
 const discordRoutes   = require('./src/routes/discord');
 const helmRoutes      = require('./src/routes/helm');
+const forgeAgent      = require('./src/forge');
 const requireAuth     = require('./src/middleware/requireAuth');
 const sentinel        = require('./src/sentinel');
 const scribe          = require('./src/scribe');
@@ -95,6 +96,7 @@ app.use('/api/discord',       PORTAL_BYPASS, discordRoutes);
 app.use('/api/jobs',          PORTAL_BYPASS, jobsRoutes);
 app.use('/api/logs',          PORTAL_BYPASS, logsRoutes.router);
 app.use('/api/errors',        PORTAL_BYPASS, logsRoutes.errorsRouter);
+app.use('/api/forge',         PORTAL_BYPASS, forgeRoutes);
 app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
   try {
     const summary = await scribe.dailySummary({ narrative: false });
@@ -114,7 +116,6 @@ app.use(requireAuth);
 app.use('/api/agents',    agentRoutes);
 app.use('/api/route',     routeRoute);
 app.use('/api/warden',    wardenRoutes);
-app.use('/api/forge',     forgeRoutes);
 app.use('/api/scribe',    scribeRoutes);
 app.use('/api/scout',     scoutRoutes);
 app.use('/api/lens',      lensRoutes);
@@ -163,6 +164,25 @@ registry.subscribe((agentId, update) => {
     _broadcast({ type: 'agent:update', agent: update });
   }
 });
+
+// ── Auto-fix: listen for ERROR log entries and attempt automatic code repair ───
+{
+  // Track last fix time per file to avoid thrashing (max 1 fix per file per 10min)
+  const _fixCooldowns = new Map();
+  db.events.on('error-logged', async (entry) => {
+    const note = entry.note || '';
+    // Quick pre-filter: only attempt if note looks like it contains a JS file path
+    if (!/(?:src|openclaw|portal)\/[\w/.-]+\.[jt]sx?/.test(note)) return;
+    const cooldownKey = note.slice(0, 80); // use note prefix as key
+    const last = _fixCooldowns.get(cooldownKey) || 0;
+    if (Date.now() - last < 10 * 60 * 1000) return; // 10-min cooldown per error
+    _fixCooldowns.set(cooldownKey, Date.now());
+    console.log(`[AutoFix] Error detected in ${entry.agent} — attempting auto-repair…`);
+    forgeAgent.autoFix({ errorNote: note, restart: true }).then(r => {
+      console.log(`[AutoFix] ${r.fixed ? '✓ Fixed' : '✗ No fix'}: ${r.summary}`);
+    }).catch(() => {});
+  });
+}
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
