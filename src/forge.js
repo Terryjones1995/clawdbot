@@ -383,12 +383,16 @@ async function autoFix({ errorNote, filePath, restart = true } = {}) {
 
   const { text: fixedContent, escalate, reason } = await codexModel.fixCode(AUTOFIX_SYSTEM, userPrompt, 16384);
 
+  const modelUsed = fixedContent ? (codexModel.MODEL || 'gpt-5.3-codex') : 'gpt-5.3-codex';
+
   if (escalate || !fixedContent.trim()) {
+    const summary = `gpt-5.3-codex failed to generate a fix: ${reason}`;
+    db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix', outcome: 'no-fix', model: modelUsed, note: `file=${targetFile} | ${summary}` }).catch(() => {});
     return {
       fixed:      false,
       filePath:   targetFile,
-      model_used: 'o4-mini',
-      summary:    `o4-mini failed to generate a fix: ${reason}`,
+      model_used: modelUsed,
+      summary,
     };
   }
 
@@ -397,18 +401,21 @@ async function autoFix({ errorNote, filePath, restart = true } = {}) {
 
   // Sanity check — must look like JS (has 'use strict' or require or function or const)
   if (!/\b(require|const|function|module\.exports|'use strict'|import )\b/.test(clean)) {
+    const summary = 'Fix output did not look like valid JS — not applied for safety.';
+    db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix', outcome: 'no-fix', model: modelUsed, note: `file=${targetFile} | ${summary}` }).catch(() => {});
     return {
       fixed:      false,
       filePath:   targetFile,
-      model_used: 'o4-mini',
-      summary:    'Fix output did not look like valid JS — not applied for safety.',
+      model_used: modelUsed,
+      summary,
     };
   }
 
   // Step 4: write the fix
   fs.writeFileSync(absPath, clean, 'utf8');
 
-  log('autofix', 'system', 'o4-mini', 'applied', true, `file=${targetFile}`);
+  log('autofix', 'system', modelUsed, 'applied', true, `file=${targetFile}`);
+  db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix', outcome: 'fixed', model: modelUsed, note: `file=${targetFile}` }).catch(() => {});
 
   // Step 5: restart Ghost
   let restartMsg = '';
@@ -421,11 +428,12 @@ async function autoFix({ errorNote, filePath, restart = true } = {}) {
     }
   }
 
+  const summary = `Fixed \`${targetFile}\` using ${modelUsed}.${restartMsg}`;
   return {
     fixed:      true,
     filePath:   targetFile,
-    model_used: 'o4-mini',
-    summary:    `Fixed \`${targetFile}\` using o4-mini.${restartMsg}`,
+    model_used: modelUsed,
+    summary,
     patch:      `Original ${originalContent.split('\n').length} lines → Fixed ${clean.split('\n').length} lines`,
   };
 }

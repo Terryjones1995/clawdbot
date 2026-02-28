@@ -13,7 +13,7 @@
 const express = require('express');
 const db      = require('../db');
 
-async function _queryLogs({ limit = 100, level = null, agent = null } = {}) {
+async function _queryLogs({ limit = 100, level = null, agent = null, action = null } = {}) {
   let sql    = `SELECT id, ts, level, agent, action, outcome, model, user_role, note FROM agent_logs`;
   const params = [];
   const where  = [];
@@ -25,6 +25,10 @@ async function _queryLogs({ limit = 100, level = null, agent = null } = {}) {
   if (agent) {
     params.push(agent);
     where.push(`LOWER(agent) = LOWER($${params.length})`);
+  }
+  if (action) {
+    params.push(action.toLowerCase());
+    where.push(`LOWER(action) = $${params.length}`);
   }
 
   if (where.length) sql += ` WHERE ${where.join(' AND ')}`;
@@ -39,12 +43,13 @@ async function _queryLogs({ limit = 100, level = null, agent = null } = {}) {
 const router = express.Router();
 
 router.get('/', async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
-  const level = req.query.level || null;
-  const agent = req.query.agent || null;
+  const limit  = Math.min(parseInt(req.query.limit) || 100, 500);
+  const level  = req.query.level  || null;
+  const agent  = req.query.agent  || null;
+  const action = req.query.action || null;
 
   try {
-    const { rows } = await _queryLogs({ limit, level, agent });
+    const { rows } = await _queryLogs({ limit, level, agent, action });
     return res.json({ logs: rows, total: rows.length });
   } catch (err) {
     console.error('[logs] query failed:', err.message);
