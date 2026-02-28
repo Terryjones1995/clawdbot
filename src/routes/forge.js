@@ -37,11 +37,12 @@ router.post('/', async (req, res) => {
 
 // POST /api/forge/autofix — read last error from agent_logs, fix the file with o4-mini
 router.post('/autofix', async (req, res) => {
-  const { errorNote, filePath, restart } = req.body || {};
+  const { errorNote, filePath, agentName, restart } = req.body || {};
   try {
     const result = await forge.autoFix({
       errorNote: errorNote || undefined,
       filePath:  filePath  || undefined,
+      agentName: agentName || undefined,
       restart:   restart !== undefined ? !!restart : true,
     });
     res.json(result);

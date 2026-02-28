@@ -306,9 +306,25 @@ Rules:
 3. If the error is in an import/require, fix only that import.
 4. If you cannot determine the fix with confidence, output the original file unchanged.`;
 
+// Agent name → most likely source file
+const AGENT_FILE_MAP = {
+  sentinel:    'src/sentinel.js',
+  scout:       'src/scout.js',
+  scribe:      'src/scribe.js',
+  forge:       'src/forge.js',
+  helm:        'src/helm.js',
+  lens:        'src/lens.js',
+  keeper:      'src/keeper.js',
+  warden:      'src/warden.js',
+  archivist:   'src/archivist.js',
+  courier:     'src/courier.js',
+  ghost:       'src/routes/reception.js',
+  codex:       'src/codex.js',
+  switchboard: 'src/switchboard.js',
+};
+
 // Parse an error note/stack to extract a likely file path
 function _extractFilePath(note = '', action = '') {
-  // Look for src/something.js patterns in error note
   const patterns = [
     /src\/[\w/.-]+\.js/g,
     /openclaw\/[\w/.-]+\.js/g,
@@ -322,17 +338,18 @@ function _extractFilePath(note = '', action = '') {
 }
 
 /**
- * Auto-fix: read recent errors, identify the broken file, fix it with o4-mini,
+ * Auto-fix: identify the broken file, fix it with gpt-5.3-codex,
  * write it to disk, and restart Ghost.
  *
  * @param {object} opts
  *   - errorNote  {string}  specific error text (optional — fetched from DB if not given)
  *   - filePath   {string}  override file path to fix (optional)
+ *   - agentName  {string}  agent that logged the error — used to guess file when no path in note
  *   - restart    {boolean} restart ghost after fix (default true)
  *
  * @returns {{ fixed, filePath, model_used, summary, patch }}
  */
-async function autoFix({ errorNote, filePath, restart = true } = {}) {
+async function autoFix({ errorNote, filePath, agentName, restart = true } = {}) {
   // Step 1: get the error to fix
   let targetError = errorNote;
   let targetFile  = filePath;
@@ -344,24 +361,29 @@ async function autoFix({ errorNote, filePath, restart = true } = {}) {
     );
     if (!rows.length) return { fixed: false, summary: 'No errors found in agent_logs.' };
 
-    // Use the first entry that has a recognisable file path
+    // Use the first entry that has a recognisable file path, or fall back to agent mapping
     for (const row of rows) {
-      const fp = _extractFilePath(row.note || '', row.action || '');
+      const fp = _extractFilePath(row.note || '', row.action || '')
+                 || AGENT_FILE_MAP[(row.agent || '').toLowerCase()];
       if (fp) {
         targetError = row.note;
         targetFile  = targetFile || fp;
+        if (!agentName) agentName = row.agent;
         break;
       }
     }
-    if (!targetError) {
-      targetError = rows[0].note;
-    }
+    if (!targetError) targetError = rows[0].note;
+  }
+
+  // If still no file path, try agent name mapping
+  if (!targetFile && agentName) {
+    targetFile = AGENT_FILE_MAP[agentName.toLowerCase()];
   }
 
   if (!targetFile) {
     return {
-      fixed:   false,
-      summary: `Could not identify which file to fix from error:\n${targetError}`,
+      fixed:      false,
+      summary:    `Could not identify which file to fix from error:\n${targetError}`,
       model_used: 'none',
     };
   }

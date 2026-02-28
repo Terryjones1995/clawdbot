@@ -98,7 +98,10 @@ export default function ErrorsPage() {
       const res  = await fetch('/api/forge/autofix', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ errorNote: err.note || `${err.action}: ${err.outcome}` }),
+        body:    JSON.stringify({
+          errorNote: err.note || `${err.action}: ${err.outcome}`,
+          agentName: err.agent,
+        }),
       });
       const data = await res.json();
       setFixResult(prev => ({ ...prev, [err.id]: data.summary || data.error || 'Done.' }));

@@ -170,15 +170,14 @@ registry.subscribe((agentId, update) => {
   // Track last fix time per file to avoid thrashing (max 1 fix per file per 10min)
   const _fixCooldowns = new Map();
   db.events.on('error-logged', async (entry) => {
-    const note = entry.note || '';
-    // Quick pre-filter: only attempt if note looks like it contains a JS file path
-    if (!/(?:src|openclaw|portal)\/[\w/.-]+\.[jt]sx?/.test(note)) return;
-    const cooldownKey = note.slice(0, 80); // use note prefix as key
-    const last = _fixCooldowns.get(cooldownKey) || 0;
-    if (Date.now() - last < 10 * 60 * 1000) return; // 10-min cooldown per error
+    const note        = entry.note  || '';
+    const agentName   = entry.agent || '';
+    const cooldownKey = `${agentName}:${note.slice(0, 80)}`;
+    const last        = _fixCooldowns.get(cooldownKey) || 0;
+    if (Date.now() - last < 10 * 60 * 1000) return; // 10-min cooldown per unique error
     _fixCooldowns.set(cooldownKey, Date.now());
-    console.log(`[AutoFix] Error detected in ${entry.agent} — attempting auto-repair…`);
-    forgeAgent.autoFix({ errorNote: note, restart: true }).then(r => {
+    console.log(`[AutoFix] Error in ${agentName} — attempting auto-repair…`);
+    forgeAgent.autoFix({ errorNote: note, agentName, restart: true }).then(r => {
       console.log(`[AutoFix] ${r.fixed ? '✓ Fixed' : '✗ No fix'}: ${r.summary}`);
     }).catch(() => {});
   });
