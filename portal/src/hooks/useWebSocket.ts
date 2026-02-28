@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useGhostStore } from '@/store';
+import { useGhostStore, ForgeProgressEvent } from '@/store';
 
 export function useGhostWebSocket() {
   const ws = useRef<WebSocket | null>(null);
-  const { upsertAgent, setAgentStatus, pushAgentEvent, pushMessage, setWsConnected } = useGhostStore();
+  const { upsertAgent, setAgentStatus, pushAgentEvent, pushMessage, setWsConnected, setForgeProgress } = useGhostStore();
 
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:18789';
@@ -48,6 +48,12 @@ export function useGhostWebSocket() {
                 break;
               case 'agent/status':
                 if (msg.agentId) setAgentStatus(msg.agentId, msg.status);
+                break;
+              case 'fix-all:start':
+              case 'fix-all:item-start':
+              case 'fix-all:item-done':
+              case 'fix-all:complete':
+                setForgeProgress(msg as ForgeProgressEvent);
                 break;
             }
           } catch { /* ignore parse errors */ }

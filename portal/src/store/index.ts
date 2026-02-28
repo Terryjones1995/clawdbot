@@ -33,6 +33,21 @@ export interface TerminalLine {
   ts:      string;
 }
 
+export interface ForgeProgressEvent {
+  type:        string;
+  index?:      number;
+  total?:      number;
+  errorId?:    string;
+  fixed?:      boolean;
+  summary?:    string;
+  file?:       string;
+  agent?:      string;
+  anyFixed?:   boolean;
+  restartMsg?: string;
+  results?:    Array<{ errorId: string; fixed: boolean; summary: string; filePath?: string }>;
+  ts:          string;
+}
+
 interface GhostStore {
   // Agents
   agents:     Record<string, AgentState>;
@@ -58,6 +73,10 @@ interface GhostStore {
   // WS
   wsConnected: boolean;
   setWsConnected: (v: boolean) => void;
+
+  // Forge progress
+  forgeProgress: ForgeProgressEvent | null;
+  setForgeProgress: (e: ForgeProgressEvent | null) => void;
 
   // Sidebar
   sidebarCollapsed: boolean;
@@ -153,6 +172,10 @@ export const useGhostStore = create<GhostStore>((set, get) => ({
   // ── WS ──
   wsConnected: false,
   setWsConnected: (v) => set({ wsConnected: v }),
+
+  // ── Forge progress ──
+  forgeProgress: null,
+  setForgeProgress: (e) => set({ forgeProgress: e }),
 
   // ── Sidebar ──
   sidebarCollapsed: false,
