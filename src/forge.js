@@ -13,10 +13,10 @@
  *   const result = await forge.run({ task, description, files, context, priority });
  */
 
-const fs             = require('fs');
-const path           = require('path');
-const { execSync }   = require('child_process');
-const Anthropic      = require('@anthropic-ai/sdk');
+const fs                      = require('fs');
+const path                    = require('path');
+const { execSync, spawn }     = require('child_process');
+const Anthropic               = require('@anthropic-ai/sdk');
 const mini           = require('./skills/openai-mini');
 const codexModel     = require('./skills/openai-codex');
 const archivist      = require('./archivist');
@@ -460,4 +460,186 @@ async function autoFix({ errorNote, filePath, agentName, restart = true } = {}) 
   };
 }
 
-module.exports = { run, detectModel, autoFix };
+// ── Auto-fix via Claude Code CLI ──────────────────────────────────────────────
+
+/**
+ * Auto-fix a file using the Claude Code CLI.
+ * Spawns `claude --print --output-format json ...` and writes the result.
+ *
+ * @param {object} opts
+ *   - errorNote  {string}  error text
+ *   - filePath   {string}  override file path (optional)
+ *   - agentName  {string}  agent name — used to guess file when no path in note
+ *
+ * @returns {{ fixed, filePath, model_used, summary, sessionId? }}
+ */
+async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
+  // Resolve target file
+  let targetFile = filePath;
+  if (!targetFile && errorNote) targetFile = _extractFilePath(errorNote, '');
+  if (!targetFile && agentName)  targetFile = AGENT_FILE_MAP[agentName.toLowerCase()];
+
+  if (!targetFile) {
+    return {
+      fixed:      false,
+      model_used: 'claude-code-cli',
+      summary:    `Cannot identify which file to fix from error: ${(errorNote || '').slice(0, 120)}`,
+    };
+  }
+
+  const absPath = path.isAbsolute(targetFile)
+    ? targetFile
+    : path.join(ROOT_DIR, targetFile);
+
+  const prompt = [
+    'You are fixing a bug in the Ghost AI system (Node.js/Express).',
+    '',
+    `PROJECT ROOT: ${ROOT_DIR}`,
+    '',
+    'ERROR DETAILS:',
+    `Agent: ${agentName || 'unknown'}`,
+    `File: ${targetFile}`,
+    `Error: ${errorNote || '(no error text provided)'}`,
+    '',
+    'YOUR TASK:',
+    `1. Read the file at ${absPath}`,
+    '2. Identify the root cause of the error',
+    '3. Apply a minimal surgical fix — change only what is needed',
+    '4. Verify the fix by reading the file back',
+    '5. Do NOT restart services — that is handled externally',
+    '',
+    'Requirements:',
+    '- Preserve all existing logic, comments, and formatting',
+    '- If you cannot determine a safe fix with confidence, leave file unchanged',
+    '- Fix only the broken code path — no refactoring, no new features',
+  ].join('\n');
+
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+
+    const child = spawn(
+      'claude',
+      [
+        '--print',
+        '--output-format', 'json',
+        '--max-turns', '10',
+        '--allowedTools', 'Read,Edit,Bash',
+        '--dangerously-skip-permissions',
+        prompt,
+      ],
+      {
+        env: { ...process.env },
+        cwd: ROOT_DIR,
+        timeout: 120_000,
+      }
+    );
+
+    child.stdout.on('data', d => { stdout += d.toString(); });
+    child.stderr.on('data', d => { stderr += d.toString(); });
+
+    child.on('error', (err) => {
+      const summary = `claude CLI spawn error: ${err.message}`;
+      db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-code-cli', note: `file=${targetFile} | ${summary}` }).catch(() => {});
+      resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        const summary = `claude CLI exited ${code}: ${stderr.slice(0, 300)}`;
+        db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-code-cli', note: `file=${targetFile} | ${summary}` }).catch(() => {});
+        return resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
+      }
+
+      let parsed;
+      try { parsed = JSON.parse(stdout); } catch { parsed = null; }
+
+      const resultText = parsed?.result ?? stdout.trim();
+      const sessionId  = parsed?.session_id ?? undefined;
+
+      const summary = `Fixed \`${targetFile}\` using Claude Code CLI.` + (sessionId ? ` Session: ${sessionId.slice(0, 8)}` : '');
+      db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix-claude', outcome: 'fixed', model: 'claude-code-cli', note: `file=${targetFile}` }).catch(() => {});
+      resolve({ fixed: true, filePath: targetFile, model_used: 'claude-code-cli', summary, sessionId, result: resultText });
+    });
+  });
+}
+
+// ── Fix All ────────────────────────────────────────────────────────────────────
+
+let _fixAllRunning = false;
+
+/**
+ * Sequentially fix an array of errors using Claude Code CLI.
+ * Emits forge:progress events for real-time WS feedback.
+ *
+ * @param {Array<{ id, errorNote, agentName, filePath? }>} errors
+ * @returns {{ results, anyFixed, restartMsg }}
+ */
+async function fixAll(errors = []) {
+  if (_fixAllRunning) {
+    return { results: [], anyFixed: false, restartMsg: 'Fix All already running.' };
+  }
+  _fixAllRunning = true;
+
+  const total = errors.length;
+  db.events.emit('forge:progress', { type: 'fix-all:start', total, ts: new Date().toISOString() });
+
+  const results = [];
+  let anyFixed  = false;
+
+  for (let i = 0; i < errors.length; i++) {
+    const e = errors[i];
+
+    db.events.emit('forge:progress', {
+      type:    'fix-all:item-start',
+      index:   i,
+      total,
+      errorId: e.id,
+      agent:   e.agentName || '',
+      file:    e.filePath || AGENT_FILE_MAP[(e.agentName || '').toLowerCase()] || '',
+      ts:      new Date().toISOString(),
+    });
+
+    let r;
+    try {
+      r = await autoFixWithClaude({ errorNote: e.errorNote, filePath: e.filePath, agentName: e.agentName });
+    } catch (err) {
+      r = { fixed: false, filePath: e.filePath, model_used: 'claude-code-cli', summary: err.message };
+    }
+
+    if (r.fixed) anyFixed = true;
+    results.push({ errorId: e.id, fixed: r.fixed, summary: r.summary, filePath: r.filePath });
+
+    db.events.emit('forge:progress', {
+      type:    'fix-all:item-done',
+      errorId: e.id,
+      fixed:   r.fixed,
+      summary: r.summary,
+      file:    r.filePath || '',
+      ts:      new Date().toISOString(),
+    });
+  }
+
+  let restartMsg = '';
+  if (anyFixed) {
+    try {
+      execSync('pm2 restart ghost', { timeout: 15000 });
+      restartMsg = 'Ghost restarted successfully.';
+    } catch (err) {
+      restartMsg = `Restart failed: ${err.message}`;
+    }
+  }
+
+  db.events.emit('forge:progress', {
+    type:       'fix-all:complete',
+    anyFixed,
+    restartMsg,
+    results,
+    ts:         new Date().toISOString(),
+  });
+
+  _fixAllRunning = false;
+  return { results, anyFixed, restartMsg };
+}
+
+module.exports = { run, detectModel, autoFix, autoFixWithClaude, fixAll };
