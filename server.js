@@ -165,6 +165,9 @@ registry.subscribe((agentId, update) => {
   }
 });
 
+// Forge progress → WebSocket
+db.events.on('forge:progress', (msg) => _broadcast(msg));
+
 // ── Auto-fix: listen for ERROR log entries and attempt automatic code repair ───
 {
   // Track last fix time per file to avoid thrashing (max 1 fix per file per 10min)
@@ -177,8 +180,11 @@ registry.subscribe((agentId, update) => {
     if (Date.now() - last < 10 * 60 * 1000) return; // 10-min cooldown per unique error
     _fixCooldowns.set(cooldownKey, Date.now());
     console.log(`[AutoFix] Error in ${agentName} — attempting auto-repair…`);
-    forgeAgent.autoFix({ errorNote: note, agentName, restart: true }).then(r => {
+    forgeAgent.autoFixWithClaude({ errorNote: note, agentName }).then(r => {
       console.log(`[AutoFix] ${r.fixed ? '✓ Fixed' : '✗ No fix'}: ${r.summary}`);
+      if (r.fixed) {
+        try { require('child_process').execSync('pm2 restart ghost', { timeout: 15000 }); } catch { /* non-fatal */ }
+      }
     }).catch(() => {});
   });
 }
