@@ -12,6 +12,7 @@
 const express          = require('express');
 const { execSync }     = require('child_process');
 const forge            = require('../forge');
+const db               = require('../db');
 
 const router = express.Router();
 
@@ -57,6 +58,56 @@ router.post('/autofix', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// POST /api/forge/fix-one — fire-and-forget single fix; progress via WebSocket
+router.post('/fix-one', async (req, res) => {
+  const { errorId, errorNote, filePath, agentName } = req.body || {};
+  const id = errorId || String(Date.now());
+
+  db.events.emit('forge:progress', {
+    type:    'fix-one:start',
+    errorId: id,
+    agent:   agentName || '',
+    file:    filePath  || '',
+    ts:      new Date().toISOString(),
+  });
+
+  forge.autoFixWithClaude({
+    errorNote: errorNote || undefined,
+    filePath:  filePath  || undefined,
+    agentName: agentName || undefined,
+    onProgress: (text) => {
+      db.events.emit('forge:progress', {
+        type:    'fix-one:output',
+        errorId: id,
+        text,
+        ts:      new Date().toISOString(),
+      });
+    },
+  }).then(result => {
+    if (result.fixed) {
+      try { execSync('pm2 restart ghost', { timeout: 15000 }); } catch {}
+    }
+    db.events.emit('forge:progress', {
+      type:     'fix-one:complete',
+      errorId:  id,
+      fixed:    result.fixed,
+      summary:  result.summary,
+      filePath: result.filePath,
+      ts:       new Date().toISOString(),
+    });
+  }).catch(err => {
+    db.events.emit('forge:progress', {
+      type:    'fix-one:complete',
+      errorId: id,
+      fixed:   false,
+      summary: err.message,
+      ts:      new Date().toISOString(),
+    });
+  });
+
+  res.json({ accepted: true, errorId: id });
 });
 
 // POST /api/forge/fix-all — fire-and-forget bulk fix; progress via WebSocket

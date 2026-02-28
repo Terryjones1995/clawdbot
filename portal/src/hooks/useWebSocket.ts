@@ -5,7 +5,7 @@ import { useGhostStore, ForgeProgressEvent } from '@/store';
 
 export function useGhostWebSocket() {
   const ws = useRef<WebSocket | null>(null);
-  const { upsertAgent, setAgentStatus, pushAgentEvent, pushMessage, setWsConnected, setForgeProgress } = useGhostStore();
+  const { upsertAgent, setAgentStatus, pushAgentEvent, pushMessage, setWsConnected, setForgeProgress, setTerminalOpen, pushTerminalLine } = useGhostStore();
 
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:18789';
@@ -53,6 +53,22 @@ export function useGhostWebSocket() {
               case 'fix-all:item-start':
               case 'fix-all:item-done':
               case 'fix-all:complete':
+                setForgeProgress(msg as ForgeProgressEvent);
+                break;
+              case 'fix-one:start':
+                setTerminalOpen(true);
+                pushTerminalLine({ type: 'system',
+                  content: `⚡ Forge → Claude Code CLI fixing ${msg.agent || msg.file || 'unknown'}…` });
+                setForgeProgress(msg as ForgeProgressEvent);
+                break;
+              case 'fix-one:output':
+                if (msg.text) pushTerminalLine({ type: 'output', content: msg.text });
+                break;
+              case 'fix-one:complete':
+                pushTerminalLine({
+                  type:    msg.fixed ? 'output' : 'error',
+                  content: msg.fixed ? `✓ ${msg.summary}` : `✗ ${msg.summary}`,
+                });
                 setForgeProgress(msg as ForgeProgressEvent);
                 break;
             }

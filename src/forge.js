@@ -463,17 +463,49 @@ async function autoFix({ errorNote, filePath, agentName, restart = true } = {}) 
 // ── Auto-fix via Claude Code CLI ──────────────────────────────────────────────
 
 /**
+ * Convert a single stream-json JSONL event into a human-readable line.
+ * Returns null for events that should be skipped.
+ */
+function _formatStreamLine(event) {
+  if (!event || !event.type) return null;
+
+  if (event.type === 'assistant' && event.message && Array.isArray(event.message.content)) {
+    const parts = [];
+    for (const block of event.message.content) {
+      if (block.type === 'text' && block.text) {
+        const t = block.text.trim().slice(0, 300);
+        if (t) parts.push(t);
+      } else if (block.type === 'tool_use') {
+        const { name, input } = block;
+        if      (name === 'Read') parts.push(`→ Read: ${input?.file_path || input?.path || ''}`);
+        else if (name === 'Edit') parts.push(`→ Edit: ${input?.file_path || input?.path || ''}`);
+        else if (name === 'Bash') parts.push(`$ ${(input?.command || '').slice(0, 120)}`);
+        else                     parts.push(`→ ${name}: ${JSON.stringify(input || {}).slice(0, 80)}`);
+      }
+    }
+    return parts.length > 0 ? parts.join('\n') : null;
+  }
+
+  if (event.type === 'result' && event.result) {
+    return String(event.result).slice(0, 300);
+  }
+
+  return null;
+}
+
+/**
  * Auto-fix a file using the Claude Code CLI.
  * Spawns `claude --print --output-format json ...` and writes the result.
  *
  * @param {object} opts
- *   - errorNote  {string}  error text
- *   - filePath   {string}  override file path (optional)
- *   - agentName  {string}  agent name — used to guess file when no path in note
+ *   - errorNote   {string}    error text
+ *   - filePath    {string}    override file path (optional)
+ *   - agentName   {string}    agent name — used to guess file when no path in note
+ *   - onProgress  {Function}  optional streaming callback(text: string)
  *
  * @returns {{ fixed, filePath, model_used, summary, sessionId? }}
  */
-async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
+async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } = {}) {
   // Resolve target file
   let targetFile = filePath;
   if (!targetFile && errorNote) targetFile = _extractFilePath(errorNote, '');
@@ -514,9 +546,13 @@ async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
     '- Fix only the broken code path — no refactoring, no new features',
   ].join('\n');
 
+  const streaming = typeof onProgress === 'function';
+
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
+    let lineBuffer      = '';       // incomplete line buffer for stream-json mode
+    let lastResultEvent = null;     // last type=result event in stream-json mode
 
     // Snapshot file contents before so we can detect whether claude actually changed it
     let fileBefore;
@@ -530,7 +566,7 @@ async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
       'claude',
       [
         '--print',
-        '--output-format', 'json',
+        '--output-format', streaming ? 'stream-json' : 'json',
         '--max-turns', '10',
         '--allowedTools', 'Read,Edit,Bash',
         '--dangerously-skip-permissions',
@@ -543,7 +579,26 @@ async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
       }
     );
 
-    child.stdout.on('data', d => { stdout += d.toString(); });
+    if (streaming) {
+      // Line-by-line JSONL processing
+      child.stdout.on('data', (chunk) => {
+        lineBuffer += chunk.toString();
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop(); // keep incomplete trailing line
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let event;
+          try { event = JSON.parse(trimmed); } catch { continue; }
+          if (event.type === 'result') lastResultEvent = event;
+          const text = _formatStreamLine(event);
+          if (text) onProgress(text);
+        }
+      });
+    } else {
+      child.stdout.on('data', d => { stdout += d.toString(); });
+    }
+
     child.stderr.on('data', d => { stderr += d.toString(); });
 
     child.on('error', (err) => {
@@ -560,23 +615,28 @@ async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
         return resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
       }
 
-      let parsed;
-      try { parsed = JSON.parse(stdout); } catch { parsed = null; }
-
-      const resultText = parsed?.result ?? stdout.trim();
-      const sessionId  = parsed?.session_id ?? undefined;
-
       // Check if the file was actually modified
       let fileAfter;
       try { fileAfter = fs.readFileSync(absPath, 'utf8'); } catch { fileAfter = null; }
       const fileChanged = fileAfter !== null && fileBefore !== fileAfter;
+
+      let resultText, sessionId;
+      if (streaming) {
+        resultText = lastResultEvent?.result ?? '';
+        sessionId  = lastResultEvent?.session_id ?? undefined;
+      } else {
+        let parsed;
+        try { parsed = JSON.parse(stdout); } catch { parsed = null; }
+        resultText = parsed?.result ?? stdout.trim();
+        sessionId  = parsed?.session_id ?? undefined;
+      }
 
       if (fileChanged) {
         const summary = `Fixed \`${targetFile}\` using Claude Code CLI.` + (sessionId ? ` Session: ${sessionId.slice(0, 8)}` : '');
         db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix-claude', outcome: 'fixed', model: 'claude-code-cli', note: `file=${targetFile}` }).catch(() => {});
         resolve({ fixed: true, filePath: targetFile, model_used: 'claude-code-cli', summary, sessionId, result: resultText });
       } else {
-        const summary = `Claude Code ran on \`${targetFile}\` but made no changes. ${resultText.slice(0, 150)}`;
+        const summary = `Claude Code ran on \`${targetFile}\` but made no changes. ${String(resultText).slice(0, 150)}`;
         db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-code-cli', note: `file=${targetFile} | no changes made` }).catch(() => {});
         resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
       }

@@ -292,36 +292,39 @@ export default function ErrorsPage() {
       setFixAllRunning(false);
       setTimeout(fetchData, 2000); // refresh after restart
     }
+    if (progress?.type === 'fix-one:complete' && progress.errorId) {
+      setFixResults(prev => ({
+        ...prev,
+        [progress.errorId!]: {
+          status:  progress.fixed ? 'success' : 'fail',
+          message: progress.summary || '',
+        },
+      }));
+      setFixing(prev => prev === progress.errorId ? null : prev);
+      if (progress.fixed) setTimeout(fetchData, 2000);
+    }
   }, [progress, fetchData]);
 
-  const triggerAutoFix = useCallback(async (err: LogEntry) => {
+  const triggerFixOne = useCallback(async (err: LogEntry) => {
     setFixing(err.id);
-    setFixResults(prev => ({ ...prev, [err.id]: { status: 'pending', message: 'Sending to Claude Code CLI…' } }));
+    setFixResults(prev => ({ ...prev, [err.id]: { status: 'pending', message: '' } }));
     try {
-      const res  = await fetch('/api/forge/autofix', {
+      await fetch('/api/forge/fix-one', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
+          errorId:   err.id,
           errorNote: err.note || `${err.action}: ${err.outcome}`,
           agentName: err.agent,
         }),
       });
-      const data = await res.json();
-      setFixResults(prev => ({
-        ...prev,
-        [err.id]: {
-          status:  data.fixed ? 'success' : 'fail',
-          message: data.summary || data.error || 'Unknown response.',
-        },
-      }));
-      setTimeout(fetchData, 2500);
+      // Don't clear fixing here — WS fix-one:complete clears it
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Request failed';
       setFixResults(prev => ({ ...prev, [err.id]: { status: 'fail', message: msg } }));
-    } finally {
       setFixing(null);
     }
-  }, [fetchData]);
+  }, []);
 
   const triggerFixAll = useCallback(async () => {
     if (fixAllRunning) return;
@@ -516,7 +519,7 @@ export default function ErrorsPage() {
                                 </div>
                               ) : (
                                 <button
-                                  onClick={() => triggerAutoFix(entry)}
+                                  onClick={() => triggerFixOne(entry)}
                                   disabled={fixing === entry.id}
                                   className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-60"
                                   style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.25)', color: '#00D4FF' }}>
