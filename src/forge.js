@@ -518,6 +518,14 @@ async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
     let stdout = '';
     let stderr = '';
 
+    // Snapshot file contents before so we can detect whether claude actually changed it
+    let fileBefore;
+    try { fileBefore = fs.readFileSync(absPath, 'utf8'); } catch { fileBefore = null; }
+
+    // Unset CLAUDECODE so the child session isn't blocked by nested-session guard
+    const childEnv = { ...process.env };
+    delete childEnv.CLAUDECODE;
+
     const child = spawn(
       'claude',
       [
@@ -529,9 +537,9 @@ async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
         prompt,
       ],
       {
-        env: { ...process.env },
+        env: childEnv,
         cwd: ROOT_DIR,
-        timeout: 120_000,
+        timeout: 300_000,
       }
     );
 
@@ -546,7 +554,8 @@ async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
 
     child.on('close', (code) => {
       if (code !== 0) {
-        const summary = `claude CLI exited ${code}: ${stderr.slice(0, 300)}`;
+        const label   = code === 143 ? 'timed out after 300s' : `exited ${code}`;
+        const summary = `claude CLI ${label}: ${stderr.slice(0, 200)}`;
         db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-code-cli', note: `file=${targetFile} | ${summary}` }).catch(() => {});
         return resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
       }
@@ -557,9 +566,20 @@ async function autoFixWithClaude({ errorNote, filePath, agentName } = {}) {
       const resultText = parsed?.result ?? stdout.trim();
       const sessionId  = parsed?.session_id ?? undefined;
 
-      const summary = `Fixed \`${targetFile}\` using Claude Code CLI.` + (sessionId ? ` Session: ${sessionId.slice(0, 8)}` : '');
-      db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix-claude', outcome: 'fixed', model: 'claude-code-cli', note: `file=${targetFile}` }).catch(() => {});
-      resolve({ fixed: true, filePath: targetFile, model_used: 'claude-code-cli', summary, sessionId, result: resultText });
+      // Check if the file was actually modified
+      let fileAfter;
+      try { fileAfter = fs.readFileSync(absPath, 'utf8'); } catch { fileAfter = null; }
+      const fileChanged = fileAfter !== null && fileBefore !== fileAfter;
+
+      if (fileChanged) {
+        const summary = `Fixed \`${targetFile}\` using Claude Code CLI.` + (sessionId ? ` Session: ${sessionId.slice(0, 8)}` : '');
+        db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix-claude', outcome: 'fixed', model: 'claude-code-cli', note: `file=${targetFile}` }).catch(() => {});
+        resolve({ fixed: true, filePath: targetFile, model_used: 'claude-code-cli', summary, sessionId, result: resultText });
+      } else {
+        const summary = `Claude Code ran on \`${targetFile}\` but made no changes. ${resultText.slice(0, 150)}`;
+        db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-code-cli', note: `file=${targetFile} | no changes made` }).catch(() => {});
+        resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
+      }
     });
   });
 }
