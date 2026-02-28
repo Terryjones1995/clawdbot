@@ -38,10 +38,14 @@ const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
-function appendLog(level, action, userRole, outcome, note) {
-  const entry = `[${level}] ${new Date().toISOString()} | agent=Sentinel | action=${action} | user_role=${userRole} | model=gpt-4o-mini | outcome=${outcome} | escalated=false | note="${note}"\n`;
+function appendLog(level, action, userRole, outcome, note, err = null) {
+  // Append stack trace for ERRORs so autofix can pinpoint the file
+  const fullNote = (level === 'ERROR' && err?.stack)
+    ? `${note} | stack: ${err.stack.split('\n').slice(0, 4).join(' > ')}`
+    : note;
+  const entry = `[${level}] ${new Date().toISOString()} | agent=Sentinel | action=${action} | user_role=${userRole} | model=gpt-4o-mini | outcome=${outcome} | escalated=false | note="${fullNote}"\n`;
   try { fs.appendFileSync(LOG_FILE, entry); } catch { /* non-fatal */ }
-  db.logEntry({ level, agent: 'Sentinel', action, outcome, user_role: userRole, note }).catch(() => {});
+  db.logEntry({ level, agent: 'Sentinel', action, outcome, user_role: userRole, note: fullNote }).catch(() => {});
 }
 
 // ── Agent channel map (populated from .env by setup-discord.js) ───────────────
@@ -458,7 +462,7 @@ async function handleAgentMessage(event, agentName, plain = false) {
     }
   } catch (err) {
     console.error(`[Sentinel] ${agentName} error:`, err.message);
-    appendLog('ERROR', `agent-${agentName.toLowerCase()}`, event.user_role, 'failed', err.message);
+    appendLog('ERROR', `agent-${agentName.toLowerCase()}`, event.user_role, 'failed', err.message, err);
     if (plain) {
       await discord.sendMessage(event.channel_id, `Something went wrong with ${agentName}: ${err.message}`);
     } else {
@@ -781,7 +785,7 @@ async function handleReceptionMessage(event) {
       `agent=${decision.agent} intent=${decision.intent}`);
   } catch (err) {
     console.error(`[Sentinel] Reception → ${decision.agent} error:`, err.message);
-    appendLog('ERROR', 'reception-dispatch', user_role, 'failed', err.message);
+    appendLog('ERROR', 'reception-dispatch', user_role, 'failed', err.message, err);
     await discord.sendMessage(channel_id, `Something went wrong: ${err.message}`);
   } finally {
     try { await routingMsg.delete(); } catch { /* non-fatal */ }
@@ -834,7 +838,7 @@ async function handleMentionMessage(event) {
       appendLog('INFO', 'mention-admin', user_role, 'success', `cmd="${text.slice(0, 60)}"`);
     } catch (err) {
       await discord.sendMessage(channel_id, `❌ Command failed: ${err.message}`);
-      appendLog('ERROR', 'mention-admin', user_role, 'failed', err.message);
+      appendLog('ERROR', 'mention-admin', user_role, 'failed', err.message, err);
     }
     return;
   }
@@ -848,7 +852,7 @@ async function handleMentionMessage(event) {
     appendLog('INFO', 'mention-chat', user_role, 'success', `user=${user_id}`);
   } catch (err) {
     await discord.sendMessage(channel_id, `Something went wrong: ${err.message}`);
-    appendLog('ERROR', 'mention-chat', user_role, 'failed', err.message);
+    appendLog('ERROR', 'mention-chat', user_role, 'failed', err.message, err);
   }
 }
 
@@ -871,7 +875,7 @@ async function start() {
     if (inReception) {
       handleReceptionMessage(event).catch(err => {
         console.error('[Sentinel] Reception error:', err.message);
-        appendLog('ERROR', 'reception', event.user_role, 'failed', err.message);
+        appendLog('ERROR', 'reception', event.user_role, 'failed', err.message, err);
       });
       return;
     }
@@ -880,7 +884,7 @@ async function start() {
     if (agentName) {
       handleAgentMessage(event, agentName).catch(err => {
         console.error(`[Sentinel] ${agentName} error:`, err.message);
-        appendLog('ERROR', 'agent-route', event.user_role, 'failed', err.message);
+        appendLog('ERROR', 'agent-route', event.user_role, 'failed', err.message, err);
       });
       return;
     }
@@ -890,7 +894,7 @@ async function start() {
     if (botMentioned && !inReception && !agentName && !inCommands && !isOwnerDM) {
       handleMentionMessage(event).catch(err => {
         console.error('[Sentinel] Mention error:', err.message);
-        appendLog('ERROR', 'mention-handler', event.user_role, 'failed', err.message);
+        appendLog('ERROR', 'mention-handler', event.user_role, 'failed', err.message, err);
       });
       return;
     }
@@ -903,22 +907,23 @@ async function start() {
     if (text.startsWith('!')) {
       handleCommand(event).catch(err => {
         console.error('[Sentinel] Command error:', err.message);
-        appendLog('ERROR', 'command-handler', event.user_role, 'failed', err.message);
+        appendLog('ERROR', 'command-handler', event.user_role, 'failed', err.message, err);
       });
     } else if (isOwnerDM) {
       // DMs use reception-style routing (instant → chat → task)
       handleReceptionMessage(event).catch(err => {
         console.error('[Sentinel] DM reception error:', err.message);
-        appendLog('ERROR', 'dm-reception', event.user_role, 'failed', err.message);
+        appendLog('ERROR', 'dm-reception', event.user_role, 'failed', err.message, err);
       });
     } else {
       handleNaturalLanguage(event).catch(err => {
         console.error('[Sentinel] Switchboard error:', err.message);
-        appendLog('ERROR', 'switchboard-route', event.user_role, 'failed', err.message);
+        appendLog('ERROR', 'switchboard-route', event.user_role, 'failed', err.message, err);
       });
     }
   });
 
+  registry.setStatus('sentinel', 'online');
   console.log('[Sentinel] Command handler active.');
 }
 
