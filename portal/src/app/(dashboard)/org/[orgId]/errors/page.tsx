@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck,
-  ChevronDown, ChevronUp, Loader2, Wrench, XCircle, AlertCircle,
+  ChevronDown, ChevronUp, Loader2, Terminal, XCircle, AlertCircle, Zap,
 } from 'lucide-react';
 import { formatRelative } from '@/lib/utils';
+import { useGhostStore, ForgeProgressEvent } from '@/store';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,6 @@ function getRepairStatus(err: LogEntry, repairs: RepairEntry[]): 'fixed' | 'fail
   const file    = getErrorFile(err);
   if (!file) return null;
   const errTime = new Date(err.ts).getTime();
-  // Only repairs that happened AFTER this error
   const matched = repairs.filter(r => extractFile(r.note || '') === file && new Date(r.ts).getTime() > errTime);
   if (matched.some(r => r.outcome === 'fixed'))  return 'fixed';
   if (matched.length > 0)                         return 'failed';
@@ -148,24 +148,127 @@ function EmptyState({ tab }: { tab: Tab }) {
   );
 }
 
+// ── Fix All Progress Panel ────────────────────────────────────────────────────
+
+interface FixAllItem {
+  errorId: string;
+  agent:   string;
+  file:    string;
+  status:  'pending' | 'running' | 'fixed' | 'failed';
+  summary?: string;
+}
+
+function FixAllProgressPanel({ progress }: { progress: ForgeProgressEvent | null }) {
+  const [items, setItems] = useState<FixAllItem[]>([]);
+  const [done, setDone]   = useState(false);
+  const [restartMsg, setRestartMsg] = useState('');
+
+  useEffect(() => {
+    if (!progress) return;
+
+    if (progress.type === 'fix-all:start' && progress.total) {
+      setItems([]);
+      setDone(false);
+      setRestartMsg('');
+    }
+
+    if (progress.type === 'fix-all:item-start' && progress.errorId) {
+      setItems(prev => {
+        const exists = prev.some(i => i.errorId === progress.errorId);
+        const item: FixAllItem = {
+          errorId: progress.errorId!,
+          agent:   progress.agent || '',
+          file:    progress.file  || '',
+          status:  'running',
+        };
+        return exists
+          ? prev.map(i => i.errorId === progress.errorId ? item : i)
+          : [...prev, item];
+      });
+    }
+
+    if (progress.type === 'fix-all:item-done' && progress.errorId) {
+      setItems(prev => prev.map(i =>
+        i.errorId === progress.errorId
+          ? { ...i, status: progress.fixed ? 'fixed' : 'failed', summary: progress.summary }
+          : i
+      ));
+    }
+
+    if (progress.type === 'fix-all:complete') {
+      setDone(true);
+      setRestartMsg(progress.restartMsg || '');
+    }
+  }, [progress]);
+
+  if (items.length === 0 && !done) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl p-4 space-y-3"
+      style={{ background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.15)' }}>
+
+      <div className="flex items-center gap-2">
+        {done
+          ? <CheckCircle2 size={14} className="text-green-400" />
+          : <Loader2 size={14} className="text-ghost-accent animate-spin" />}
+        <p className="text-xs font-semibold text-white">
+          {done ? `Fix All complete — ${items.filter(i => i.status === 'fixed').length}/${items.length} fixed` : `Fixing ${items.length} error${items.length !== 1 ? 's' : ''}…`}
+        </p>
+      </div>
+
+      {items.length > 0 && (
+        <div className="space-y-1.5">
+          {items.map(item => (
+            <div key={item.errorId} className="flex items-start gap-2">
+              {item.status === 'running'
+                ? <Loader2 size={11} className="text-ghost-accent animate-spin mt-0.5 shrink-0" />
+                : item.status === 'fixed'
+                  ? <CheckCircle2 size={11} className="text-green-400 mt-0.5 shrink-0" />
+                  : <XCircle size={11} className="text-red-400 mt-0.5 shrink-0" />}
+              <div className="min-w-0">
+                <p className="text-[10px] font-mono text-white truncate">
+                  {item.file || item.agent || item.errorId}
+                </p>
+                {item.summary && (
+                  <p className="text-[9px] text-ghost-muted truncate">{item.summary}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {done && restartMsg && (
+        <p className="text-[10px] font-mono text-ghost-muted">{restartMsg}</p>
+      )}
+    </motion.div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ErrorsPage() {
-  const [errors,     setErrors]     = useState<LogEntry[]>([]);
-  const [warnings,   setWarnings]   = useState<LogEntry[]>([]);
-  const [repairs,    setRepairs]    = useState<RepairEntry[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [tab,        setTab]        = useState<Tab>('current');
-  const [expanded,   setExpanded]   = useState<string | null>(null);
-  const [fixing,     setFixing]     = useState<string | null>(null);
-  const [fixResults, setFixResults] = useState<Record<string, FixResult>>({});
+  const [errors,        setErrors]        = useState<LogEntry[]>([]);
+  const [warnings,      setWarnings]      = useState<LogEntry[]>([]);
+  const [repairs,       setRepairs]       = useState<RepairEntry[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [tab,           setTab]           = useState<Tab>('current');
+  const [expanded,      setExpanded]      = useState<string | null>(null);
+  const [fixing,        setFixing]        = useState<string | null>(null);
+  const [fixResults,    setFixResults]    = useState<Record<string, FixResult>>({});
+  const [fixAllRunning, setFixAllRunning] = useState(false);
+
+  const progress = useGhostStore(s => s.forgeProgress);
 
   const fetchData = useCallback(async () => {
     try {
       const [errRes, warnRes, repairRes] = await Promise.all([
         fetch('/api/errors?limit=50'),
         fetch('/api/logs?level=WARN&limit=50'),
-        fetch('/api/logs?agent=Forge&action=autofix&limit=30'),
+        fetch('/api/logs?agent=Forge&action=autofix-claude&limit=30'),
       ]);
       const [errData, warnData, repairData] = await Promise.all([
         errRes.json(), warnRes.json(), repairRes.json(),
@@ -183,9 +286,17 @@ export default function ErrorsPage() {
     return () => clearInterval(t);
   }, [fetchData]);
 
+  // Watch forge:progress events from WS
+  useEffect(() => {
+    if (progress?.type === 'fix-all:complete') {
+      setFixAllRunning(false);
+      setTimeout(fetchData, 2000); // refresh after restart
+    }
+  }, [progress, fetchData]);
+
   const triggerAutoFix = useCallback(async (err: LogEntry) => {
     setFixing(err.id);
-    setFixResults(prev => ({ ...prev, [err.id]: { status: 'pending', message: 'Sending to gpt-5.3-codex…' } }));
+    setFixResults(prev => ({ ...prev, [err.id]: { status: 'pending', message: 'Sending to Claude Code CLI…' } }));
     try {
       const res  = await fetch('/api/forge/autofix', {
         method:  'POST',
@@ -203,7 +314,6 @@ export default function ErrorsPage() {
           message: data.summary || data.error || 'Unknown response.',
         },
       }));
-      // Refresh data so the error moves to the Fixed tab
       setTimeout(fetchData, 2500);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Request failed';
@@ -212,6 +322,29 @@ export default function ErrorsPage() {
       setFixing(null);
     }
   }, [fetchData]);
+
+  const triggerFixAll = useCallback(async () => {
+    if (fixAllRunning) return;
+    setFixAllRunning(true);
+
+    const payload = currentErrors.map(e => ({
+      id:        e.id,
+      errorNote: e.note || `${e.action}: ${e.outcome}`,
+      agentName: e.agent,
+    }));
+
+    try {
+      await fetch('/api/forge/fix-all', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ errors: payload }),
+      });
+      // Progress comes via WS; setFixAllRunning(false) when fix-all:complete arrives
+    } catch {
+      setFixAllRunning(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixAllRunning]);
 
   // Partition errors into current vs fixed
   const currentErrors = errors.filter(e => getRepairStatus(e, repairs) !== 'fixed');
@@ -232,6 +365,8 @@ export default function ErrorsPage() {
     return 'rgba(245,158,11,0.12)';
   }
 
+  const showProgressPanel = fixAllRunning || (progress?.type?.startsWith('fix-all:') ?? false);
+
   return (
     <div className="p-6 max-w-screen-xl mx-auto space-y-5">
 
@@ -239,14 +374,31 @@ export default function ErrorsPage() {
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-xl font-bold text-white mb-1" style={{ fontFamily: 'Space Grotesk' }}>Error Console</h2>
-          <p className="text-xs text-ghost-muted">Auto-repair via gpt-5.3-codex · refresh every 30s</p>
+          <p className="text-xs text-ghost-muted">Claude Code CLI · real-time via WebSocket · refresh every 30s</p>
         </div>
-        <button onClick={fetchData}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
-          style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Fix All button */}
+          <button
+            onClick={triggerFixAll}
+            disabled={fixAllRunning || currentErrors.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.3)', color: '#00D4FF' }}>
+            {fixAllRunning
+              ? <><Loader2 size={12} className="animate-spin" /> Fixing…</>
+              : <><Zap size={12} /> Fix All Errors ({currentErrors.length})</>}
+          </button>
+
+          {/* Refresh */}
+          <button onClick={fetchData}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
+            style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
+
+      {/* Fix All progress panel */}
+      {showProgressPanel && <FixAllProgressPanel progress={progress} />}
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -359,7 +511,7 @@ export default function ErrorsPage() {
                               {repairStatus === 'fixed' ? (
                                 <div className="flex items-center gap-2 text-xs text-green-400 py-1">
                                   <ShieldCheck size={13} />
-                                  Automatically repaired by gpt-5.3-codex
+                                  Automatically repaired by Claude Code
                                   {getErrorFile(entry) && <span className="font-mono text-ghost-muted">({getErrorFile(entry)})</span>}
                                 </div>
                               ) : (
@@ -369,8 +521,8 @@ export default function ErrorsPage() {
                                   className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-60"
                                   style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.25)', color: '#00D4FF' }}>
                                   {fixing === entry.id
-                                    ? <><Loader2 size={12} className="animate-spin" /> Analyzing with gpt-5.3-codex…</>
-                                    : <><Wrench size={12} /> Auto-Fix with gpt-5.3-codex</>}
+                                    ? <><Loader2 size={12} className="animate-spin" /> Analyzing with Claude Code…</>
+                                    : <><Terminal size={12} /> Fix with Claude Code</>}
                                 </button>
                               )}
 
@@ -398,7 +550,8 @@ export default function ErrorsPage() {
         <AlertTriangle size={13} className="text-ghost-accent shrink-0" />
         <p className="text-xs text-ghost-muted">
           <span className="text-white font-medium">Forge</span> watches all agent errors in real-time.
-          Fixed files are patched by <span className="text-white font-medium">gpt-5.3-codex</span> and Ghost restarts automatically.
+          Fixed files are patched by <span className="text-white font-medium">Claude Code CLI</span> and Ghost restarts automatically.
+          Use <span className="text-white font-medium">Fix All Errors</span> to repair all current errors sequentially with live WS progress.
           Fixed errors move to the <span className="text-white font-medium">Fixed Errors</span> tab.
         </p>
       </div>
