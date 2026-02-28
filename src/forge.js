@@ -106,8 +106,8 @@ function detectModel(task, description, files = [], context = '') {
     return { model: 'claude-sonnet-4-6', reason: `multi-file change (${files.length} files)` };
   }
 
-  // Bug fixes: o4-mini (reasoning model, much better at debugging)
-  if (task === 'bug-fix') return { model: 'o4-mini', reason: 'bug-fix uses o4-mini reasoning model' };
+  // Bug fixes: gpt-5.3-codex (OpenAI's latest code model)
+  if (task === 'bug-fix') return { model: 'gpt-5.3-codex', reason: 'bug-fix uses gpt-5.3-codex' };
 
   // Default: gpt-4o-mini (fast, cheap)
   return { model: 'gpt-4o-mini', reason: null };
