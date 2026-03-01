@@ -318,6 +318,47 @@ code, pre {
   font-family: 'JetBrains Mono', monospace;
 }
 
+/* ── Animated gradient mesh background ────────────────────────────────────── */
+@keyframes mesh-drift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.mesh-gradient {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+  background:
+    radial-gradient(ellipse 600px 400px at 15% 20%, rgba(0,100,200,0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 500px 300px at 85% 70%, rgba(124,58,237,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 400px 250px at 50% 90%, rgba(0,212,255,0.04) 0%, transparent 70%);
+  background-size: 200% 200%;
+  animation: mesh-drift 20s ease-in-out infinite;
+}
+
+/* ── Left accent strip for list rows ─────────────────────────────────────── */
+.row-strip {
+  position: relative;
+}
+.row-strip::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--strip-color, #64748B);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.row-strip:hover::before {
+  opacity: 1;
+}
+
 /* ── Custom selection ─────────────────────────────────────────────────────── */
 ::selection {
   background: rgba(0,212,255,0.25);

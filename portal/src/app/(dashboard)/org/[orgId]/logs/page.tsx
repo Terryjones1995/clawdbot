@@ -163,8 +163,8 @@ export default function LogsPage() {
               <motion.div key={log.id}
                 initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.02, 0.3) }}
-                className="glass rounded-xl overflow-hidden"
-                style={{ border: '1px solid rgba(255,255,255,0.05)' }}>
+                className="glass rounded-xl overflow-hidden row-strip"
+                style={{ border: '1px solid rgba(255,255,255,0.05)', '--strip-color': (LEVEL_COLORS[log.level] ?? LEVEL_COLORS.INFO).color } as React.CSSProperties}>
 
                 <div className="flex items-center gap-3 px-4 py-3 cursor-pointer"
                      onClick={() => setExpanded(expanded === log.id ? null : log.id)}>

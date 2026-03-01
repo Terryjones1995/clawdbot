@@ -177,6 +177,75 @@ async function initSchema() {
     )
   `);
 
+  // ── API Usage Tracking ──
+  await query(`
+    CREATE TABLE IF NOT EXISTS api_usage (
+      id           BIGSERIAL PRIMARY KEY,
+      ts           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      provider     TEXT NOT NULL,
+      model        TEXT NOT NULL,
+      agent        TEXT,
+      action       TEXT,
+      input_tokens  INT NOT NULL DEFAULT 0,
+      output_tokens INT NOT NULL DEFAULT 0,
+      cost         NUMERIC(12,8) NOT NULL DEFAULT 0,
+      latency_ms   INT,
+      thread_id    TEXT
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS api_usage_ts_idx ON api_usage (ts DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS api_usage_provider_idx ON api_usage (provider)`);
+
+  // ── Tasks (Kanban) ──
+  await query(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id           BIGSERIAL PRIMARY KEY,
+      title        TEXT NOT NULL,
+      description  TEXT,
+      status       TEXT NOT NULL DEFAULT 'todo',
+      priority     TEXT NOT NULL DEFAULT 'medium',
+      agent_id     TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (status)`);
+
+  // ── Ghost Settings (key-value) ──
+  await query(`
+    CREATE TABLE IF NOT EXISTS ghost_settings (
+      key          TEXT PRIMARY KEY,
+      value        JSONB NOT NULL DEFAULT '{}',
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // ── Agent Lessons (learning system) ──
+  await query(`
+    CREATE TABLE IF NOT EXISTS agent_lessons (
+      id           BIGSERIAL PRIMARY KEY,
+      agent        TEXT NOT NULL,
+      lesson       TEXT NOT NULL,
+      category     TEXT NOT NULL DEFAULT 'general',
+      severity     TEXT NOT NULL DEFAULT 'medium',
+      source       TEXT NOT NULL DEFAULT 'manual',
+      context      TEXT,
+      active       BOOLEAN NOT NULL DEFAULT true,
+      applied_count INT NOT NULL DEFAULT 0,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS agent_lessons_agent_idx ON agent_lessons (agent)`);
+  await query(`CREATE INDEX IF NOT EXISTS agent_lessons_active_idx ON agent_lessons (active) WHERE active = true`);
+
+  // Add embedding column for semantic lesson search (non-fatal)
+  try {
+    await query(`ALTER TABLE agent_lessons ADD COLUMN IF NOT EXISTS embedding vector(768)`);
+  } catch (err) {
+    console.warn('[DB] Could not add embedding column to agent_lessons:', err.message);
+  }
+
   console.log('[DB] Schema ready');
 }
 
@@ -421,6 +490,201 @@ async function removeBotAdmin(userId) {
   await query('DELETE FROM portal_admins WHERE user_id = $1', [userId]);
 }
 
+// ── API Usage helpers ─────────────────────────────────────────────────────────
+
+async function logApiUsage({ provider, model, agent, action, input_tokens = 0, output_tokens = 0, cost = 0, latency_ms = null, thread_id = null }) {
+  if (!process.env.NEON_DATABASE_URL) return;
+  try {
+    await pool.query(
+      `INSERT INTO api_usage (provider, model, agent, action, input_tokens, output_tokens, cost, latency_ms, thread_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [provider, model, agent, action, input_tokens, output_tokens, cost, latency_ms, thread_id],
+    );
+  } catch { /* non-fatal */ }
+}
+
+async function getApiUsageStats({ period = 'all' } = {}) {
+  let timeFilter = '';
+  if (period === 'today')  timeFilter = `WHERE ts >= CURRENT_DATE`;
+  else if (period === 'week')   timeFilter = `WHERE ts >= NOW() - INTERVAL '7 days'`;
+  else if (period === 'month')  timeFilter = `WHERE ts >= NOW() - INTERVAL '30 days'`;
+
+  const { rows } = await query(`
+    SELECT provider,
+           COUNT(*) AS calls,
+           SUM(input_tokens)  AS total_input_tokens,
+           SUM(output_tokens) AS total_output_tokens,
+           SUM(cost)::numeric AS total_cost,
+           MAX(model) AS last_model,
+           MAX(ts)    AS last_call
+    FROM api_usage ${timeFilter}
+    GROUP BY provider
+    ORDER BY total_cost DESC
+  `);
+  return rows;
+}
+
+async function getApiUsageRecent({ limit = 50, period = 'all' } = {}) {
+  let timeFilter = '';
+  if (period === 'today')  timeFilter = `WHERE ts >= CURRENT_DATE`;
+  else if (period === 'week')   timeFilter = `WHERE ts >= NOW() - INTERVAL '7 days'`;
+  else if (period === 'month')  timeFilter = `WHERE ts >= NOW() - INTERVAL '30 days'`;
+
+  const { rows } = await query(
+    `SELECT id, ts, provider, model, agent, action, input_tokens, output_tokens, cost, latency_ms
+     FROM api_usage ${timeFilter}
+     ORDER BY ts DESC LIMIT $1`,
+    [Math.min(limit, 200)],
+  );
+  return rows;
+}
+
+// ── Task helpers ──────────────────────────────────────────────────────────────
+
+async function createTask({ title, description = null, status = 'todo', priority = 'medium', agent_id = null }) {
+  const { rows } = await query(
+    `INSERT INTO tasks (title, description, status, priority, agent_id)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [title, description, status, priority, agent_id],
+  );
+  return rows[0];
+}
+
+async function getTasks({ status = null, agent_id = null } = {}) {
+  let sql = `SELECT * FROM tasks`;
+  const params = [];
+  const where = [];
+  if (status) { params.push(status); where.push(`status = $${params.length}`); }
+  if (agent_id) { params.push(agent_id); where.push(`agent_id = $${params.length}`); }
+  if (where.length) sql += ` WHERE ${where.join(' AND ')}`;
+  sql += ` ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, updated_at DESC`;
+  const { rows } = await query(sql, params);
+  return rows;
+}
+
+async function updateTask(id, updates) {
+  const sets = [];
+  const params = [id];
+  for (const [key, val] of Object.entries(updates)) {
+    if (['title', 'description', 'status', 'priority', 'agent_id'].includes(key)) {
+      params.push(val);
+      sets.push(`${key} = $${params.length}`);
+    }
+  }
+  if (!sets.length) return null;
+  sets.push('updated_at = NOW()');
+  const { rows } = await query(
+    `UPDATE tasks SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, params,
+  );
+  return rows[0] ?? null;
+}
+
+async function deleteTask(id) {
+  const { rowCount } = await query('DELETE FROM tasks WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+// ── Settings helpers ──────────────────────────────────────────────────────────
+
+async function getSetting(key) {
+  const { rows } = await query('SELECT value FROM ghost_settings WHERE key = $1', [key]);
+  return rows[0]?.value ?? null;
+}
+
+async function setSetting(key, value) {
+  await query(
+    `INSERT INTO ghost_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [key, JSON.stringify(value)],
+  );
+}
+
+async function getAllSettings() {
+  const { rows } = await query('SELECT key, value FROM ghost_settings ORDER BY key');
+  const result = {};
+  for (const row of rows) result[row.key] = row.value;
+  return result;
+}
+
+// ── Lesson helpers ────────────────────────────────────────────────────────────
+
+async function createLesson({ agent, lesson, category = 'general', severity = 'medium', source = 'manual', context = null, embedding = null }) {
+  const embStr = embedding && Array.isArray(embedding) ? `[${embedding.join(',')}]` : null;
+  const { rows } = await query(
+    `INSERT INTO agent_lessons (agent, lesson, category, severity, source, context${embStr ? ', embedding' : ''})
+     VALUES ($1, $2, $3, $4, $5, $6${embStr ? ', $7::vector' : ''}) RETURNING *`,
+    embStr
+      ? [agent, lesson, category, severity, source, context, embStr]
+      : [agent, lesson, category, severity, source, context],
+  );
+  return rows[0];
+}
+
+async function getLessons({ agent = null, category = null, active = null, limit = 100 } = {}) {
+  let sql = `SELECT * FROM agent_lessons`;
+  const params = [];
+  const where = [];
+  if (agent)     { params.push(agent); where.push(`LOWER(agent) = LOWER($${params.length})`); }
+  if (category)  { params.push(category); where.push(`category = $${params.length}`); }
+  if (active !== null) { params.push(active); where.push(`active = $${params.length}`); }
+  if (where.length) sql += ` WHERE ${where.join(' AND ')}`;
+  params.push(Math.min(limit, 500));
+  sql += ` ORDER BY updated_at DESC LIMIT $${params.length}`;
+  const { rows } = await query(sql, params);
+  return rows;
+}
+
+async function getActiveLessons(agent, limit = 10) {
+  const { rows } = await query(
+    `SELECT id, lesson, category, severity, source FROM agent_lessons
+     WHERE LOWER(agent) = LOWER($1) AND active = true
+     ORDER BY applied_count DESC, updated_at DESC LIMIT $2`,
+    [agent, limit],
+  );
+  return rows;
+}
+
+async function getActiveLessonsByEmbedding(agent, embedding, limit = 5) {
+  if (!embedding || !Array.isArray(embedding)) return getActiveLessons(agent, limit);
+  try {
+    const embStr = `[${embedding.join(',')}]`;
+    const { rows } = await query(
+      `SELECT id, lesson, category, severity, source FROM agent_lessons
+       WHERE LOWER(agent) = LOWER($1) AND active = true AND embedding IS NOT NULL
+       ORDER BY embedding <=> $2::vector LIMIT $3`,
+      [agent, embStr, limit],
+    );
+    if (rows.length > 0) return rows;
+  } catch { /* fall back to non-semantic */ }
+  return getActiveLessons(agent, limit);
+}
+
+async function updateLesson(id, updates) {
+  const sets = [];
+  const params = [id];
+  for (const [key, val] of Object.entries(updates)) {
+    if (['lesson', 'category', 'severity', 'active', 'context'].includes(key)) {
+      params.push(val);
+      sets.push(`${key} = $${params.length}`);
+    }
+  }
+  if (!sets.length) return null;
+  sets.push('updated_at = NOW()');
+  const { rows } = await query(
+    `UPDATE agent_lessons SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, params,
+  );
+  return rows[0] ?? null;
+}
+
+async function incrementLessonApplied(id) {
+  await query('UPDATE agent_lessons SET applied_count = applied_count + 1, updated_at = NOW() WHERE id = $1', [id]);
+}
+
+async function deleteLesson(id) {
+  const { rowCount } = await query('DELETE FROM agent_lessons WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
 module.exports = {
   pool, query, initSchema, logEntry, events,
   getThread, upsertThread, listThreads,
@@ -428,4 +692,8 @@ module.exports = {
   getProfile, upsertProfile,
   storeFeedback,
   listBotAdmins, addBotAdmin, removeBotAdmin,
+  logApiUsage, getApiUsageStats, getApiUsageRecent,
+  createTask, getTasks, updateTask, deleteTask,
+  getSetting, setSetting, getAllSettings,
+  createLesson, getLessons, getActiveLessons, getActiveLessonsByEmbedding, updateLesson, incrementLessonApplied, deleteLesson,
 };

@@ -7,7 +7,7 @@ import { AgentState } from '@/store';
 import {
   Activity, Zap, AlertTriangle, Clock, Server, FileText,
   Loader2, Wifi, WifiOff, Database, Bot, Cpu, Radio,
-  ChevronRight, TrendingUp, Shield, MemoryStick,
+  ChevronRight, TrendingUp, Shield, MemoryStick, Globe,
 } from 'lucide-react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 
@@ -55,24 +55,27 @@ function KpiCard({ label, value, sub, icon: Icon, color, i }: {
       whileHover={{ y: -3, transition: { duration: 0.2 } }}
       className="relative rounded-2xl p-5 overflow-hidden cursor-default group"
       style={{
-        background: 'rgba(255,255,255,0.03)',
+        background: `linear-gradient(135deg, ${color}08 0%, rgba(255,255,255,0.02) 60%, ${color}04 100%)`,
         border: `1px solid ${color}18`,
-        boxShadow: `inset 0 1px 0 ${color}10`,
+        boxShadow: `inset 0 1px 0 ${color}10, 0 4px 20px rgba(0,0,0,0.15)`,
       }}
     >
       {/* Top glow bar */}
       <div className="absolute top-0 left-0 right-0 h-px"
-           style={{ background: `linear-gradient(90deg, transparent, ${color}60, transparent)` }} />
+           style={{ background: `linear-gradient(90deg, transparent 10%, ${color}60, transparent 90%)` }} />
+      {/* Bottom subtle line */}
+      <div className="absolute bottom-0 left-0 right-0 h-px"
+           style={{ background: `linear-gradient(90deg, transparent, ${color}10, transparent)` }} />
       {/* Corner glow */}
-      <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-           style={{ background: `radial-gradient(circle, ${color}12, transparent 70%)` }} />
+      <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+           style={{ background: `radial-gradient(circle, ${color}18, transparent 70%)` }} />
 
       <div className="flex items-start justify-between mb-4">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-             style={{ background: `${color}12`, border: `1px solid ${color}20` }}>
-          <Icon size={15} style={{ color }} />
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+             style={{ background: `${color}15`, border: `1px solid ${color}25`, boxShadow: `0 0 16px ${color}10` }}>
+          <Icon size={17} style={{ color }} />
         </div>
-        <TrendingUp size={10} style={{ color: `${color}50` }} className="mt-1" />
+        <TrendingUp size={10} style={{ color: `${color}40` }} className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
 
       <p className="text-2xl font-bold text-white tabular-nums leading-none mb-1.5"
@@ -80,6 +83,23 @@ function KpiCard({ label, value, sub, icon: Icon, color, i }: {
       <p className="text-xs text-ghost-muted">{label}</p>
       {sub && <p className="text-[10px] text-ghost-muted/40 mt-0.5 font-mono">{sub}</p>}
     </motion.div>
+  );
+}
+
+// ── Agent Icon (SVG) ─────────────────────────────────────────────────────────
+
+function AgentIcon({ agentId, size = 18 }: { agentId: string; size?: number }) {
+  const [ok, setOk] = useState(true);
+  const color = agentColor(agentId);
+  if (!ok) return <span style={{ fontSize: size * 0.8 }}>{agentEmoji(agentId)}</span>;
+  return (
+    <img
+      src={`/bots/${agentId}.svg`}
+      alt={agentId}
+      width={size} height={size}
+      style={{ filter: `drop-shadow(0 0 3px ${color}40)` }}
+      onError={() => setOk(false)}
+    />
   );
 }
 
@@ -97,15 +117,18 @@ function AgentRow({ agent, i }: { agent: AgentState; i: number }) {
   return (
     <motion.div
       custom={i} variants={fade} initial="hidden" animate="visible"
-      whileHover={{ backgroundColor: 'rgba(255,255,255,0.025)', x: 2, transition: { duration: 0.15 } }}
-      className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-default transition-all"
+      whileHover={{ backgroundColor: 'rgba(255,255,255,0.03)', x: 2, transition: { duration: 0.15 } }}
+      className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-default transition-all group"
     >
-      {/* Avatar */}
-      <div className="relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm"
+      {/* Avatar with SVG icon */}
+      <div className="relative shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
            style={{ background: `${color}12`, border: `1px solid ${color}20` }}>
-        {agentEmoji(agent.id)}
+        <AgentIcon agentId={agent.id} size={18} />
         <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-ghost-bg"
               style={{ background: sColor }} />
+        {/* Hover glow */}
+        <div className="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+             style={{ boxShadow: `inset 0 0 8px ${color}15, 0 0 8px ${color}10` }} />
       </div>
 
       {/* Name + Role */}
@@ -194,8 +217,8 @@ function HealthItem({ label, status, detail, icon: Icon, ping }: {
   const dot   = status === 'up' ? 'bg-emerald-400' : status === 'down' ? 'bg-red-400' : 'bg-amber-400';
 
   return (
-    <div className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-white/[0.02] transition-colors">
-      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+    <div className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-white/[0.02] transition-colors group">
+      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-shadow duration-300"
            style={{ background: `${color}10`, border: `1px solid ${color}20` }}>
         <Icon size={12} style={{ color }} />
       </div>
@@ -237,7 +260,11 @@ function DailyBrief() {
   return (
     <div className="rounded-2xl overflow-hidden"
          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(0,212,255,0.08)' }}>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.04]">
+      <div className="flex items-center justify-between px-4 py-3"
+           style={{
+             borderBottom: '1px solid rgba(255,255,255,0.04)',
+             background: 'linear-gradient(135deg, rgba(0,212,255,0.04) 0%, transparent 60%)',
+           }}>
         <div className="flex items-center gap-2">
           <FileText size={12} className="text-ghost-accent" />
           <span className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>
@@ -259,9 +286,11 @@ function DailyBrief() {
         ) : brief ? (
           <p className="text-[11px] text-ghost-muted/80 leading-relaxed whitespace-pre-wrap">{brief}</p>
         ) : (
-          <p className="text-[10px] text-ghost-muted/30 italic font-mono py-3 text-center">
-            No briefing available
-          </p>
+          <div className="flex flex-col items-center py-6 text-ghost-muted/20">
+            <FileText size={20} className="mb-2" />
+            <p className="text-[10px] font-mono">No briefing available</p>
+            <p className="text-[9px] text-ghost-muted/15 mt-1">Scribe generates briefs daily</p>
+          </div>
         )}
       </div>
     </div>
@@ -279,8 +308,9 @@ export default function OverviewPage() {
   const [errorsToday,   setErrorsToday]   = useState<number | null>(null);
   const [gatewayPing,   setGatewayPing]   = useState<number | undefined>(undefined);
   const [gatewayOnline, setGatewayOnline] = useState<'up' | 'down' | 'checking'>('checking');
+  const [tailscale,     setTailscale]     = useState<any>(null);
 
-  // Gateway + uptime
+  // Gateway + uptime + tailscale
   const checkGateway = useCallback(async () => {
     const start = Date.now();
     try {
@@ -291,6 +321,7 @@ export default function OverviewPage() {
         setGatewayPing(ping);
         setGatewayOnline('up');
         setUptimeSeconds(d.uptime_seconds ?? 0);
+        if (d.tailscale) setTailscale(d.tailscale);
       } else {
         setGatewayOnline('down');
       }
@@ -341,14 +372,30 @@ export default function OverviewPage() {
   const workingCount = agentList.filter(a => a.status === 'working').length;
   const errorCount   = agentList.filter(a => a.status === 'error').length;
 
-  const healthItems = [
-    { label: 'Ghost Gateway',    icon: Server,    status: gatewayOnline,                         detail: `port 18789`,     ping: gatewayPing },
-    { label: 'WebSocket',        icon: Wifi,      status: wsConnected ? 'up' : 'down' as any,   detail: 'live agent feed' },
-    { label: 'Discord — Sentinel', icon: Bot,     status: (onlineCount > 0 ? 'up' : 'down') as any, detail: 'Ghost#6982' },
-    { label: 'Neon Database',    icon: Database,  status: 'up' as any,                           detail: 'PostgreSQL · us-east-1' },
-    { label: 'Pinecone Memory',  icon: MemoryStick, status: 'up' as any,                         detail: 'Vector · ghost ns' },
-    { label: 'Ollama',           icon: Cpu,       status: 'up' as any,                           detail: 'nomic-embed-text' },
+  // Build health items dynamically
+  const healthItems: Array<{
+    label: string; icon: any; status: 'up' | 'down' | 'checking'; detail: string; ping?: number;
+  }> = [
+    { label: 'Ghost Gateway',      icon: Server,      status: gatewayOnline,                            detail: 'port 18789',          ping: gatewayPing },
+    { label: 'WebSocket',           icon: Wifi,        status: wsConnected ? 'up' : 'down' as any,      detail: 'live agent feed' },
+    { label: 'Discord — Sentinel',  icon: Bot,         status: (onlineCount > 0 ? 'up' : 'down') as any, detail: 'Ghost#6982' },
+    { label: 'Neon Database',       icon: Database,    status: 'up' as any,                              detail: 'PostgreSQL · us-east-1' },
+    { label: 'Pinecone Memory',     icon: MemoryStick, status: 'up' as any,                              detail: 'Vector · ghost ns' },
+    { label: 'Ollama',              icon: Cpu,         status: 'up' as any,                              detail: 'nomic-embed-text' },
   ];
+
+  // Add Tailscale health if data is available
+  if (tailscale) {
+    const tsDetail = tailscale.running
+      ? `${tailscale.hostname || 'node'} · ${tailscale.onlinePeers}/${tailscale.peerCount} peers`
+      : 'not running';
+    healthItems.push({
+      label:  'Tailscale VPN',
+      icon:   Globe,
+      status: tailscale.running && tailscale.onlinePeers > 0 ? 'up' : tailscale.running ? 'down' : 'down',
+      detail: tsDetail,
+    });
+  }
 
   return (
     <div className="p-5 pb-10 max-w-screen-2xl mx-auto space-y-5">

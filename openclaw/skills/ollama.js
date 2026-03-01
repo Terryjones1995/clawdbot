@@ -24,6 +24,7 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { trackUsage } = require('../../src/skills/usage-tracker');
 const LOG_FILE = path.join(__dirname, '../../memory/run_log.md');
 
 class OllamaConnector {
@@ -83,6 +84,7 @@ class OllamaConnector {
       const ms   = Date.now() - start;
       this._log('INFO', 'chat', model, 'success',
         `tokens=${data.eval_count ?? '?'} duration=${ms}ms`);
+      trackUsage({ provider: 'ollama', model, agent: 'ghost', action: 'chat', input_tokens: data.prompt_eval_count ?? 0, output_tokens: data.eval_count ?? 0, latency_ms: ms });
       return data;
     } catch (err) {
       this._log('ERROR', 'chat', model, 'failed', err.message);
@@ -177,6 +179,7 @@ class OllamaConnector {
       const data = await this._request('POST', '/api/embeddings', body);
       this._log('INFO', 'embed', model, 'success',
         `dim=${data.embedding?.length ?? '?'}`);
+      trackUsage({ provider: 'ollama', model, agent: 'ghost', action: 'embed', input_tokens: Math.ceil(text.length / 4), output_tokens: 0, latency_ms: 0 });
       return data.embedding;
     } catch (err) {
       this._log('ERROR', 'embed', model, 'failed', err.message);

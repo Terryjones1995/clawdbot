@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Radar dish -->
+  <circle cx="12" cy="12" r="9"/>
+  <circle cx="12" cy="12" r="5" opacity="0.5"/>
+  <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+  <!-- Radar sweep -->
+  <path d="M12 12l5-5"/>
+  <!-- Signal waves -->
+  <path d="M17 3c2 2 3 5 3 9" opacity="0.3"/>
+</svg>

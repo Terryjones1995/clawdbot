@@ -1,235 +1,135 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { CreditCard, TrendingDown, TrendingUp, Zap, RefreshCw, AlertTriangle } from 'lucide-react';
 import { formatCost, formatRelative } from '@/lib/utils';
 
-interface Provider {
-  id:         string;
-  name:       string;
-  color:      string;
-  logo:       string;
-  balance?:   number;
-  used:       number;
-  limit?:     number;
-  lastCall:   string;
-  model:      string;
-  status:     'active' | 'low' | 'depleted' | 'free';
-  callsToday: number;
-  costToday:  number;
-  costTotal:  number;
+interface ProviderStats {
+  provider:             string;
+  calls:                string;
+  total_input_tokens:   string;
+  total_output_tokens:  string;
+  total_cost:           string;
+  last_model:           string;
+  last_call:            string;
 }
 
 interface UsageEntry {
-  ts:       string;
-  provider: string;
-  model:    string;
-  agentId:  string;
-  tokens:   number;
-  cost:     number;
+  id:            number;
+  ts:            string;
+  provider:      string;
+  model:         string;
+  agent:         string;
+  action:        string;
+  input_tokens:  number;
+  output_tokens: number;
+  cost:          number;
+  latency_ms:    number;
 }
 
-const PROVIDERS: Provider[] = [
-  {
-    id:         'anthropic',
-    name:       'Anthropic',
-    color:      '#7C3AED',
-    logo:       '◈',
-    balance:    0,
-    used:       12.47,
-    limit:      25,
-    lastCall:   new Date(Date.now()-86400000*2).toISOString(),
-    model:      'claude-sonnet-4-6',
-    status:     'depleted',
-    callsToday: 0,
-    costToday:  0,
-    costTotal:  12.47,
-  },
-  {
-    id:         'openai',
-    name:       'OpenAI',
-    color:      '#10B981',
-    logo:       '○',
-    balance:    18.32,
-    used:       6.68,
-    limit:      25,
-    lastCall:   new Date(Date.now()-300000).toISOString(),
-    model:      'gpt-4o / gpt-4o-mini-search',
-    status:     'active',
-    callsToday: 47,
-    costToday:  0.14,
-    costTotal:  6.68,
-  },
-  {
-    id:         'xai',
-    name:       'xAI / Grok',
-    color:      '#1DA1F2',
-    logo:       '✕',
-    balance:    40.15,
-    used:       9.85,
-    limit:      50,
-    lastCall:   new Date(Date.now()-120000).toISOString(),
-    model:      'grok-4-1-fast-reasoning',
-    status:     'active',
-    callsToday: 312,
-    costToday:  0.87,
-    costTotal:  9.85,
-  },
-  {
-    id:         'ollama',
-    name:       'Ollama (Local)',
-    color:      '#27AE60',
-    logo:       '◉',
-    used:       0,
-    lastCall:   new Date(Date.now()-60000).toISOString(),
-    model:      'qwen3:8b / nomic-embed-text',
-    status:     'free',
-    callsToday: 1847,
-    costToday:  0,
-    costTotal:  0,
-  },
-  {
-    id:         'pinecone',
-    name:       'Pinecone',
-    color:      '#00D4FF',
-    logo:       '◈',
-    balance:    undefined,
-    used:       0.23,
-    lastCall:   new Date(Date.now()-900000).toISOString(),
-    model:      'ghost-memory (768-dim)',
-    status:     'active',
-    callsToday: 94,
-    costToday:  0.01,
-    costTotal:  0.23,
-  },
-];
-
-const MOCK_USAGE: UsageEntry[] = [
-  { ts: new Date(Date.now()-120000).toISOString(),   provider: 'xai',       model: 'grok-4-1-fast', agentId: 'scout',    tokens: 1247, cost: 0.0031 },
-  { ts: new Date(Date.now()-300000).toISOString(),   provider: 'openai',    model: 'gpt-4o-mini',   agentId: 'sentinel', tokens: 312,  cost: 0.0001 },
-  { ts: new Date(Date.now()-900000).toISOString(),   provider: 'pinecone',  model: 'ghost-memory',  agentId: 'archivist',tokens: 0,    cost: 0.0010 },
-  { ts: new Date(Date.now()-1800000).toISOString(),  provider: 'xai',       model: 'grok-3-fast',   agentId: 'codex',    tokens: 892,  cost: 0.0022 },
-  { ts: new Date(Date.now()-3600000).toISOString(),  provider: 'openai',    model: 'gpt-4o',        agentId: 'sentinel', tokens: 2100, cost: 0.0168 },
-  { ts: new Date(Date.now()-7200000).toISOString(),  provider: 'xai',       model: 'grok-3-fast',   agentId: 'scout',    tokens: 4321, cost: 0.0108 },
-  { ts: new Date(Date.now()-14400000).toISOString(), provider: 'openai',    model: 'gpt-4o-mini',   agentId: 'sentinel', tokens: 410,  cost: 0.0001 },
-  { ts: new Date(Date.now()-86400000).toISOString(), provider: 'anthropic', model: 'claude-sonnet', agentId: 'forge',    tokens: 8240, cost: 0.2472 },
-];
+const PROVIDER_META: Record<string, { name: string; color: string; logo: string }> = {
+  ollama:    { name: 'Ollama (Local)',  color: '#27AE60', logo: '\u25C9' },
+  openai:    { name: 'OpenAI',          color: '#10B981', logo: '\u25CB' },
+  anthropic: { name: 'Anthropic',       color: '#7C3AED', logo: '\u25C8' },
+  xai:       { name: 'xAI / Grok',      color: '#1DA1F2', logo: '\u2715' },
+};
 
 const stagger = {
   container: { animate: { transition: { staggerChildren: 0.06 } } },
   item:      { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 } },
 };
 
-function ProviderCard({ p }: { p: Provider }) {
-  const pct = p.limit ? (p.used / p.limit) * 100 : 0;
-  const isLow = pct > 75;
-  const isDepleted = p.status === 'depleted';
-  const isFree = p.status === 'free';
+function ProviderCard({ p }: { p: ProviderStats }) {
+  const meta = PROVIDER_META[p.provider] ?? { name: p.provider, color: '#64748B', logo: '\u2022' };
+  const isFree = p.provider === 'ollama';
+  const totalCost = parseFloat(p.total_cost) || 0;
+  const calls = parseInt(p.calls) || 0;
 
   return (
     <motion.div
       variants={stagger.item}
       whileHover={{ y: -2 }}
       className="glass rounded-2xl p-5 relative overflow-hidden"
-      style={{ border: `1px solid ${isDepleted ? 'rgba(239,68,68,0.2)' : `${p.color}20`}` }}
+      style={{ border: `1px solid ${meta.color}20` }}
     >
-      {/* Top gradient line */}
       <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
-           style={{ background: `linear-gradient(90deg, transparent, ${p.color}60, transparent)` }} />
+           style={{ background: `linear-gradient(90deg, transparent, ${meta.color}60, transparent)` }} />
 
-      {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl flex items-center justify-center text-base font-bold"
-               style={{ background: `${p.color}15`, color: p.color, border: `1px solid ${p.color}25` }}>
-            {p.logo}
+               style={{ background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25` }}>
+            {meta.logo}
           </div>
           <div>
-            <p className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>{p.name}</p>
-            <p className="text-[9px] text-ghost-muted/60 font-mono">{p.model}</p>
+            <p className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>{meta.name}</p>
+            <p className="text-[9px] text-ghost-muted/60 font-mono">{p.last_model || 'N/A'}</p>
           </div>
         </div>
-
-        {/* Status badge */}
         <span className={`text-[9px] px-2 py-0.5 rounded-full font-mono uppercase tracking-wider ${
-          isFree      ? 'text-green-400 bg-green-400/10'  :
-          isDepleted  ? 'text-red-400 bg-red-400/10'      :
-          isLow       ? 'text-yellow-400 bg-yellow-400/10' :
-                        'text-green-400 bg-green-400/10'
+          isFree ? 'text-green-400 bg-green-400/10' : 'text-blue-400 bg-blue-400/10'
         }`}>
-          {isFree ? 'FREE' : isDepleted ? 'DEPLETED' : isLow ? 'LOW' : 'ACTIVE'}
+          {isFree ? 'FREE' : 'PAID'}
         </span>
       </div>
 
-      {/* Balance / usage */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-3">
         <div>
-          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">
-            {isFree ? 'Cost' : 'Balance'}
-          </p>
-          <p className="text-lg font-bold" style={{ fontFamily: 'Space Grotesk', color: isDepleted ? '#EF4444' : p.color }}>
-            {isFree ? 'Free' : p.balance !== undefined ? formatCost(p.balance) : '—'}
+          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Total Cost</p>
+          <p className="text-lg font-bold" style={{ fontFamily: 'Space Grotesk', color: isFree ? '#10B981' : meta.color }}>
+            {isFree ? 'Free' : formatCost(totalCost)}
           </p>
         </div>
         <div>
-          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Spent Total</p>
+          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Total Calls</p>
           <p className="text-lg font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>
-            {formatCost(p.costTotal)}
+            {calls.toLocaleString()}
           </p>
         </div>
         <div>
-          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Today</p>
-          <p className="text-sm font-semibold text-white">{formatCost(p.costToday)}</p>
+          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Input Tokens</p>
+          <p className="text-sm font-semibold text-white">{parseInt(p.total_input_tokens || '0').toLocaleString()}</p>
         </div>
         <div>
-          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Calls Today</p>
-          <p className="text-sm font-semibold text-white">{p.callsToday.toLocaleString()}</p>
+          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Output Tokens</p>
+          <p className="text-sm font-semibold text-white">{parseInt(p.total_output_tokens || '0').toLocaleString()}</p>
         </div>
       </div>
 
-      {/* Usage bar */}
-      {p.limit && (
-        <div className="mb-3">
-          <div className="flex justify-between text-[9px] font-mono text-ghost-muted/50 mb-1">
-            <span>{formatCost(p.used)} used</span>
-            <span>{formatCost(p.limit)} limit</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${Math.min(pct, 100)}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-              className="h-full rounded-full"
-              style={{ background: isDepleted ? '#EF4444' : isLow ? '#F59E0B' : p.color }}
-            />
-          </div>
-          <p className="text-[9px] text-ghost-muted/40 font-mono mt-1 text-right">{pct.toFixed(0)}% used</p>
-        </div>
-      )}
-
-      {/* Last call */}
       <p className="text-[9px] text-ghost-muted/40 font-mono">
-        Last call: {formatRelative(p.lastCall)}
+        Last call: {p.last_call ? formatRelative(p.last_call) : 'never'}
       </p>
-
-      {/* Depleted warning */}
-      {isDepleted && (
-        <div className="mt-3 flex items-center gap-2 p-2 rounded-lg bg-red-500/5 border border-red-500/15">
-          <AlertTriangle size={11} className="text-red-400 shrink-0" />
-          <p className="text-[9px] text-red-400/80">Credits depleted. Add credits to restore service.</p>
-        </div>
-      )}
     </motion.div>
   );
 }
 
 export default function CreditsPage() {
-  const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'all'>('today');
+  const [period, setPeriod]     = useState<'today' | 'week' | 'month' | 'all'>('all');
+  const [providers, setProviders] = useState<ProviderStats[]>([]);
+  const [calls, setCalls]       = useState<UsageEntry[]>([]);
+  const [loading, setLoading]   = useState(true);
 
-  const totalSpent = PROVIDERS.reduce((s, p) => s + p.costTotal, 0);
-  const spentToday = PROVIDERS.reduce((s, p) => s + p.costToday, 0);
-  const freeCallsToday = PROVIDERS.find(p => p.id === 'ollama')?.callsToday ?? 0;
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [statsRes, recentRes] = await Promise.all([
+        fetch(`/api/credits?period=${period}`),
+        fetch(`/api/credits/recent?period=${period}&limit=50`),
+      ]);
+      const stats  = await statsRes.json();
+      const recent = await recentRes.json();
+      setProviders(stats.providers || []);
+      setCalls(recent.calls || []);
+    } catch { /* offline */ }
+    setLoading(false);
+  }, [period]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const totalSpent = providers.reduce((s, p) => s + (parseFloat(p.total_cost) || 0), 0);
+  const totalCalls = providers.reduce((s, p) => s + (parseInt(p.calls) || 0), 0);
+  const freeCalls  = providers.find(p => p.provider === 'ollama')?.calls ?? '0';
 
   return (
     <div className="p-6 max-w-screen-xl mx-auto">
@@ -240,22 +140,22 @@ export default function CreditsPage() {
             <CreditCard size={16} className="text-ghost-accent" />
             <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>API Credits</h2>
           </div>
-          <p className="text-xs text-ghost-muted">Provider balances and usage tracking</p>
+          <p className="text-xs text-ghost-muted">Provider usage and cost tracking</p>
         </div>
-        <button className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
+        <button onClick={fetchData}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
                 style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-          <RefreshCw size={13} />
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
 
       {/* Summary KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[
-          { label: 'Spent Today',     value: formatCost(spentToday),  icon: TrendingDown, color: '#EF4444'  },
-          { label: 'Spent Total',     value: formatCost(totalSpent),  icon: CreditCard,   color: '#F59E0B'  },
-          { label: 'Free Calls Today',value: freeCallsToday.toLocaleString(), icon: Zap, color: '#10B981' },
-          { label: 'Active Providers',value: PROVIDERS.filter(p => p.status === 'active' || p.status === 'free').length,
-            icon: TrendingUp, color: '#00D4FF' },
+          { label: 'Total Spend',      value: formatCost(totalSpent),      icon: TrendingDown, color: '#EF4444'  },
+          { label: 'Total Calls',      value: totalCalls.toLocaleString(), icon: CreditCard,   color: '#F59E0B'  },
+          { label: 'Free Calls',       value: parseInt(freeCalls).toLocaleString(), icon: Zap, color: '#10B981' },
+          { label: 'Providers Active', value: providers.length,            icon: TrendingUp,   color: '#00D4FF'  },
         ].map((kpi) => (
           <motion.div
             key={kpi.label}
@@ -275,6 +175,16 @@ export default function CreditsPage() {
         ))}
       </div>
 
+      {/* Period filter */}
+      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        {(['today','week','month','all'] as const).map(p => (
+          <button key={p} onClick={() => setPeriod(p)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-mono capitalize transition-all ${
+                    period === p ? 'text-ghost-accent bg-ghost-accent/15' : 'text-ghost-muted hover:text-white hover:bg-white/5'
+                  }`}>{p}</button>
+        ))}
+      </div>
+
       {/* Provider cards */}
       <motion.div
         variants={stagger.container}
@@ -282,7 +192,12 @@ export default function CreditsPage() {
         animate="animate"
         className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-6"
       >
-        {PROVIDERS.map(p => <ProviderCard key={p.id} p={p} />)}
+        {providers.length === 0 && !loading && (
+          <div className="col-span-full glass rounded-2xl p-8 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+            <p className="text-sm text-ghost-muted">No API usage recorded yet. Send a message to start tracking.</p>
+          </div>
+        )}
+        {providers.map(p => <ProviderCard key={p.provider} p={p} />)}
       </motion.div>
 
       {/* Recent usage log */}
@@ -311,19 +226,25 @@ export default function CreditsPage() {
               </tr>
             </thead>
             <tbody>
-              {MOCK_USAGE.map((u, i) => {
-                const prov = PROVIDERS.find(p => p.id === u.provider);
+              {calls.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-[10px] text-ghost-muted/40">
+                    {loading ? 'Loading...' : 'No API calls recorded yet'}
+                  </td>
+                </tr>
+              ) : calls.map((u) => {
+                const meta = PROVIDER_META[u.provider] ?? { name: u.provider, color: '#64748B', logo: '\u2022' };
                 return (
-                  <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                  <tr key={u.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
                     <td className="px-4 py-2.5 text-[10px] text-ghost-muted/60 font-mono">{formatRelative(u.ts)}</td>
                     <td className="px-4 py-2.5">
-                      <span className="text-[10px] font-medium" style={{ color: prov?.color ?? '#64748B' }}>
-                        {prov?.logo} {prov?.name ?? u.provider}
+                      <span className="text-[10px] font-medium" style={{ color: meta.color }}>
+                        {meta.logo} {meta.name}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-[10px] text-ghost-muted font-mono">{u.model}</td>
-                    <td className="px-4 py-2.5 text-[10px] text-ghost-muted font-mono">{u.agentId}</td>
-                    <td className="px-4 py-2.5 text-[10px] text-ghost-muted font-mono">{u.tokens > 0 ? u.tokens.toLocaleString() : '—'}</td>
+                    <td className="px-4 py-2.5 text-[10px] text-ghost-muted font-mono">{u.agent || '-'}</td>
+                    <td className="px-4 py-2.5 text-[10px] text-ghost-muted font-mono">{((u.input_tokens || 0) + (u.output_tokens || 0)).toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-[10px] font-mono" style={{ color: u.cost === 0 ? '#10B981' : '#F59E0B' }}>
                       {u.cost === 0 ? 'free' : formatCost(u.cost)}
                     </td>
@@ -340,7 +261,7 @@ export default function CreditsPage() {
            style={{ border: '1px solid rgba(39,174,96,0.12)' }}>
         <Zap size={13} className="text-green-400 shrink-0" />
         <p className="text-[10px] text-ghost-muted">
-          <span className="text-green-400 font-medium">Free-first routing active</span> — Ghost defaults to Ollama qwen3:8b (local, zero cost).
+          <span className="text-green-400 font-medium">Free-first routing active</span> — Ghost defaults to Ollama qwen3-coder (local, zero cost).
           Paid APIs are only called for real-time data, vision, or when Ollama is unavailable.
         </p>
       </div>

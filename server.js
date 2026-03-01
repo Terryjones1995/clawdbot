@@ -21,6 +21,10 @@ const operatorRoutes  = require('./src/routes/operator');
 const codexRoutes     = require('./src/routes/codex');
 const jobsRoutes      = require('./src/routes/jobs');
 const logsRoutes      = require('./src/routes/logs');
+const creditsRoutes   = require('./src/routes/credits');
+const tasksRoutes     = require('./src/routes/tasks');
+const settingsRoutes  = require('./src/routes/settings');
+const lessonsRoutes   = require('./src/routes/lessons');
 const receptionRoutes = require('./src/routes/reception');
 const feedbackRoutes  = require('./src/routes/feedback');
 const discordRoutes   = require('./src/routes/discord');
@@ -54,8 +58,8 @@ app.use((req, res, next) => {
 
 // ── Public routes ─────────────────────────────────────────────────────────────
 
-app.get('/api/heartbeat', (req, res) => {
-  res.json(heartbeat.getStatus());
+app.get('/api/heartbeat', async (req, res) => {
+  res.json(await heartbeat.getStatus());
 });
 
 app.use('/auth', authRoutes);
@@ -97,6 +101,10 @@ app.use('/api/jobs',          PORTAL_BYPASS, jobsRoutes);
 app.use('/api/logs',          PORTAL_BYPASS, logsRoutes.router);
 app.use('/api/errors',        PORTAL_BYPASS, logsRoutes.errorsRouter);
 app.use('/api/forge',         PORTAL_BYPASS, forgeRoutes);
+app.use('/api/credits',       PORTAL_BYPASS, creditsRoutes);
+app.use('/api/tasks',         PORTAL_BYPASS, tasksRoutes);
+app.use('/api/settings',      PORTAL_BYPASS, settingsRoutes);
+app.use('/api/lessons',       PORTAL_BYPASS, lessonsRoutes);
 app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
   try {
     const summary = await scribe.dailySummary({ narrative: false });
@@ -179,13 +187,38 @@ db.events.on('forge:progress', (msg) => _broadcast(msg));
     const last        = _fixCooldowns.get(cooldownKey) || 0;
     if (Date.now() - last < 10 * 60 * 1000) return; // 10-min cooldown per unique error
     _fixCooldowns.set(cooldownKey, Date.now());
-    console.log(`[AutoFix] Error in ${agentName} — attempting auto-repair…`);
-    forgeAgent.autoFixWithClaude({ errorNote: note, agentName }).then(r => {
+
+    const errorId = `autofix-${Date.now()}`;
+    console.log(`[AutoFix] Error in ${agentName} — opening Claude CLI in Ghost terminal…`);
+
+    // Open the Ghost terminal and stream Claude CLI output into it in real-time
+    db.events.emit('forge:progress', {
+      type: 'fix-one:start', errorId, agent: agentName, file: '', ts: new Date().toISOString(),
+    });
+
+    forgeAgent.autoFixWithClaude({
+      errorNote: note,
+      agentName,
+      onProgress: (text) => {
+        db.events.emit('forge:progress', {
+          type: 'fix-one:output', errorId, text, ts: new Date().toISOString(),
+        });
+      },
+    }).then(r => {
       console.log(`[AutoFix] ${r.fixed ? '✓ Fixed' : '✗ No fix'}: ${r.summary}`);
       if (r.fixed) {
         try { require('child_process').execSync('pm2 restart ghost', { timeout: 15000 }); } catch { /* non-fatal */ }
       }
-    }).catch(() => {});
+      db.events.emit('forge:progress', {
+        type: 'fix-one:complete', errorId, fixed: r.fixed, summary: r.summary,
+        filePath: r.filePath, ts: new Date().toISOString(),
+      });
+    }).catch(err => {
+      db.events.emit('forge:progress', {
+        type: 'fix-one:complete', errorId, fixed: false, summary: err.message,
+        ts: new Date().toISOString(),
+      });
+    });
   });
 }
 

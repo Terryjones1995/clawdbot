@@ -20,6 +20,7 @@ const path = require('path');
 const ollama    = require('../openclaw/skills/ollama');
 const mini      = require('./skills/openai-mini');
 const memory    = require('./skills/memory');
+const learning  = require('./skills/learning');
 const registry  = require('./agentRegistry');
 const archivist = require('./archivist');
 const db        = require('./db');
@@ -133,8 +134,9 @@ async function _maybeSummarise(thread) {
 
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function _buildSystemPrompt(thread, pineconeContext = null, factsContext = null, profileContext = null) {
+function _buildSystemPrompt(thread, pineconeContext = null, factsContext = null, profileContext = null, lessonsContext = null) {
   let sys = _ghostSystem();
+  if (lessonsContext)  sys += `\n\n## Lessons learned (avoid repeating these mistakes):\n${lessonsContext}`;
   if (profileContext)  sys += `\n\n## User profile:\n${profileContext}`;
   if (factsContext)    sys += `\n\n## What Ghost knows (persistent memory):\n${factsContext}`;
   if (pineconeContext) sys += `\n\n## Relevant long-term memories:\n${pineconeContext}`;
@@ -189,6 +191,9 @@ async function chat(threadId, userMessage) {
     }).catch(() => {});
   }
 
+  // Fetch relevant lessons from the learning system
+  const lessonsContext = await learning.getRelevantLessons('ghost', userMessage).catch(() => null);
+
   // Fetch relevant facts from ghost_memory (persistent knowledge)
   const factsContext = await memory.getRelevantFacts(userMessage).catch(() => null);
 
@@ -223,7 +228,7 @@ async function chat(threadId, userMessage) {
     }
   } catch { /* non-fatal */ }
 
-  const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext, profileContext);
+  const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext, profileContext, lessonsContext);
   const messages     = _buildMessages(
     { ...thread, messages: thread.messages.slice(0, -1) },
     userMessage,

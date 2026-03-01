@@ -150,21 +150,30 @@ const AGENT_META: Record<string, {
 function AgentAvatar({ agentId, size = 48 }: { agentId: string; size?: number }) {
   const color = agentColor(agentId);
   const meta  = AGENT_META[agentId];
-  const [imgOk, setImgOk] = useState(true);
+  const [svgOk, setSvgOk] = useState(true);
+
+  const iconSize = Math.round(size * 0.55);
 
   return (
     <div className="relative shrink-0 flex items-center justify-center rounded-xl overflow-hidden"
-         style={{ width: size, height: size, background: `${color}15`, border: `1.5px solid ${color}30`, flexShrink: 0 }}>
-      {imgOk && (
-        <img src={`/bots/${agentId}.png`} alt={meta?.name ?? agentId}
-             width={size} height={size}
-             style={{ objectFit: 'cover', width: '100%', height: '100%', position: 'absolute', inset: 0 }}
-             onError={() => setImgOk(false)} />
+         style={{
+           width: size, height: size,
+           background: `${color}15`,
+           border: `1.5px solid ${color}30`,
+           flexShrink: 0,
+           boxShadow: `0 0 12px ${color}08`,
+         }}>
+      {svgOk ? (
+        <img src={`/bots/${agentId}.svg`} alt={meta?.name ?? agentId}
+             width={iconSize} height={iconSize}
+             style={{ filter: `drop-shadow(0 0 4px ${color}40)` }}
+             onError={() => setSvgOk(false)} />
+      ) : (
+        <span className="font-black select-none"
+              style={{ color, fontFamily: 'Space Grotesk', fontSize: size * 0.38 }}>
+          {meta?.name.charAt(0)}
+        </span>
       )}
-      <span className="relative z-10 font-black select-none"
-            style={{ color, fontFamily: 'Space Grotesk', fontSize: size * 0.38, opacity: imgOk ? 0 : 1 }}>
-        {meta?.name.charAt(0)}
-      </span>
     </div>
   );
 }
@@ -189,14 +198,19 @@ function CommanderCard({
       onClick={() => onSelect(agentId)}
       className="cursor-pointer rounded-2xl relative overflow-hidden"
       style={{
-        background: `linear-gradient(135deg, ${color}08 0%, rgba(5,10,20,0.9) 55%, rgba(5,10,20,0.6) 100%)`,
-        border:     isSelected ? `1px solid ${color}50` : `1px solid ${color}18`,
-        boxShadow:  isSelected ? `0 0 50px ${color}18` : `0 4px 24px rgba(0,0,0,0.4)`,
+        background: `linear-gradient(135deg, ${color}0C 0%, rgba(5,10,20,0.9) 45%, ${color}06 100%)`,
+        border:     isSelected ? `1px solid ${color}50` : `1px solid ${color}20`,
+        boxShadow:  isSelected ? `0 0 60px ${color}20, 0 4px 30px rgba(0,0,0,0.5)` : `0 4px 24px rgba(0,0,0,0.4)`,
       }}
     >
+      {/* Animated gradient top border */}
+      <div className="pointer-events-none absolute top-0 left-0 right-0 h-[2px]"
+           style={{ background: `linear-gradient(90deg, transparent, ${color}70, ${color}30, transparent)` }} />
       {/* Ambient corner glow */}
-      <div className="pointer-events-none absolute -top-16 -left-16 w-48 h-48 rounded-full blur-3xl"
-           style={{ background: color, opacity: 0.06 }} />
+      <div className="pointer-events-none absolute -top-16 -left-16 w-56 h-56 rounded-full blur-3xl"
+           style={{ background: color, opacity: 0.07 }} />
+      <div className="pointer-events-none absolute -bottom-20 -right-20 w-40 h-40 rounded-full blur-3xl"
+           style={{ background: color, opacity: 0.04 }} />
       <div className="pointer-events-none absolute top-0 right-0 h-px w-64"
            style={{ background: `linear-gradient(90deg, transparent, ${color}50)` }} />
       <div className="pointer-events-none absolute top-0 left-0 w-px h-20"
@@ -278,17 +292,20 @@ function DirectorCard({
       whileHover={{ y: -4, scale: 1.02 }}
       whileTap={{ scale: 0.97 }}
       onClick={() => onSelect(agentId)}
-      className="cursor-pointer rounded-xl overflow-hidden flex flex-col"
+      className="cursor-pointer rounded-xl overflow-hidden flex flex-col group/dir"
       style={{
         background: isSelected ? `${color}0E` : 'rgba(255,255,255,0.025)',
         border:     isSelected ? `1px solid ${color}45` : '1px solid rgba(255,255,255,0.06)',
-        boxShadow:  isSelected ? `0 0 28px ${color}18, 0 4px 16px rgba(0,0,0,0.3)` : '0 2px 12px rgba(0,0,0,0.2)',
-        transition: 'box-shadow 0.2s',
+        boxShadow:  isSelected ? `0 0 32px ${color}1A, 0 4px 16px rgba(0,0,0,0.3)` : '0 2px 12px rgba(0,0,0,0.2)',
+        transition: 'box-shadow 0.25s, background 0.25s',
       }}
     >
       {/* Color top bar */}
       <div className="h-1 w-full shrink-0"
            style={{ background: `linear-gradient(90deg, ${color}, ${color}30, transparent)` }} />
+      {/* Hover gradient overlay */}
+      <div className="pointer-events-none absolute inset-0 opacity-0 group-hover/dir:opacity-100 transition-opacity duration-300"
+           style={{ background: `linear-gradient(135deg, ${color}08 0%, transparent 50%)` }} />
 
       <div className="p-4 flex flex-col gap-3 flex-1">
         {/* Avatar + status */}
@@ -351,19 +368,18 @@ function WorkerCard({
       whileHover={{ x: 3 }}
       whileTap={{ scale: 0.98 }}
       onClick={() => onSelect(agentId)}
-      className="cursor-pointer rounded-xl p-3 flex items-center gap-3 relative overflow-hidden"
+      className="cursor-pointer rounded-xl p-3 flex items-center gap-3 relative overflow-hidden group/worker"
       style={{
         background:  isSelected ? `${color}0C` : 'rgba(255,255,255,0.02)',
         border:      `1px solid ${isSelected ? `${color}35` : 'rgba(255,255,255,0.05)'}`,
         borderLeft:  `2.5px solid ${isSelected ? color : `${color}50`}`,
         boxShadow:   isSelected ? `0 0 16px ${color}12` : 'none',
+        transition:  'background 0.2s, box-shadow 0.2s',
       }}
     >
-      {/* Ambient bg on selected */}
-      {isSelected && (
-        <div className="pointer-events-none absolute inset-0 opacity-30"
-             style={{ background: `radial-gradient(ellipse at left, ${color}15, transparent 70%)` }} />
-      )}
+      {/* Ambient bg on selected + hover */}
+      <div className={`pointer-events-none absolute inset-0 transition-opacity duration-200 ${isSelected ? 'opacity-30' : 'opacity-0 group-hover/worker:opacity-20'}`}
+           style={{ background: `radial-gradient(ellipse at left, ${color}15, transparent 70%)` }} />
 
       <AgentAvatar agentId={agentId} size={32} />
 
@@ -589,15 +605,15 @@ function AgentDrawer({ agentId, onClose }: { agentId: string; onClose: () => voi
  * ================================================================================ */
 function TierDivider({ label, desc }: { label: string; desc: string }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,255,0.10))' }} />
-      <div className="flex items-center gap-2 px-3 py-1 rounded-full shrink-0"
-           style={{ background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.08)' }}>
-        <span className="text-[9px] font-black tracking-[0.25em] text-ghost-accent/60 uppercase">{label}</span>
+    <div className="flex items-center gap-3 my-1">
+      <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,255,0.12))' }} />
+      <div className="flex items-center gap-2.5 px-4 py-1.5 rounded-full shrink-0"
+           style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.10)', boxShadow: '0 0 16px rgba(0,212,255,0.04)' }}>
+        <span className="text-[9px] font-black tracking-[0.25em] text-ghost-accent/70 uppercase">{label}</span>
         <span className="text-[9px] text-ghost-muted/25">·</span>
-        <span className="text-[9px] text-ghost-muted/25 tracking-wide">{desc}</span>
+        <span className="text-[9px] text-ghost-muted/30 tracking-wide">{desc}</span>
       </div>
-      <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(0,212,255,0.10), transparent)' }} />
+      <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(0,212,255,0.12), transparent)' }} />
     </div>
   );
 }

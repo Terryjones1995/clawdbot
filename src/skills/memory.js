@@ -25,6 +25,7 @@ const db     = require('../db');
 const mini   = require('./openai-mini');
 const ollama = require('../../openclaw/skills/ollama');
 const redis  = require('../redis');
+const learning = require('./learning');
 
 const EXTRACT_SYSTEM = `You are a fact extractor for Ghost, an AI assistant managing a league operations platform (HOF League) and Discord server.
 
@@ -262,6 +263,9 @@ async function detectAndStoreCorrection(userMessage, previousReply, threadId) {
     source:   'correction',
     threadId,
   }).catch(() => {});
+
+  // Also feed to learning system so agents can improve
+  learning.learnFromCorrection('ghost', previousReply, userMessage, threadId).catch(() => {});
 
   console.log(`[Memory] Stored correction from thread ${threadId}: ${parsed.lesson.slice(0, 80)}`);
   return true;

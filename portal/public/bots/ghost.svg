@@ -1,14 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-  <circle cx="100" cy="100" r="100" fill="#0A1628"/>
-  <!-- outer glow ring -->
-  <circle cx="100" cy="100" r="90" fill="none" stroke="#00D4FF" stroke-width="2" opacity="0.4"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
   <!-- Crown -->
-  <path d="M 55 130 L 55 85 L 75 105 L 100 65 L 125 105 L 145 85 L 145 130 Z"
-        fill="#00D4FF" opacity="0.9"/>
-  <!-- Crown gems -->
-  <circle cx="100" cy="65" r="6" fill="#ffffff"/>
-  <circle cx="75" cy="105" r="4" fill="#ffffff" opacity="0.7"/>
-  <circle cx="125" cy="105" r="4" fill="#ffffff" opacity="0.7"/>
-  <!-- base line -->
-  <rect x="50" y="128" width="100" height="8" rx="4" fill="#00D4FF" opacity="0.6"/>
+  <path d="M4 14l2-8 3 4 3-6 3 6 3-4 2 8"/>
+  <path d="M4 14h16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2z"/>
+  <!-- Gems -->
+  <circle cx="9" cy="12" r="0.8" fill="currentColor" stroke="none"/>
+  <circle cx="15" cy="12" r="0.8" fill="currentColor" stroke="none"/>
 </svg>

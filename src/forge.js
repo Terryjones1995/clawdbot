@@ -19,6 +19,8 @@ const { execSync, spawn }     = require('child_process');
 const Anthropic               = require('@anthropic-ai/sdk');
 const mini           = require('./skills/openai-mini');
 const codexModel     = require('./skills/openai-codex');
+const { trackUsage } = require('./skills/usage-tracker');
+const learning       = require('./skills/learning');
 const archivist      = require('./archivist');
 const db             = require('./db');
 
@@ -146,6 +148,7 @@ async function callClaude(model, userMessage) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set — cannot escalate to Claude');
 
+  const start    = Date.now();
   const client   = new Anthropic({ apiKey });
   const response = await client.messages.create({
     model,
@@ -153,6 +156,7 @@ async function callClaude(model, userMessage) {
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userMessage }],
   });
+  trackUsage({ provider: 'anthropic', model, agent: 'forge', action: 'dev', input_tokens: response.usage?.input_tokens ?? 0, output_tokens: response.usage?.output_tokens ?? 0, latency_ms: Date.now() - start });
   return response.content[0]?.text || '';
 }
 
@@ -323,6 +327,15 @@ const AGENT_FILE_MAP = {
   switchboard: 'src/switchboard.js',
 };
 
+// Files that must never be auto-patched — they are the auto-fix engine itself.
+// Corrupting these would break the repair system and create an infinite loop.
+const PROTECTED_FILES = new Set([
+  'src/forge.js',
+  'server.js',
+  'src/skills/usage-tracker.js',
+  'src/skills/learning.js',
+]);
+
 // Parse an error note/stack to extract a likely file path
 function _extractFilePath(note = '', action = '') {
   const patterns = [
@@ -438,6 +451,7 @@ async function autoFix({ errorNote, filePath, agentName, restart = true } = {}) 
 
   log('autofix', 'system', modelUsed, 'applied', true, `file=${targetFile}`);
   db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix', outcome: 'fixed', model: modelUsed, note: `file=${targetFile}` }).catch(() => {});
+  learning.learnFromFix(agentName || 'unknown', targetError, `Fixed with ${modelUsed}`, targetFile).catch(() => {});
 
   // Step 5: restart Ghost
   let restartMsg = '';
@@ -519,6 +533,16 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
     };
   }
 
+  // Guard: never auto-patch the repair engine itself — would risk corruption + infinite loop
+  if (PROTECTED_FILES.has(targetFile)) {
+    return {
+      fixed:      false,
+      filePath:   targetFile,
+      model_used: 'claude-code-cli',
+      summary:    `Skipped auto-fix: ${targetFile} is a protected core file. Fix manually.`,
+    };
+  }
+
   const absPath = path.isAbsolute(targetFile)
     ? targetFile
     : path.join(ROOT_DIR, targetFile);
@@ -533,17 +557,16 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
     `File: ${targetFile}`,
     `Error: ${errorNote || '(no error text provided)'}`,
     '',
-    'YOUR TASK:',
-    `1. Read the file at ${absPath}`,
-    '2. Identify the root cause of the error',
-    '3. Apply a minimal surgical fix — change only what is needed',
-    '4. Verify the fix by reading the file back',
-    '5. Do NOT restart services — that is handled externally',
+    'YOUR TASK (complete in 3 turns max):',
+    `Turn 1 — Read the file: ${absPath}`,
+    'Turn 2 — Apply the fix using Edit (one targeted change only)',
+    'Turn 3 — Done. Do NOT read back to verify. Do NOT restart services.',
     '',
     'Requirements:',
+    '- Minimal surgical fix — change only the broken line(s)',
     '- Preserve all existing logic, comments, and formatting',
-    '- If you cannot determine a safe fix with confidence, leave file unchanged',
-    '- Fix only the broken code path — no refactoring, no new features',
+    '- If you cannot determine a safe fix with confidence, leave the file unchanged',
+    '- No refactoring, no new features, no extra turns',
   ].join('\n');
 
   const streaming = typeof onProgress === 'function';
@@ -558,30 +581,35 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
     let fileBefore;
     try { fileBefore = fs.readFileSync(absPath, 'utf8'); } catch { fileBefore = null; }
 
-    // Unset CLAUDECODE so the child session isn't blocked by nested-session guard
-    const childEnv = { ...process.env };
-    delete childEnv.CLAUDECODE;
+    // Ghost runs as root; Claude CLI blocks --dangerously-skip-permissions for root.
+    // Spawn Claude as the dedicated non-root 'forge' user via su.
+    // Prompt is base64-encoded to avoid shell quoting issues.
+    const outputFormat  = streaming ? 'stream-json' : 'json';
+    const promptB64     = Buffer.from(prompt).toString('base64');
+    const verboseFlag   = streaming ? '--verbose' : '';
+    const claudeCmd     = `env -u CLAUDECODE claude --print ${verboseFlag} --output-format ${outputFormat} --max-turns 3 --allowedTools Read,Edit,Bash --dangerously-skip-permissions --setting-sources user -- "$(printf '%s' '${promptB64}' | base64 -d)"`;
 
     const child = spawn(
-      'claude',
-      [
-        '--print',
-        '--output-format', streaming ? 'stream-json' : 'json',
-        '--max-turns', '10',
-        '--allowedTools', 'Read,Edit,Bash',
-        '--dangerously-skip-permissions',
-        prompt,
-      ],
+      'su',
+      ['-s', '/bin/bash', 'forge', '-c', `cd ${ROOT_DIR} && ${claudeCmd}`],
       {
-        env: childEnv,
-        cwd: ROOT_DIR,
-        timeout: 300_000,
+        env:        process.env,
+        cwd:        ROOT_DIR,
+        timeout:    180_000,   // 3 min — Sonnet fits comfortably (~60s start + ~10s fix)
+        killSignal: 'SIGKILL', // force-kill on timeout, no waiting for graceful exit
       }
     );
+
+    const spawnedAt = Date.now();
+    let firstDataAt = null;
 
     if (streaming) {
       // Line-by-line JSONL processing
       child.stdout.on('data', (chunk) => {
+        if (!firstDataAt) {
+          firstDataAt = Date.now();
+          console.log(`[Forge] First stdout from claude after ${((firstDataAt - spawnedAt) / 1000).toFixed(1)}s`);
+        }
         lineBuffer += chunk.toString();
         const lines = lineBuffer.split('\n');
         lineBuffer = lines.pop(); // keep incomplete trailing line
@@ -599,7 +627,13 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
       child.stdout.on('data', d => { stdout += d.toString(); });
     }
 
-    child.stderr.on('data', d => { stderr += d.toString(); });
+    child.stderr.on('data', d => {
+      if (!firstDataAt) {
+        firstDataAt = Date.now();
+        console.log(`[Forge] First stderr from claude after ${((firstDataAt - spawnedAt) / 1000).toFixed(1)}s`);
+      }
+      stderr += d.toString();
+    });
 
     child.on('error', (err) => {
       const summary = `claude CLI spawn error: ${err.message}`;
@@ -607,15 +641,8 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
       resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
     });
 
-    child.on('close', (code) => {
-      if (code !== 0) {
-        const label   = code === 143 ? 'timed out after 300s' : `exited ${code}`;
-        const summary = `claude CLI ${label}: ${stderr.slice(0, 200)}`;
-        db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-code-cli', note: `file=${targetFile} | ${summary}` }).catch(() => {});
-        return resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
-      }
-
-      // Check if the file was actually modified
+    child.on('close', (code, signal) => {
+      // Always check file changes first — Claude may have applied the fix before a timeout/signal
       let fileAfter;
       try { fileAfter = fs.readFileSync(absPath, 'utf8'); } catch { fileAfter = null; }
       const fileChanged = fileAfter !== null && fileBefore !== fileAfter;
@@ -632,14 +659,25 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
       }
 
       if (fileChanged) {
-        const summary = `Fixed \`${targetFile}\` using Claude Code CLI.` + (sessionId ? ` Session: ${sessionId.slice(0, 8)}` : '');
-        db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix-claude', outcome: 'fixed', model: 'claude-code-cli', note: `file=${targetFile}` }).catch(() => {});
-        resolve({ fixed: true, filePath: targetFile, model_used: 'claude-code-cli', summary, sessionId, result: resultText });
-      } else {
-        const summary = `Claude Code ran on \`${targetFile}\` but made no changes. ${String(resultText).slice(0, 150)}`;
-        db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-code-cli', note: `file=${targetFile} | no changes made` }).catch(() => {});
-        resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
+        const killed = signal === 'SIGKILL' ? ' (fixed before timeout)' : '';
+        const summary = `Fixed \`${targetFile}\` using Claude Code CLI (Sonnet 4.6).${killed}` + (sessionId ? ` Session: ${sessionId.slice(0, 8)}` : '');
+        db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix-claude', outcome: 'fixed', model: 'claude-sonnet-4-6', note: `file=${targetFile}` }).catch(() => {});
+        // Feed to learning system so agents avoid this error pattern
+        learning.learnFromFix(agentName || 'unknown', errorNote, summary, targetFile).catch(() => {});
+        return resolve({ fixed: true, filePath: targetFile, model_used: 'claude-sonnet-4-6', summary, sessionId, result: resultText });
       }
+
+      if (code !== 0) {
+        // SIGKILL = timeout, null code = killed by signal
+        const label   = signal === 'SIGKILL' ? 'timed out after 180s (SIGKILL)' : code !== null ? `exited ${code}` : `killed (${signal})`;
+        const summary = `claude CLI ${label}: ${stderr.slice(0, 200)}`;
+        db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-sonnet-4-6', note: `file=${targetFile} | ${summary}` }).catch(() => {});
+        return resolve({ fixed: false, filePath: targetFile, model_used: 'claude-sonnet-4-6', summary });
+      }
+
+      const summary = `Claude Code ran on \`${targetFile}\` but made no changes. ${String(resultText).slice(0, 150)}`;
+      db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-sonnet-4-6', note: `file=${targetFile} | no changes made` }).catch(() => {});
+      resolve({ fixed: false, filePath: targetFile, model_used: 'claude-sonnet-4-6', summary });
     });
   });
 }

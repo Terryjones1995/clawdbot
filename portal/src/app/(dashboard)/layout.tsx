@@ -51,6 +51,7 @@ export default function DashboardLayout({ children }: {
     if (path.includes('/credits'))   return 'API Credits';
     if (path.includes('/servers'))   return 'Connected Servers';
     if (path.includes('/social'))    return 'X Accounts';
+    if (path.includes('/lessons'))   return 'Agent Lessons';
     if (path.includes('/settings'))  return 'Settings';
     return 'Mission Control';
   }
@@ -58,9 +59,8 @@ export default function DashboardLayout({ children }: {
   return (
     <div className="h-screen flex bg-ghost-bg scanline-overlay" style={{ fontFamily: 'Inter, sans-serif' }}>
       {/* Background effects */}
+      <div className="mesh-gradient" />
       <div className="fixed inset-0 bg-grid-sm opacity-30 pointer-events-none" />
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] pointer-events-none"
-           style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(0,100,180,0.08) 0%, transparent 70%)' }} />
 
       {/* Sidebar */}
       <Sidebar orgId={orgId} />

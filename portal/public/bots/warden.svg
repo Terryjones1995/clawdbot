@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Shield -->
+  <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/>
+  <!-- Lock -->
+  <rect x="9.5" y="11" width="5" height="4" rx="0.8"/>
+  <path d="M10.5 11V9.5a1.5 1.5 0 013 0V11"/>
+  <circle cx="12" cy="13.2" r="0.6" fill="currentColor" stroke="none"/>
+</svg>

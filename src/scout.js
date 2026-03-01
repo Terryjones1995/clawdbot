@@ -20,6 +20,7 @@ const https   = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const mini      = require('./skills/openai-mini');
+const { trackUsage } = require('./skills/usage-tracker');
 const archivist = require('./archivist');
 const db        = require('./db');
 
@@ -113,6 +114,7 @@ function _openaiChat(messages, model = 'gpt-4o-mini-search-preview') {
 }
 
 function _grokChat(messages, model = 'grok-4-1-fast-reasoning') {
+  const start = Date.now();
   return new Promise((resolve, reject) => {
     const apiKey = process.env.GROK_API_KEY;
     if (!apiKey) return reject(new Error('GROK_API_KEY not set'));
@@ -136,7 +138,9 @@ function _grokChat(messages, model = 'grok-4-1-fast-reasoning') {
         try {
           const json = JSON.parse(raw);
           if (json.error) return reject(new Error(`Grok API error: ${json.error.message}`));
-          resolve(json.choices?.[0]?.message?.content || '');
+          const text = json.choices?.[0]?.message?.content || '';
+          trackUsage({ provider: 'xai', model, agent: 'scout', action: 'research', input_tokens: json.usage?.prompt_tokens ?? 0, output_tokens: json.usage?.completion_tokens ?? 0, latency_ms: Date.now() - start });
+          resolve(text);
         } catch (err) {
           reject(new Error(`Grok parse error: ${err.message}`));
         }
@@ -154,6 +158,7 @@ async function _claudeChat(userMessage, depth) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY required for escalated research');
 
+  const start  = Date.now();
   const client = new Anthropic({ apiKey });
   const res = await client.messages.create({
     model:      'claude-sonnet-4-6',
@@ -161,6 +166,7 @@ async function _claudeChat(userMessage, depth) {
     system:     SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: userMessage }],
   });
+  trackUsage({ provider: 'anthropic', model: 'claude-sonnet-4-6', agent: 'scout', action: 'research', input_tokens: res.usage?.input_tokens ?? 0, output_tokens: res.usage?.output_tokens ?? 0, latency_ms: Date.now() - start });
   return res.content[0]?.text || '';
 }
 

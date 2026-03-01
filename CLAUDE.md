@@ -12,7 +12,9 @@ Never auto-commit. Never auto-push to remote.
 
 ## Project Overview
 
-**Ghost** is a Discord-first AI agent system running on Node.js/Express (port 18789) with a Next.js portal on port 3000. The bot account is **Ghost#6982**. PM2 app names: `ghost` (backend) and `ghost-portal` (Next.js).
+**Ghost** is a Discord-first AI agent system running on Node.js/Express (port 18789) with a Next.js portal on port 3001. The bot account is **Ghost#6982**. PM2 app names: `ghost` (backend) and `ghost-portal` (Next.js).
+
+**Mission Control** (public portal): **https://2kdiscord.com** — nginx reverse proxy → port 3001. SSL via Let's Encrypt (acme.sh, auto-renews). WebSocket path `/ws` proxies to port 18789. Nginx vhost: `/www/server/panel/vhost/nginx/2kdiscord.com.conf`.
 
 ## Tech Stack
 

@@ -260,6 +260,7 @@ export default function ErrorsPage() {
   const [fixing,        setFixing]        = useState<string | null>(null);
   const [fixResults,    setFixResults]    = useState<Record<string, FixResult>>({});
   const [fixAllRunning, setFixAllRunning] = useState(false);
+  const [marking,       setMarking]       = useState<string | null>(null);
 
   const progress = useGhostStore(s => s.forgeProgress);
 
@@ -304,6 +305,20 @@ export default function ErrorsPage() {
       if (progress.fixed) setTimeout(fetchData, 2000);
     }
   }, [progress, fetchData]);
+
+  const markFixed = useCallback(async (err: LogEntry) => {
+    const file = getErrorFile(err);
+    setMarking(err.id);
+    try {
+      await fetch('/api/errors', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ filePath: file, agentName: err.agent }),
+      });
+      setTimeout(fetchData, 500);
+    } catch { /* silently fail */ }
+    finally { setMarking(null); }
+  }, [fetchData]);
 
   const triggerFixOne = useCallback(async (err: LogEntry) => {
     setFixing(err.id);
@@ -376,7 +391,10 @@ export default function ErrorsPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-bold text-white mb-1" style={{ fontFamily: 'Space Grotesk' }}>Error Console</h2>
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle size={16} className="text-red-400" />
+            <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Error Console</h2>
+          </div>
           <p className="text-xs text-ghost-muted">Claude Code CLI · real-time via WebSocket · refresh every 30s</p>
         </div>
         <div className="flex items-center gap-2">
@@ -445,8 +463,8 @@ export default function ErrorsPage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: 20 }}
                   transition={{ delay: i * 0.03 }}
-                  className="glass rounded-xl overflow-hidden"
-                  style={{ border: `1px solid ${rowBorderColor(entry)}` }}>
+                  className="glass rounded-xl overflow-hidden row-strip"
+                  style={{ border: `1px solid ${rowBorderColor(entry)}`, '--strip-color': entry.level === 'ERROR' ? '#EF4444' : entry.level === 'WARN' ? '#F59E0B' : '#00D4FF' } as React.CSSProperties}>
 
                   {/* Row header — click to expand */}
                   <div className="flex items-center gap-3 p-4 cursor-pointer select-none"
@@ -514,19 +532,30 @@ export default function ErrorsPage() {
                               {repairStatus === 'fixed' ? (
                                 <div className="flex items-center gap-2 text-xs text-green-400 py-1">
                                   <ShieldCheck size={13} />
-                                  Automatically repaired by Claude Code
+                                  Repaired
                                   {getErrorFile(entry) && <span className="font-mono text-ghost-muted">({getErrorFile(entry)})</span>}
                                 </div>
                               ) : (
-                                <button
-                                  onClick={() => triggerFixOne(entry)}
-                                  disabled={fixing === entry.id}
-                                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-60"
-                                  style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.25)', color: '#00D4FF' }}>
-                                  {fixing === entry.id
-                                    ? <><Loader2 size={12} className="animate-spin" /> Analyzing with Claude Code…</>
-                                    : <><Terminal size={12} /> Fix with Claude Code</>}
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => triggerFixOne(entry)}
+                                    disabled={fixing === entry.id}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-60"
+                                    style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.25)', color: '#00D4FF' }}>
+                                    {fixing === entry.id
+                                      ? <><Loader2 size={12} className="animate-spin" /> Analyzing with Claude Code…</>
+                                      : <><Terminal size={12} /> Fix with Claude Code</>}
+                                  </button>
+                                  <button
+                                    onClick={() => markFixed(entry)}
+                                    disabled={marking === entry.id}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-60"
+                                    style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ADE80' }}>
+                                    {marking === entry.id
+                                      ? <><Loader2 size={12} className="animate-spin" /> Marking…</>
+                                      : <><CheckCircle2 size={12} /> Mark Fixed</>}
+                                  </button>
+                                </div>
                               )}
 
                               {/* Fix result banner */}

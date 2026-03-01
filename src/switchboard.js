@@ -21,6 +21,7 @@ const fs        = require('fs');
 const path      = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const mini      = require('./skills/openai-mini');
+const { trackUsage } = require('./skills/usage-tracker');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -207,6 +208,7 @@ async function claudeClassify(message, context) {
     ? `Context: ${context}\n\nMessage: ${message}`
     : `Message: ${message}`;
 
+  const start = Date.now();
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -217,6 +219,7 @@ async function claudeClassify(message, context) {
 
     const raw    = response.content[0]?.text || '';
     const parsed = parseJSON(raw);
+    trackUsage({ provider: 'anthropic', model: 'claude-sonnet-4-6', agent: 'switchboard', action: 'classify', input_tokens: response.usage?.input_tokens ?? 0, output_tokens: response.usage?.output_tokens ?? 0, latency_ms: Date.now() - start });
 
     if (!parsed?.intent) return { success: false, reason: 'unparseable Claude response' };
     return { success: true, parsed, model: 'claude-sonnet-4-6' };

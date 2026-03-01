@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Archive box -->
+  <path d="M4 6h16v3H4z"/>
+  <path d="M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9"/>
+  <!-- Drawer handle -->
+  <path d="M10 13h4"/>
+  <!-- Stack lines at top -->
+  <path d="M6 4h12" opacity="0.4"/>
+</svg>

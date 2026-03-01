@@ -58,7 +58,7 @@ export function useGhostWebSocket() {
               case 'fix-one:start':
                 setTerminalOpen(true);
                 pushTerminalLine({ type: 'system',
-                  content: `⚡ Forge → Claude Code CLI fixing ${msg.agent || msg.file || 'unknown'}…` });
+                  content: `⚡ Forge → Claude Code CLI\n  Agent : ${msg.agent || 'unknown'}\n  File  : ${msg.file || 'detecting…'}\n  Status: running (up to 3 min)` });
                 setForgeProgress(msg as ForgeProgressEvent);
                 break;
               case 'fix-one:output':

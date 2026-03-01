@@ -74,4 +74,40 @@ errorsRouter.get('/', async (req, res) => {
   }
 });
 
+// POST /api/errors/resolve — manually mark an error as fixed by recording a repair log
+errorsRouter.post('/resolve', async (req, res) => {
+  const { filePath, agentName } = req.body || {};
+  if (!filePath && !agentName) {
+    return res.status(400).json({ error: 'filePath or agentName required' });
+  }
+
+  const file = filePath || (() => {
+    const map = {
+      sentinel: 'src/sentinel.js', scout: 'src/scout.js', scribe: 'src/scribe.js',
+      forge: 'src/forge.js', helm: 'src/helm.js', lens: 'src/lens.js',
+      keeper: 'src/keeper.js', warden: 'src/warden.js', archivist: 'src/archivist.js',
+      courier: 'src/courier.js', ghost: 'src/routes/reception.js',
+      switchboard: 'src/switchboard.js',
+    };
+    return map[(agentName || '').toLowerCase()] || null;
+  })();
+
+  if (!file) return res.status(400).json({ error: 'cannot determine file from agentName' });
+
+  try {
+    await db.logEntry({
+      level:   'INFO',
+      agent:   'Forge',
+      action:  'autofix-claude',
+      outcome: 'fixed',
+      model:   'manual',
+      note:    `file=${file}`,
+    });
+    return res.json({ ok: true, file });
+  } catch (err) {
+    console.error('[errors/resolve] failed:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = { router, errorsRouter };

@@ -19,6 +19,7 @@
  */
 
 const { OpenAI } = require('openai');
+const { trackUsage } = require('./usage-tracker');
 
 const MODEL  = 'gpt-4o-mini';
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -60,16 +61,19 @@ async function chatWithHistory(systemPrompt, messages, maxTokens = 1024) {
  * Returns { result: { message: { content }, model }, escalate, reason }
  */
 async function tryChat(messages, options = {}) {
+  const start = Date.now();
   try {
+    const usedModel = options.model || MODEL;
     const res = await client.chat.completions.create({
-      model:      options.model || MODEL,
+      model:      usedModel,
       max_tokens: options.maxTokens || 1024,
       temperature: options.params?.temperature ?? 0.7,
       messages,
     });
     const content = res.choices[0]?.message?.content ?? '';
+    trackUsage({ provider: 'openai', model: usedModel, agent: 'ghost', action: 'chat', input_tokens: res.usage?.prompt_tokens ?? 0, output_tokens: res.usage?.completion_tokens ?? 0, latency_ms: Date.now() - start });
     return {
-      result:  { message: { content }, model: MODEL },
+      result:  { message: { content }, model: usedModel },
       escalate: false,
       reason:   null,
     };

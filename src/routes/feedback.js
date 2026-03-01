@@ -13,9 +13,10 @@
  *   { ok: true }
  */
 
-const express = require('express');
-const crypto  = require('crypto');
-const db      = require('../db');
+const express  = require('express');
+const crypto   = require('crypto');
+const db       = require('../db');
+const learning = require('../skills/learning');
 
 const router = express.Router();
 
@@ -36,6 +37,12 @@ router.post('/', async (req, res) => {
       outcome: rating === 1 ? 'thumbs-up' : 'thumbs-down',
       note:   `thread=${threadId} hash=${contentHash}`,
     }).catch(() => {});
+
+    // Feed negative feedback to learning system
+    if (rating === -1 && note) {
+      learning.learnFromFeedback('ghost', '', content, rating, note).catch(() => {});
+    }
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('[Feedback] Error storing feedback:', err.message);

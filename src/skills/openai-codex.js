@@ -12,6 +12,7 @@
  */
 
 const { OpenAI } = require('openai');
+const { trackUsage } = require('./usage-tracker');
 
 const MODEL          = 'gpt-5.3-codex';
 const FALLBACK_MODEL = 'o4-mini';
@@ -23,6 +24,7 @@ const client         = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
  * Returns { text, model, escalate, reason }.
  */
 async function fixCode(systemPrompt, userPrompt, maxTokens = 8192) {
+  const start = Date.now();
   // ── Primary: gpt-5.3-codex via Responses API ──
   try {
     const res = await client.responses.create({
@@ -32,6 +34,7 @@ async function fixCode(systemPrompt, userPrompt, maxTokens = 8192) {
       input:             userPrompt,
     });
     const text = res.output_text ?? '';
+    trackUsage({ provider: 'openai', model: MODEL, agent: 'forge', action: 'fix', input_tokens: Math.ceil(userPrompt.length / 4), output_tokens: Math.ceil((text || '').length / 4), latency_ms: Date.now() - start });
     return { text, model: MODEL, escalate: false, reason: null };
   } catch (primaryErr) {
     // ── Fallback: o4-mini via Chat Completions ──
@@ -45,6 +48,7 @@ async function fixCode(systemPrompt, userPrompt, maxTokens = 8192) {
         ],
       });
       const text = res.choices[0]?.message?.content ?? '';
+      trackUsage({ provider: 'openai', model: FALLBACK_MODEL, agent: 'forge', action: 'fix', input_tokens: res.usage?.prompt_tokens ?? 0, output_tokens: res.usage?.completion_tokens ?? 0, latency_ms: Date.now() - start });
       return { text, model: FALLBACK_MODEL, escalate: false, reason: `${MODEL} unavailable: ${primaryErr.message}` };
     } catch (fallbackErr) {
       return { text: '', model: MODEL, escalate: true, reason: fallbackErr.message };

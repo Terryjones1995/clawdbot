@@ -30,8 +30,8 @@ function JobRow({ job }: { job: Job }) {
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      className="glass rounded-xl overflow-hidden"
-      style={{ border: `1px solid ${cfg.color}15` }}
+      className="glass rounded-xl overflow-hidden row-strip"
+      style={{ border: `1px solid ${cfg.color}15`, '--strip-color': cfg.color } as React.CSSProperties}
     >
       <div className="flex items-center gap-4 p-4 cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <Icon size={15} style={{ color: cfg.color }} className={job.status === 'running' ? 'animate-spin' : ''} />
@@ -121,8 +121,11 @@ export default function JobsPage() {
     <div className="p-6 max-w-screen-xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Job Queue</h2>
-          <p className="text-xs text-ghost-muted mt-0.5">Live agent activity from the last 50 operations</p>
+          <div className="flex items-center gap-2 mb-1">
+            <Briefcase size={16} className="text-ghost-accent" />
+            <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Job Queue</h2>
+          </div>
+          <p className="text-xs text-ghost-muted">Live agent activity from the last 50 operations</p>
         </div>
         <button onClick={fetchJobs}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"

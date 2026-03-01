@@ -27,3 +27,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ errors: [], total: 0, error: 'Ghost offline' });
   }
 }
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    const body = await req.json();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (process.env.PORTAL_SECRET) headers['x-portal-secret'] = process.env.PORTAL_SECRET;
+
+    const res = await fetch(`${OPENCLAW_API}/api/errors/resolve`, {
+      method: 'POST',
+      headers,
+      body:   JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!res.ok) return NextResponse.json({ error: `Ghost API ${res.status}` }, { status: 502 });
+    return NextResponse.json(await res.json());
+  } catch (e: unknown) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'request failed' }, { status: 500 });
+  }
+}

@@ -24,6 +24,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -50,10 +51,10 @@ function start() {
   console.log(`[Heartbeat] Started — idle shutdown after ${mins}m of inactivity`);
 }
 
-/** Current activity stats. */
-function getStatus() {
+/** Current activity stats (includes Tailscale if available). */
+async function getStatus() {
   const now = Date.now();
-  return {
+  const base = {
     uptime_seconds:    Math.round((now - startedAt) / 1000),
     idle_seconds:      Math.round((now - lastActivity) / 1000),
     last_activity:     new Date(lastActivity).toISOString(),
@@ -61,6 +62,38 @@ function getStatus() {
     idle_shutdown_min: Math.round(IDLE_SHUTDOWN_MS / 60_000),
     status:            Math.round((now - lastActivity) / 1000) < 60 ? 'active' : 'idle',
   };
+  try {
+    base.tailscale = await getTailscaleStatus();
+  } catch { /* tailscale not installed or not running — omit */ }
+  return base;
+}
+
+/** Query Tailscale VPN status for remote GPU connectivity monitoring. */
+function getTailscaleStatus() {
+  return new Promise((resolve, reject) => {
+    execFile('tailscale', ['status', '--json'], { timeout: 5000 }, (err, stdout) => {
+      if (err) return reject(err);
+      try {
+        const data = JSON.parse(stdout);
+        const self = data.Self || {};
+        const peers = Object.values(data.Peer || {}).map(p => ({
+          name:   p.HostName,
+          ip:     (p.TailscaleIPs || [])[0] || null,
+          online: p.Online ?? false,
+          os:     p.OS || null,
+          relay:  p.Relay || null,
+        }));
+        resolve({
+          running:    true,
+          hostname:   self.HostName || null,
+          ip:         (self.TailscaleIPs || [])[0] || null,
+          peers,
+          peerCount:  peers.length,
+          onlinePeers: peers.filter(p => p.online).length,
+        });
+      } catch (e) { reject(e); }
+    });
+  });
 }
 
 // ── Internals ─────────────────────────────────────────────────────────────────
