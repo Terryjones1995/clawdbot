@@ -38,6 +38,7 @@ const registry        = require('./src/agentRegistry');
 const db              = require('./src/db');
 const botAdmins       = require('./src/botAdmins');
 const redis           = require('./src/redis');
+const ollama          = require('./openclaw/skills/ollama');
 
 const app    = express();
 const server = http.createServer(app);
@@ -231,6 +232,7 @@ server.listen(PORT, () => {
   redis.waitReady(5000).then(ok =>
     console.log(`[Redis] ${ok ? 'Connected ✓' : 'Unavailable — fallbacks active'}`)
   );
+  ollama.ensureModels().catch(err => console.error('[Ollama] Model check failed:', err.message));
   heartbeat.start();
   sentinel.start().catch(err => console.error('[Sentinel] Failed to start:', err.message));
   scribe.start();

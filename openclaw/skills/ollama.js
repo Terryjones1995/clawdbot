@@ -23,6 +23,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const { trackUsage } = require('../../src/skills/usage-tracker');
 const LOG_FILE = path.join(__dirname, '../../memory/run_log.md');
@@ -184,6 +185,42 @@ class OllamaConnector {
     } catch (err) {
       this._log('ERROR', 'embed', model, 'failed', err.message);
       throw err;
+    }
+  }
+
+  // ── Auto-pull ───────────────────────────────────────────────────────────
+
+  /**
+   * Ensure required models are pulled. Call once at startup.
+   * Non-blocking — pulls happen in the background if missing.
+   */
+  async ensureModels() {
+    if (!(await this.isAvailable())) {
+      console.warn('[Ollama] Not reachable — skipping model check');
+      return;
+    }
+
+    const installed = await this.listModels();
+    // Normalize: ollama list returns "model:tag", env may omit ":latest"
+    const normalize = (n) => n.includes(':') ? n : `${n}:latest`;
+    const have = new Set(installed.map(normalize));
+
+    const required = [this.model, this.embedModel];
+    const missing  = required.filter(m => !have.has(normalize(m)));
+
+    if (!missing.length) {
+      console.log(`[Ollama] Models ready: ${required.join(', ')}`);
+      return;
+    }
+
+    for (const model of missing) {
+      console.log(`[Ollama] Pulling missing model: ${model} …`);
+      try {
+        execSync(`ollama pull ${model}`, { timeout: 600_000, stdio: 'ignore' });
+        console.log(`[Ollama] Pulled ${model} ✓`);
+      } catch (err) {
+        console.error(`[Ollama] Failed to pull ${model}: ${err.message}`);
+      }
     }
   }
 
