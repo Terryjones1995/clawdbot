@@ -56,7 +56,7 @@ export default function DashboardLayout({ children }: {
   }
 
   return (
-    <div className="flex bg-ghost-bg scanline-overlay" style={{ fontFamily: 'Inter, sans-serif', minHeight: '100dvh', height: '100dvh' }}>
+    <div className="flex bg-ghost-bg scanline-overlay" style={{ fontFamily: 'Inter, sans-serif', minHeight: 'var(--app-height)', height: 'var(--app-height)' }}>
       {/* Background effects */}
       <div className="mesh-gradient" />
       <div className="fixed inset-0 bg-grid-sm opacity-30 pointer-events-none" />
@@ -95,8 +95,7 @@ export default function DashboardLayout({ children }: {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar title={getTitle()} orgId={orgId} />
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden relative pb-20"
-              style={{ paddingBottom: 'max(5rem, env(safe-area-inset-bottom, 5rem))' }}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative pb-20 md:pb-4">
           <AnimatePresence mode="wait">
             <motion.div
               key={typeof window !== 'undefined' ? window.location.pathname : 'page'}

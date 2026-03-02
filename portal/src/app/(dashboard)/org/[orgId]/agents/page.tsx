@@ -845,7 +845,7 @@ export default function AgentsPage() {
   const totalFiltered = filteredTiers.reduce((s, t) => s + t.agents.length, 0);
 
   return (
-    <div className="p-3 sm:p-6 pb-24 flex flex-col gap-4 sm:gap-5">
+    <div className="p-3 sm:p-6 pb-24 md:pb-6 flex flex-col gap-4 sm:gap-5">
 
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

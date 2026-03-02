@@ -392,7 +392,7 @@ export default function CreditsPage() {
   for (const p of providers) statsMap[p.provider] = p;
 
   return (
-    <div className="p-3 sm:p-6 pb-24 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 pb-24 md:pb-6 max-w-screen-xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-5 sm:mb-7 gap-2">
         <div>

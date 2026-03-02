@@ -278,7 +278,7 @@ export default function ServersPage() {
   const totalChannels = guilds.reduce((s, g) => s + g.channels.length, 0);
 
   return (
-    <div className="p-3 sm:p-6 pb-24 max-w-screen-xl mx-auto space-y-4 sm:space-y-6">
+    <div className="p-3 sm:p-6 pb-24 md:pb-6 max-w-screen-xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

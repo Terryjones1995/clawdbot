@@ -103,7 +103,8 @@
 /* ── Base styles ───────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; font-size: 16px; zoom: 1.25; }
+html { scroll-behavior: smooth; font-size: 16px; }
+:root { --app-height: 100dvh; }
 
 body {
   background-color: #050A14;
@@ -114,10 +115,14 @@ body {
   overflow: hidden;
 }
 
-/* zoom: 1.25 shrinks the effective viewport — h-screen must be 100vh / 1.25 = 80vh
-   so that the zoomed root div visually fills exactly one browser window height.
-   This eliminates the document-level scrollbar that causes the double-scrollbar. */
-.h-screen { height: 80vh; min-height: 80vh; }
+/* Desktop-only zoom: 1.25 scales UI up — compensate viewport units so
+   zoomed content fills exactly one browser window (100vh / 1.25 = 80vh). */
+@media (min-width: 768px) {
+  html { zoom: 1.25; }
+  :root { --app-height: 80dvh; }
+  .h-screen { height: 80vh; min-height: 80vh; }
+  .min-h-screen { min-height: 80vh; }
+}
 
 /* ── Scrollbars ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }

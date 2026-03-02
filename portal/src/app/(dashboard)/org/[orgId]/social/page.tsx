@@ -182,7 +182,7 @@ export default function SocialPage() {
   const totalViews     = RECENT_TWEETS.reduce((s, t) => s + t.views, 0);
 
   return (
-    <div className="p-3 sm:p-6 pb-24 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 pb-24 md:pb-6 max-w-screen-xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2 flex-wrap">
         <div>

@@ -60,8 +60,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden overflow-y-auto flex items-start sm:items-center justify-center px-4 pt-10 pb-32 sm:py-8"
-         style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(0,100,180,0.15) 0%, #050A14 60%)' }}>
+    <div className="relative overflow-x-hidden overflow-y-auto flex items-start sm:items-center justify-center px-4 pt-4 sm:pt-10 pb-10 sm:pb-8"
+         style={{ height: 'var(--app-height)', background: 'radial-gradient(ellipse at 50% 0%, rgba(0,100,180,0.15) 0%, #050A14 60%)' }}>
 
       {/* Background grid */}
       <div className="absolute inset-0 bg-grid opacity-40" />
@@ -126,10 +126,10 @@ export default function LoginPage() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.5 }}
-          className="text-center mb-8"
+          className="text-center mb-4 sm:mb-8"
         >
           {/* Ghost logo */}
-          <div className="relative inline-block mb-4 sm:mb-6">
+          <div className="relative inline-block mb-2 sm:mb-6">
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}

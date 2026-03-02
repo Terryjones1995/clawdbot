@@ -385,7 +385,7 @@ export default function ErrorsPage() {
   const showProgressPanel = fixAllRunning || (progress?.type?.startsWith('fix-all:') ?? false);
 
   return (
-    <div className="p-3 sm:p-6 pb-24 max-w-screen-xl mx-auto space-y-4 sm:space-y-5">
+    <div className="p-3 sm:p-6 pb-24 md:pb-6 max-w-screen-xl mx-auto space-y-4 sm:space-y-5">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-2 flex-wrap">

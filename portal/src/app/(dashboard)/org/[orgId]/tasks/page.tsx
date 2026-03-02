@@ -149,7 +149,7 @@ export default function TasksPage() {
   }, {} as Record<TaskStatus, number>);
 
   return (
-    <div className="p-3 sm:p-6 pb-24 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 pb-24 md:pb-6 max-w-screen-xl mx-auto">
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
         <div>
           <div className="flex items-center gap-2 mb-1">
