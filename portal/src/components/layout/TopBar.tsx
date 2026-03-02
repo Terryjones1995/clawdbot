@@ -28,23 +28,24 @@ export function TopBar({ title, orgId }: TopBarProps) {
   return (
     <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-6 h-14 shrink-0 z-10 relative"
             style={{
-              background:    'rgba(5, 10, 20, 0.9)',
-              backdropFilter: 'blur(12px)',
-              borderBottom:  '1px solid rgba(255,255,255,0.05)',
+              background:    'rgba(5, 10, 20, 0.95)',
+              backdropFilter: 'blur(16px)',
+              borderBottom:  '1px solid rgba(255,255,255,0.10)',
             }}>
 
       {/* Mobile hamburger */}
       <button
         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        className="md:hidden flex items-center justify-center w-8 h-8 rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all shrink-0"
+        className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg text-ghost-accent hover:text-white hover:bg-ghost-accent/10 transition-all shrink-0"
+        style={{ border: '1px solid rgba(0,212,255,0.15)' }}
       >
-        <Menu size={18} />
+        <Menu size={20} />
       </button>
 
       {/* Page title */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0 mr-2 sm:mr-4">
         <Activity size={14} className="text-ghost-accent shrink-0 hidden sm:block" />
-        <h1 className="text-xs sm:text-sm font-semibold text-white truncate tracking-wider uppercase"
+        <h1 className="text-sm sm:text-sm font-bold text-white truncate tracking-wider uppercase"
             style={{ fontFamily: 'Space Grotesk' }}>
           {title}
         </h1>
