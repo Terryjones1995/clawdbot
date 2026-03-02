@@ -22,11 +22,11 @@ const TESTS = [
   { action: 'retrieve', query: 'system state', topK: 20, fmt: 'raw',
     expectModel: 'none', expectSynth: false, label: 'retrieve + raw + large k → no LLM' },
 
-  // retrieve + summary, small k → qwen3-coder
+  // retrieve + summary, small k → qwen2.5:14b
   { action: 'retrieve', query: 'recent decisions', topK: 5,  fmt: 'summary',
-    expectModel: 'qwen3-coder',      expectSynth: true, label: 'retrieve + summary + k=5 → qwen3' },
+    expectModel: 'qwen2.5:14b',      expectSynth: true, label: 'retrieve + summary + k=5 → qwen3' },
   { action: 'retrieve', query: 'research notes',   topK: 10, fmt: 'summary',
-    expectModel: 'qwen3-coder',      expectSynth: true, label: 'retrieve + summary + k=10 → qwen3' },
+    expectModel: 'qwen2.5:14b',      expectSynth: true, label: 'retrieve + summary + k=10 → qwen3' },
 
   // retrieve + summary, large k → Claude Sonnet
   { action: 'retrieve', query: 'full context dump', topK: 11, fmt: 'summary',

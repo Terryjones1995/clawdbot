@@ -10,10 +10,10 @@ require('dotenv').config();
 const { detectModel } = require('../src/scout');
 
 const TESTS = [
-  // Free (qwen3-coder via Ollama)
-  { type: 'factual',     depth: 'quick', query: 'what is a JWT token',                expectModel: 'qwen3-coder',      expectGrok: false, label: 'factual quick' },
-  { type: 'factual',     depth: 'deep',  query: 'explain OAuth 2.0 flows in detail',  expectModel: 'qwen3-coder',      expectGrok: false, label: 'factual deep (still local)' },
-  { type: 'competitive', depth: 'quick', query: 'compare Pinecone vs Weaviate',        expectModel: 'qwen3-coder',      expectGrok: false, label: 'competitive quick' },
+  // Free (qwen2.5:14b via Ollama)
+  { type: 'factual',     depth: 'quick', query: 'what is a JWT token',                expectModel: 'qwen2.5:14b',      expectGrok: false, label: 'factual quick' },
+  { type: 'factual',     depth: 'deep',  query: 'explain OAuth 2.0 flows in detail',  expectModel: 'qwen2.5:14b',      expectGrok: false, label: 'factual deep (still local)' },
+  { type: 'competitive', depth: 'quick', query: 'compare Pinecone vs Weaviate',        expectModel: 'qwen2.5:14b',      expectGrok: false, label: 'competitive quick' },
 
   // Grok (web/trend)
   { type: 'web',         depth: 'quick', query: 'latest AI news this week',            expectModel: 'grok-3-mini',      expectGrok: true,  label: 'web quick → Grok' },

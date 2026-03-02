@@ -71,7 +71,7 @@ function detectModel(action, query = '', topK = 5, outputFormat = 'raw') {
   }
 
   // Standard targeted retrieval → local model
-  return { model: 'qwen3-coder', synthesize: true, reason: 'targeted retrieval — local model sufficient' };
+  return { model: 'qwen2.5:14b', synthesize: true, reason: 'targeted retrieval — local model sufficient' };
 }
 
 // ── Pinecone HTTP client ──────────────────────────────────────────────────────
@@ -356,7 +356,7 @@ function appendLog(level, action, userRole, outcome, note) {
     '| agent=Archivist',
     `| action=${action}`,
     `| user_role=${userRole}`,
-    '| model=qwen3-coder',
+    '| model=qwen2.5:14b',
     `| outcome=${outcome}`,
     '| escalated=false',
     `| note="${note}"`,

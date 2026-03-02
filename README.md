@@ -26,7 +26,7 @@ Discord ──► Sentinel ──► Switchboard (classifier)
 |-------|-----------|
 | Runtime | Node.js, Express, PM2, AlmaLinux 9 |
 | Discord | discord.js (multi-guild aware) |
-| Default AI | Ollama + qwen3-coder (free, local) |
+| Default AI | Ollama + qwen2.5:14b (free, local) |
 | Real-time queries | OpenAI gpt-4o-mini-search-preview |
 | Web/trend research | Grok grok-4-1-fast-reasoning |
 | Deep synthesis / escalation | Claude claude-sonnet-4-6 |
@@ -130,7 +130,7 @@ npm install
 dnf install -y redis && systemctl enable redis && systemctl start redis
 
 # 3. Install Ollama models
-ollama pull qwen3-coder
+ollama pull qwen2.5:14b
 ollama pull nomic-embed-text
 
 # 4. Configure environment
@@ -164,7 +164,7 @@ JWT_SECRET=                    # generate: node -e "console.log(require('crypto'
 
 # Ollama (local, free-first)
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=qwen3-coder
+OLLAMA_MODEL=qwen2.5:14b
 OLLAMA_EMBED_MODEL=nomic-embed-text
 
 # Discord
@@ -224,7 +224,7 @@ curl http://localhost:18789/api/heartbeat
 
 ## Model Routing (free-first)
 
-1. **qwen3-coder** (Ollama) — default for all chat/classification
+1. **qwen2.5:14b** (Ollama) — default for all chat/classification
 2. **gpt-4o-mini-search-preview** — real-time data (weather, prices, news)
 3. **grok-4-1-fast-reasoning** — web/trend research queries
 4. **claude-sonnet-4-6** — deep synthesis, ESCALATE flag, complex analysis

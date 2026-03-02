@@ -9,7 +9,7 @@
 
 | Mode | Model |
 |---|---|
-| Default | qwen3-coder via Ollama |
+| Default | qwen2.5:14b via Ollama |
 | Web/trend research | Grok (via API) |
 | Escalation | Claude Sonnet 4.6 |
 
@@ -23,7 +23,7 @@
 ## Responsibilities
 
 1. Accept research queries from Switchboard.
-2. Route web/trend queries to Grok; factual/code queries to qwen3-coder.
+2. Route web/trend queries to Grok; factual/code queries to qwen2.5:14b.
 3. Summarize findings into structured output.
 4. Store key findings to Archivist (`memory/` via Pinecone).
 5. Flag time-sensitive findings (trending topics, breaking news) to Sentinel for Discord delivery.

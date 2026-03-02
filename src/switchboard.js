@@ -9,7 +9,7 @@
  *
  * Classification pipeline (free-first):
  *   Pass 1 — Keyword matching     (instant, free)
- *   Pass 2 — Ollama qwen3-coder   (free, up to 2 attempts)
+ *   Pass 2 — Ollama qwen2.5:14b   (free, up to 2 attempts)
  *   Pass 3 — Claude Sonnet 4.6    (paid, escalation only)
  *
  * Usage:
@@ -272,7 +272,7 @@ async function classify(input) {
       const res = await ollamaClassify(message, context);
       if (res.success) {
         const domain = res.parsed.intent.split('/')[0];
-        const route  = buildRoute(domain, res.parsed.intent, isDangerous, 'qwen3-coder', res.parsed.reason, false);
+        const route  = buildRoute(domain, res.parsed.intent, isDangerous, 'qwen2.5:14b', res.parsed.reason, false);
         log(route, user_role, source, false);
         return route;
       }

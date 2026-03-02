@@ -4,7 +4,7 @@
  * Lens — Analytics / PostHog
  *
  * Queries PostHog for events, funnels, retention, and session data.
- * Interprets results with qwen3-coder (simple) or Claude Sonnet (complex).
+ * Interprets results with qwen2.5:14b (simple) or Claude Sonnet (complex).
  * Checks local system thresholds (escalation rate, error rate, approval backlog).
  *
  * Usage:
@@ -56,7 +56,7 @@ function detectModel(queryType, outputFormat, query = '') {
   }
 
   // Simple counts, trends, sessions → local model
-  return { model: 'qwen3-coder', interpret: true, reason: 'simple metric — local model sufficient' };
+  return { model: 'qwen2.5:14b', interpret: true, reason: 'simple metric — local model sufficient' };
 }
 
 // ── PostHog HTTP client ───────────────────────────────────────────────────────
@@ -361,7 +361,7 @@ function appendLog(level, action, userRole, outcome, note) {
     '| agent=Lens',
     `| action=${action}`,
     `| user_role=${userRole}`,
-    '| model=qwen3-coder',
+    '| model=qwen2.5:14b',
     `| outcome=${outcome}`,
     '| escalated=false',
     `| note="${note}"`,

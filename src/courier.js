@@ -65,8 +65,8 @@ function detectModel(action, to = [], subject = '', body = '') {
     return { model: 'claude-sonnet-4-6', draft: true, reason: 'sensitive content detected' };
   }
 
-  // Plain transactional → qwen3-coder
-  return { model: 'qwen3-coder', draft: true, reason: 'standard transactional — local model sufficient' };
+  // Plain transactional → qwen2.5:14b
+  return { model: 'qwen2.5:14b', draft: true, reason: 'standard transactional — local model sufficient' };
 }
 
 // ── Resend API client ─────────────────────────────────────────────────────────
@@ -388,7 +388,7 @@ function appendLog(level, action, userRole, outcome, note) {
     '| agent=Courier',
     `| action=${action}`,
     `| user_role=${userRole}`,
-    '| model=qwen3-coder',
+    '| model=qwen2.5:14b',
     `| outcome=${outcome}`,
     '| escalated=false',
     `| note="${note}"`,

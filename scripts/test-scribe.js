@@ -79,16 +79,16 @@ check('statsFromEntries empty → errors 0',     stats.errors,      0);
 check('statsFromEntries empty → escalations 0', stats.escalations, 0);
 
 const fakeEntries = [
-  { level: 'INFO',  agent: 'Forge',  model: 'qwen3-coder',      outcome: 'success', escalated: false },
+  { level: 'INFO',  agent: 'Forge',  model: 'qwen2.5:14b',      outcome: 'success', escalated: false },
   { level: 'ERROR', agent: 'Scribe', model: 'claude-sonnet-4-6', outcome: 'error',   escalated: true  },
-  { level: 'INFO',  agent: 'Forge',  model: 'qwen3-coder',      outcome: 'success', escalated: false },
+  { level: 'INFO',  agent: 'Forge',  model: 'qwen2.5:14b',      outcome: 'success', escalated: false },
 ];
 const s2 = scribe.statsFromEntries(fakeEntries);
 check('statsFromEntries total = 3',       s2.total,       3);
 check('statsFromEntries errors = 1',      s2.errors,      1);
 check('statsFromEntries escalations = 1', s2.escalations, 1);
 check('statsFromEntries byAgent.Forge = 2', s2.byAgent['Forge'], 2);
-check('statsFromEntries byModel qwen3 = 2', s2.byModel['qwen3-coder'], 2);
+check('statsFromEntries byModel qwen3 = 2', s2.byModel['qwen2.5:14b'], 2);
 
 // ── Report generators (no LLM) ────────────────────────────────────────────────
 

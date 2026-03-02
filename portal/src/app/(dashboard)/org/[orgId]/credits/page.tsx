@@ -50,7 +50,7 @@ const PROVIDER_META: Record<string, {
   ollama: {
     name: 'Ollama', color: '#27AE60', gradient: 'from-emerald-500/20 to-emerald-900/5',
     icon: '~', tier: 'LOCAL',
-    models: ['qwen2.5:14b', 'qwen3-coder', 'nomic-embed-text'],
+    models: ['qwen2.5:14b', 'nomic-embed-text'],
   },
   openai: {
     name: 'OpenAI', color: '#10B981', gradient: 'from-teal-500/20 to-teal-900/5',

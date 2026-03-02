@@ -41,16 +41,16 @@ check('funnel + chart_data → model=none',    r2.model,     'none');
 const r3 = detectModel('custom', 'raw');
 check('custom + raw → no LLM (raw beats)',  r3.interpret, false);
 
-// Simple types + summary → qwen3-coder
+// Simple types + summary → qwen2.5:14b
 const r4 = detectModel('event_count', 'summary');
-check('event_count + summary → qwen3-coder', r4.model,    'qwen3-coder');
+check('event_count + summary → qwen2.5:14b', r4.model,    'qwen2.5:14b');
 check('event_count + summary → interpret',   r4.interpret, true);
 
 const r5 = detectModel('trend', 'summary');
-check('trend + summary → qwen3-coder',       r5.model,    'qwen3-coder');
+check('trend + summary → qwen2.5:14b',       r5.model,    'qwen2.5:14b');
 
 const r6 = detectModel('session', 'summary');
-check('session + summary → qwen3-coder',     r6.model,    'qwen3-coder');
+check('session + summary → qwen2.5:14b',     r6.model,    'qwen2.5:14b');
 
 // Complex types + summary → Claude Sonnet
 const r7 = detectModel('funnel', 'summary');

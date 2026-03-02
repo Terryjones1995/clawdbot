@@ -63,11 +63,11 @@ All entries go to: `memory/run_log.md`
 ## Examples
 
 ```
-[INFO]    2026-02-23T09:00:00Z | agent=Switchboard | action=route | user_role=OWNER | model=qwen3-coder | outcome=success | escalated=false | note="routed to Forge: dev/bug-fix"
+[INFO]    2026-02-23T09:00:00Z | agent=Switchboard | action=route | user_role=OWNER | model=qwen2.5:14b | outcome=success | escalated=false | note="routed to Forge: dev/bug-fix"
 [ESCALATE] 2026-02-23T10:15:00Z | agent=Forge | action=code-review | user_role=OWNER | model=claude-sonnet-4-6 | outcome=success | escalated=true | note="security-sensitive auth code"
-[BLOCK]   2026-02-23T11:30:00Z | agent=Warden | action=bulk-dm | user_role=ADMIN | model=qwen3-coder | outcome=blocked | escalated=false | note="bulk DM requires OWNER approval"
-[APPROVE] 2026-02-23T12:00:00Z | agent=Warden | action=post-tweet | user_role=OWNER | model=qwen3-coder | outcome=approved | escalated=false | note="OWNER approved tweet draft"
-[ERROR]   2026-02-23T14:45:00Z | agent=Helm | action=deploy | user_role=OWNER | model=qwen3-coder | outcome=failed | escalated=false | note="Docker build failed: missing env var"
+[BLOCK]   2026-02-23T11:30:00Z | agent=Warden | action=bulk-dm | user_role=ADMIN | model=qwen2.5:14b | outcome=blocked | escalated=false | note="bulk DM requires OWNER approval"
+[APPROVE] 2026-02-23T12:00:00Z | agent=Warden | action=post-tweet | user_role=OWNER | model=qwen2.5:14b | outcome=approved | escalated=false | note="OWNER approved tweet draft"
+[ERROR]   2026-02-23T14:45:00Z | agent=Helm | action=deploy | user_role=OWNER | model=qwen2.5:14b | outcome=failed | escalated=false | note="Docker build failed: missing env var"
 ```
 
 ---

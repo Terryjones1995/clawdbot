@@ -53,17 +53,17 @@ const AGENT_META: Record<string, {
   ghost: {
     name: 'Ghost', role: 'Terminal AI / CEO',
     desc: 'The primary AI interface. Ghost routes through Ollama (free, local) by default and escalates to paid models when needed. Persistent memory across sessions via Keeper + Archivist.',
-    model: 'Ollama qwen3-coder → Claude', reportsTo: null,
+    model: 'Ollama qwen2.5:14b → Claude', reportsTo: null,
     manages: ['switchboard', 'warden', 'scribe', 'archivist'],
     tags: ['CEO', 'Memory', 'Free-first', 'Terminal'],
-    details: ['Primary user-facing AI (portal terminal)', 'Default: Ollama qwen3-coder (free, local)', 'Escalation: Claude claude-sonnet-4-6 (paid)', 'Full conversation memory via Keeper threads', 'Long-term recall via Archivist (pgvector)'],
+    details: ['Primary user-facing AI (portal terminal)', 'Default: Ollama qwen2.5:14b (free, local)', 'Escalation: Claude claude-sonnet-4-6 (paid)', 'Full conversation memory via Keeper threads', 'Long-term recall via Archivist (pgvector)'],
   },
   switchboard: {
     name: 'Switchboard', role: 'Router / Classifier',
     desc: 'Intent classifier and message router. Every message flows through Switchboard, which uses keyword matching first, then Ollama for ambiguous intents.',
-    model: 'Keyword → Ollama qwen3-coder', reportsTo: 'ghost',
+    model: 'Keyword → Ollama qwen2.5:14b', reportsTo: 'ghost',
     tags: ['Router', 'Classifier', 'Instant'],
-    details: ['Keyword pattern matching — zero latency for common intents', 'Routes to: Scout, Courier, Ghost', 'Ollama qwen3-coder fallback for unmatched messages', 'Always-on, processes every message'],
+    details: ['Keyword pattern matching — zero latency for common intents', 'Routes to: Scout, Courier, Ghost', 'Ollama qwen2.5:14b fallback for unmatched messages', 'Always-on, processes every message'],
   },
   warden: {
     name: 'Warden', role: 'Command & Control',
@@ -75,7 +75,7 @@ const AGENT_META: Record<string, {
   scribe: {
     name: 'Scribe', role: 'Ops / Summaries',
     desc: 'Operations agent. Scribe handles scheduled summaries, daily briefs, and reminders. Uses Ollama for text generation.',
-    model: 'Ollama qwen3-coder', reportsTo: 'ghost',
+    model: 'Ollama qwen2.5:14b', reportsTo: 'ghost',
     tags: ['Reports', 'Reminders', 'Daily Brief'],
     details: ['Generates daily operational brief for portal', 'Scheduled summary generation via Ollama', 'Stores structured notes in memory', 'Handles reminder and scheduling requests'],
   },
@@ -103,7 +103,7 @@ const AGENT_META: Record<string, {
   courier: {
     name: 'Courier', role: 'Email / Comms',
     desc: 'Email specialist. Courier drafts and sends all outbound emails via Resend. Uses Ollama for drafting, requires Warden approval for bulk sends.',
-    model: 'Ollama qwen3-coder + Resend', reportsTo: 'ghost',
+    model: 'Ollama qwen2.5:14b + Resend', reportsTo: 'ghost',
     tags: ['Email', 'Resend', 'Comms'],
     details: ['Drafts professional emails via Ollama', 'Sends via Resend API', 'Requires Warden approval for mass sends', 'Handles follow-up scheduling'],
   },
@@ -117,7 +117,7 @@ const AGENT_META: Record<string, {
   keeper: {
     name: 'Keeper', role: 'Conversation Memory',
     desc: 'Conversation persistence agent. Keeper manages per-thread conversation history in Neon DB with Redis write-through caching.',
-    model: 'Ollama qwen3-coder (summaries)', reportsTo: 'ghost',
+    model: 'Ollama qwen2.5:14b (summaries)', reportsTo: 'ghost',
     tags: ['Threads', 'Memory', 'Neon DB'],
     details: ['Persists conversations to Neon PostgreSQL', 'Redis write-through cache (24h TTL)', 'System prompt builder with user profiles', 'Per-thread isolation (portal, discord, global)'],
   },

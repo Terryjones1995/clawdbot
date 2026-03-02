@@ -45,7 +45,7 @@
 - [ ] Remove PowerShell kill command from Notes section
 - [ ] Add Linux equivalent: `kill -9 <PID>` or `pm2 delete ghost && pm2 start ecosystem.config.js`
 - [ ] Add `pm2:startup` note explaining systemd integration
-- [ ] Update Ollama model reference (CLAUDE.md says qwen2.5-coder:7b but .env.example says qwen3-coder — align to qwen3-coder)
+- [ ] Update Ollama model reference (CLAUDE.md says qwen2.5-coder:7b but .env.example says qwen2.5:14b — align to qwen2.5:14b)
 
 ### Phase 2 — Update portal-start.js comment only
 - [ ] Remove Windows-specific comment from header (the actual code is fine on Linux)
@@ -152,7 +152,7 @@ Docker would only make sense if:
 ## Review
 
 - [x] `CLAUDE.md` — no Windows/PowerShell references remain
-- [x] `CLAUDE.md` — model name aligned to `qwen3-coder` (matches `.env.example`)
+- [x] `CLAUDE.md` — model name aligned to `qwen2.5:14b` (matches `.env.example`)
 - [x] `CLAUDE.md` — Linux Deployment section added (PM2 + systemd)
 - [x] `CLAUDE.md` — Safe Restart Workflow section added
 - [x] `portal-start.js` — Windows-specific header comment removed; code untouched

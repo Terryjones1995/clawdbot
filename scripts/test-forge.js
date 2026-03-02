@@ -10,10 +10,10 @@ require('dotenv').config();
 const { detectModel } = require('../src/forge');
 
 const TESTS = [
-  // Free (qwen3-coder)
-  { task: 'bug-fix',      description: 'fix the typo in dashboard.html',            files: [],          expectModel: 'qwen3-coder',      label: 'simple bug fix' },
-  { task: 'feature',      description: 'add a /health endpoint to server.js',       files: ['server.js'], expectModel: 'qwen3-coder',    label: 'single-file feature' },
-  { task: 'review',       description: 'review this function for logic errors',      files: [],          expectModel: 'qwen3-coder',      label: 'code review' },
+  // Free (qwen2.5:14b)
+  { task: 'bug-fix',      description: 'fix the typo in dashboard.html',            files: [],          expectModel: 'qwen2.5:14b',      label: 'simple bug fix' },
+  { task: 'feature',      description: 'add a /health endpoint to server.js',       files: ['server.js'], expectModel: 'qwen2.5:14b',    label: 'single-file feature' },
+  { task: 'review',       description: 'review this function for logic errors',      files: [],          expectModel: 'qwen2.5:14b',      label: 'code review' },
 
   // Sonnet escalations
   { task: 'feature',      description: 'implement JWT refresh token rotation',       files: [],          expectModel: 'claude-sonnet-4-6', label: 'security: JWT' },

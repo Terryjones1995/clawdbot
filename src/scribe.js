@@ -462,7 +462,7 @@ function appendLog(level, action, userRole, outcome, note) {
     '| agent=Scribe',
     `| action=${action}`,
     `| user_role=${userRole}`,
-    '| model=qwen3-coder',
+    '| model=qwen2.5:14b',
     `| outcome=${outcome}`,
     '| escalated=false',
     `| note="${note}"`,

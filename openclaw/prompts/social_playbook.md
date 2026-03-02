@@ -30,7 +30,7 @@ Crow logs result + notifies OWNER of post URL
 ## Workflow 1: Single Tweet
 
 1. OWNER: "draft a tweet about [topic]"
-2. Crow drafts (qwen3-coder unless escalation trigger met).
+2. Crow drafts (qwen2.5:14b unless escalation trigger met).
 3. Crow submits draft to Warden with `action: post-tweet`.
 4. Sentinel notifies OWNER of pending approval.
 5. On approval: Crow posts. On denial: Crow archives draft.

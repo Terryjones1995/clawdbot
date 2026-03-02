@@ -31,7 +31,7 @@
 | Pinecone connector | Archivist | 📋 Planned | Vector store/retrieve |
 | Neon (Postgres) connector | Forge / Helm | 📋 Planned | Postgres via pg or Drizzle |
 | Redis connector | Archivist / Helm | 📋 Planned | Cache + queue + session |
-| Ollama connector | All | 📋 Planned | Local qwen3-coder inference |
+| Ollama connector | All | 📋 Planned | Local qwen2.5:14b inference |
 | Grok connector | Scout | 📋 Planned | Grok web/trend search API |
 | Replicate connector | Forge | 📋 Planned | Open-source model execution |
 

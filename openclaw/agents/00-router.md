@@ -9,7 +9,7 @@
 
 | Mode | Model |
 |---|---|
-| Default | qwen3-coder via Ollama |
+| Default | qwen2.5:14b via Ollama |
 | Escalation | Claude Sonnet 4.6 |
 
 **Escalation Triggers:**
@@ -73,7 +73,7 @@ Ghost
 {
   "intent": "dev/bug-fix",
   "agent": "Forge",
-  "model": "qwen3-coder",
+  "model": "qwen2.5:14b",
   "requires_approval": false,
   "escalate": false,
   "reason": "code-level bug report, complexity low"

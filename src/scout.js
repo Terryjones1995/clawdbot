@@ -4,7 +4,7 @@
  * Scout — Research / Web / Trends
  *
  * Handles research queries for the Ghost system.
- * - factual / competitive (quick) → qwen3-coder (Ollama, free)
+ * - factual / competitive (quick) → qwen2.5:14b (Ollama, free)
  * - web / trend                   → Grok API (real-time web access)
  * - competitive (deep) / trend (deep) → Claude Sonnet (deep synthesis)
  * - ESCALATE keyword              → Claude Sonnet
@@ -422,7 +422,7 @@ function appendLog(level, action, userRole, outcome, note) {
     '| agent=Scout',
     `| action=${action}`,
     `| user_role=${userRole}`,
-    '| model=qwen3-coder',
+    '| model=qwen2.5:14b',
     `| outcome=${outcome}`,
     '| escalated=false',
     `| note="${note}"`,

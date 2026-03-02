@@ -27,7 +27,7 @@ const COST_MAP = {
   'grok-4-1-fast-reasoning':     [0.003,   0.015],
   'grok-3-fast-beta':            [0.003,   0.015],
   // Free
-  'qwen3-coder':                 [0, 0],
+  'qwen2.5:14b':                 [0, 0],
   'qwen3:8b':                    [0, 0],
   'nomic-embed-text':            [0, 0],
 };

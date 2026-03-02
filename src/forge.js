@@ -6,7 +6,7 @@
  * Handles all software development tasks: bug fixes, features, reviews,
  * refactors, and architecture. Implements the full 3-tier escalation ladder:
  *
- *   qwen3-coder (free)  →  Claude Sonnet 4.6  →  Claude Opus 4.6
+ *   qwen2.5:14b (free)  →  Claude Sonnet 4.6  →  Claude Opus 4.6
  *
  * Usage:
  *   const forge = require('./forge');
@@ -37,7 +37,7 @@ If requirements are unclear, flag it immediately — don't guess and deliver gar
 Tech stack:
 - Runtime: Node.js 18+
 - Framework: Express 4
-- AI: Anthropic SDK (Claude Sonnet/Opus), Ollama (qwen3-coder, local)
+- AI: Anthropic SDK (Claude Sonnet/Opus), Ollama (qwen2.5:14b, local)
 - DB: Neon (Postgres) via pg or Drizzle ORM
 - Cache/Queue/Events: Redis (ioredis)
 - Vector: Pinecone

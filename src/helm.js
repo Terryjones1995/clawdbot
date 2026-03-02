@@ -10,7 +10,7 @@
  *   - Automated alerting when errors exceed thresholds
  *
  * Model routing:
- *   - Health checks / status: qwen3-coder (free, local)
+ *   - Health checks / status: qwen2.5:14b (free, local)
  *   - Deploy decisions: Claude Sonnet (safety-sensitive)
  *
  * Usage:
@@ -154,7 +154,7 @@ async function run({ task = '', context = '', user_role = 'AGENT' } = {}) {
         action:  'health_check',
         summary,
         data:    snap,
-        model_used: 'qwen3-coder',
+        model_used: 'qwen2.5:14b',
       };
     }
 
@@ -191,7 +191,7 @@ async function run({ task = '', context = '', user_role = 'AGENT' } = {}) {
     const snap    = await _healthSnapshot();
     const summary = await _summarise(snap, task);
     _log('INFO', 'query', 'success', '');
-    return { action: 'query', summary, data: snap, model_used: 'qwen3-coder' };
+    return { action: 'query', summary, data: snap, model_used: 'qwen2.5:14b' };
 
   } finally {
     registry.setStatus('helm', 'idle');

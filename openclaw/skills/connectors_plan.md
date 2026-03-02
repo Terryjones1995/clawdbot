@@ -159,7 +159,7 @@ REDIS_URL=redis://localhost:6379
 **Env vars needed:**
 ```
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=qwen3-coder
+OLLAMA_MODEL=qwen2.5:14b
 ```
 
 ---

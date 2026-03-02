@@ -68,7 +68,7 @@ export default function SettingsPage() {
   const [idleShutdown, setIdleShutdown] = useState(true);
   const [idleMinutes, setIdleMinutes] = useState(120);
   const [debugMode, setDebugMode]     = useState(false);
-  const [ollamaModel, setOllamaModel] = useState('qwen3-coder');
+  const [ollamaModel, setOllamaModel] = useState('qwen2.5:14b');
   const [notifyErrors, setNotifyErrors] = useState(true);
   const [notifyApprovals, setNotifyApprovals] = useState(true);
   const [notifyDeploy, setNotifyDeploy] = useState(false);
@@ -241,7 +241,7 @@ export default function SettingsPage() {
                 <SettingRow label="Ollama Model" desc="Default local LLM for all agents">
                   <select value={ollamaModel} onChange={e => setOllamaModel(e.target.value)}
                     className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-full sm:w-44">
-                    <option>qwen3-coder</option>
+                    <option>qwen2.5:14b</option>
                     <option>qwen3:8b</option>
                     <option>qwen2.5-coder:7b</option>
                     <option>llama3.2:3b</option>

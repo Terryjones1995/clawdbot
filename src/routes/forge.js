@@ -144,7 +144,7 @@ router.post('/triage', (req, res) => {
     context     || ''
   );
 
-  res.json({ model, reason, escalated: model !== 'qwen3-coder' });
+  res.json({ model, reason, escalated: model !== 'qwen2.5:14b' });
 });
 
 module.exports = router;

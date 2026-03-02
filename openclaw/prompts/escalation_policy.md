@@ -1,14 +1,14 @@
 # Escalation Policy
 
 **Used by:** All agents
-**Purpose:** Defines when and how to escalate from free (qwen3-coder) to paid models.
+**Purpose:** Defines when and how to escalate from free (qwen2.5:14b) to paid models.
 
 ---
 
 ## Escalation Ladder
 
 ```
-qwen3-coder (Ollama)  →  Claude Sonnet 4.6  →  Claude Opus 4.6
+qwen2.5:14b (Ollama)  →  Claude Sonnet 4.6  →  Claude Opus 4.6
      FREE                   PAID (low)             PAID (high)
 ```
 
@@ -18,7 +18,7 @@ OpenAI is a lateral alternative, not a ladder step. Use only for specific tasks 
 
 ## When to Escalate to Claude Sonnet
 
-Escalate from qwen3-coder to Sonnet when ANY of the following apply:
+Escalate from qwen2.5:14b to Sonnet when ANY of the following apply:
 
 | # | Trigger | Notes |
 |---|---|---|
@@ -28,7 +28,7 @@ Escalate from qwen3-coder to Sonnet when ANY of the following apply:
 | 4 | High-impact communications | Public posts, legal-adjacent, apologies |
 | 5 | Production-affecting actions | Deployments, infra changes |
 | 6 | Output quality matters critically | Customer-facing copy, strategic docs |
-| 7 | qwen3-coder failed twice | Same task, two failed attempts |
+| 7 | qwen2.5:14b failed twice | Same task, two failed attempts |
 
 ---
 
@@ -74,5 +74,5 @@ Escalate from Sonnet to Opus when ANY of the following apply:
 ## Escalation Log Format
 
 ```
-[ESCALATE] 2026-02-23T14:22:00Z | agent=Forge | from=qwen3-coder | to=claude-sonnet-4-6 | trigger="security-sensitive auth code" | task="implement JWT refresh token"
+[ESCALATE] 2026-02-23T14:22:00Z | agent=Forge | from=qwen2.5:14b | to=claude-sonnet-4-6 | trigger="security-sensitive auth code" | task="implement JWT refresh token"
 ```

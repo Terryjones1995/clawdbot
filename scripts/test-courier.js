@@ -20,11 +20,11 @@ const TESTS = [
   { action: 'send_campaign',      to: ['a@b.com'], subject: 'Product launch',    body: '',
     expectModel: 'claude-sonnet-4-6', expectDraft: true,  label: 'send_campaign → Sonnet' },
 
-  // send_transactional, plain → qwen3-coder
+  // send_transactional, plain → qwen2.5:14b
   { action: 'send_transactional', to: ['a@b.com'], subject: 'Server alert',      body: 'CPU spike detected',
-    expectModel: 'qwen3-coder',      expectDraft: true,  label: 'transactional plain → qwen3-coder' },
+    expectModel: 'qwen2.5:14b',      expectDraft: true,  label: 'transactional plain → qwen2.5:14b' },
   { action: 'send_transactional', to: ['a@b.com'], subject: 'Daily report',      body: 'Here is your report',
-    expectModel: 'qwen3-coder',      expectDraft: true,  label: 'transactional report → qwen3-coder' },
+    expectModel: 'qwen2.5:14b',      expectDraft: true,  label: 'transactional report → qwen2.5:14b' },
 
   // send_transactional, sensitive keywords → Claude Sonnet
   { action: 'send_transactional', to: ['a@b.com'], subject: 'Legal notice',      body: '',

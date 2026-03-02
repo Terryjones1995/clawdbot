@@ -9,7 +9,7 @@
 
 | Mode | Model |
 |---|---|
-| Default | qwen3-coder via Ollama |
+| Default | qwen2.5:14b via Ollama |
 | Escalation | Claude Sonnet 4.6 |
 
 **Escalation Triggers:**

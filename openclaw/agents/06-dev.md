@@ -9,7 +9,7 @@
 
 | Mode | Model |
 |---|---|
-| Default | qwen3-coder via Ollama |
+| Default | qwen2.5:14b via Ollama |
 | Escalation | Claude Sonnet 4.6 |
 | Hard escalation | Claude Opus 4.6 |
 
@@ -41,7 +41,7 @@
 ## Tech Stack Context
 
 - Runtime: Node.js
-- AI: Anthropic SDK (Claude), Ollama (qwen3-coder), OpenAI SDK
+- AI: Anthropic SDK (Claude), Ollama (qwen2.5:14b), OpenAI SDK
 - DB: Neon (Postgres via pg or Drizzle)
 - Cache/Queue: Redis
 - Vector: Pinecone
@@ -71,7 +71,7 @@
   "code_changes": [
     { "file": "path/to/file.js", "change": "description or diff" }
   ],
-  "model_used": "qwen3-coder | claude-sonnet-4-6 | claude-opus-4-6",
+  "model_used": "qwen2.5:14b | claude-sonnet-4-6 | claude-opus-4-6",
   "escalation_reason": null,
   "logged": true
 }
@@ -81,7 +81,7 @@
 
 ## Rules
 
-1. Default to qwen3-coder — only escalate when triggers are met.
+1. Default to qwen2.5:14b — only escalate when triggers are met.
 2. Always output a plan before writing code for tasks > 30 min estimated.
 3. Never deploy directly — hand off to Helm with full context.
 4. Security-sensitive code must use Claude Sonnet minimum.

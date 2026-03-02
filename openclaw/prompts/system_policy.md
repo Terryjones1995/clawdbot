@@ -7,7 +7,7 @@
 
 ## 1. Free-First Principle
 
-All tasks MUST be attempted with `qwen3-coder` via Ollama first.
+All tasks MUST be attempted with `qwen2.5:14b` via Ollama first.
 Escalation to paid models (Claude Sonnet, Opus, OpenAI) is only permitted when explicit escalation triggers are met (see `escalation_policy.md`).
 
 Violating this rule wastes budget. Every escalation must be logged with a reason.
@@ -58,7 +58,7 @@ The cost governor enforces the Free-First principle at the system level.
 
 | Budget Tier | Model | Monthly Budget |
 |---|---|---|
-| Free | qwen3-coder (Ollama) | Unlimited |
+| Free | qwen2.5:14b (Ollama) | Unlimited |
 | Paid-low | Claude Sonnet 4.6 | $20 / month |
 | Paid-high | Claude Opus 4.6 | $10 / month |
 | Paid-other | OpenAI | $10 / month |

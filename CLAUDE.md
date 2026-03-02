@@ -20,7 +20,7 @@ Never auto-commit. Never auto-push to remote.
 
 - **Runtime**: Node.js, Express, PM2 (AlmaLinux 9 / systemd)
 - **Discord**: discord.js, multi-guild aware (primary guild = DISCORD_GUILD_ID)
-- **Default AI**: Ollama + qwen3-coder (free, local — always try first)
+- **Default AI**: Ollama + qwen2.5:14b (free, local — always try first)
 - **Real-time / web queries**: OpenAI gpt-4o-mini-search-preview
 - **Web / trend research**: Grok grok-4-1-fast-reasoning
 - **Deep synthesis / escalation**: Claude claude-sonnet-4-6
@@ -77,7 +77,7 @@ portal/                          — Next.js management portal
 
 ## Model Routing Rules (free-first, non-negotiable)
 
-1. **Default**: qwen3-coder via Ollama (free, local)
+1. **Default**: qwen2.5:14b via Ollama (free, local)
 2. **Real-time data** (weather, prices, news, scores): gpt-4o-mini-search-preview + today's date
 3. **Web / trend queries**: Grok grok-4-1-fast-reasoning
 4. **Deep synthesis / competitive analysis**: Claude claude-sonnet-4-6
@@ -147,7 +147,7 @@ JWT_SECRET=
 
 # Ollama
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=qwen3-coder
+OLLAMA_MODEL=qwen2.5:14b
 OLLAMA_EMBED_MODEL=nomic-embed-text
 
 # Discord
@@ -201,7 +201,7 @@ cd portal && npm install && npm run build && cd ..
 dnf install -y redis && systemctl enable redis && systemctl start redis
 
 # 3. Install Ollama models
-ollama pull qwen3-coder && ollama pull nomic-embed-text
+ollama pull qwen2.5:14b && ollama pull nomic-embed-text
 
 # 4. Configure
 cp .env.example .env  # fill in values
@@ -246,7 +246,7 @@ pm2 delete all && npm run pm2:start
 
 ## Notes
 
-- Ollama runs at localhost:11434; models: qwen3-coder, nomic-embed-text
+- Ollama runs at localhost:11434; models: qwen2.5:14b, nomic-embed-text
 - PM2 auto-restarts on crash; daily cron restart at 4am UTC; max 450MB RAM
 - Heartbeat idle-shutdown after 120min inactivity
 - Platform: AlmaLinux 9 / systemd
