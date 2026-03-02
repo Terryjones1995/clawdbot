@@ -36,6 +36,38 @@ const helm            = require('./helm');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
+// ── Active conversation tracking ─────────────────────────────────────────────
+// When Ghost replies in a channel, we track that conversation so follow-up
+// messages from the same user don't require another @mention.
+// Key: "channelId:userId" → { ts, guildId }
+// Expires after CONVO_TTL_MS of inactivity.
+
+const _activeConvos   = new Map();
+const CONVO_TTL_MS    = 5 * 60 * 1000; // 5 minutes of silence → conversation ends
+
+function _markConvoActive(channelId, userId, guildId) {
+  _activeConvos.set(`${channelId}:${userId}`, { ts: Date.now(), guildId });
+}
+
+function _getActiveConvo(channelId, userId) {
+  const key   = `${channelId}:${userId}`;
+  const entry = _activeConvos.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CONVO_TTL_MS) {
+    _activeConvos.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+// Cleanup stale entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of _activeConvos) {
+    if (now - entry.ts > CONVO_TTL_MS) _activeConvos.delete(key);
+  }
+}, 10 * 60 * 1000);
+
 // ── Logging ───────────────────────────────────────────────────────────────────
 
 function appendLog(level, action, userRole, outcome, note, err = null) {
@@ -900,6 +932,7 @@ async function handleMentionMessage(event) {
     const reply = await _ollamaChatReply(messageForKeeper, channel_id, user_id, event.guild_id);
     try { await thinkingMsg.delete(); } catch { /* non-fatal */ }
     await discord.sendMessage(channel_id, reply.slice(0, 2000));
+    _markConvoActive(channel_id, user_id, event.guild_id);
     appendLog('INFO', isTicket ? 'mention-ticket' : 'mention-chat', user_role, 'success',
       `user=${user_id} name=${event.user}`);
   } catch (err) {
@@ -950,6 +983,25 @@ async function start() {
         appendLog('ERROR', 'mention-handler', event.user_role, 'failed', err.message, err);
       });
       return;
+    }
+
+    // Active conversation follow-up — user replied to Ghost without @mentioning again
+    if (!inReception && !agentName && !inCommands && !isOwnerDM && !botMentioned) {
+      const activeConvo = _getActiveConvo(event.channel_id, event.user_id);
+      if (activeConvo) {
+        // Refresh the conversation timer and reply
+        _markConvoActive(event.channel_id, event.user_id, activeConvo.guildId);
+        (async () => {
+          try {
+            const reply = await _ollamaChatReply(event.content, event.channel_id, event.user_id, activeConvo.guildId);
+            await discord.sendMessage(event.channel_id, reply.slice(0, 2000));
+            _markConvoActive(event.channel_id, event.user_id, activeConvo.guildId);
+          } catch (err) {
+            console.error('[Sentinel] Active convo follow-up error:', err.message);
+          }
+        })();
+        return;
+      }
     }
 
     // #commands or OWNER DM
