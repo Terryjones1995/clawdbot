@@ -599,10 +599,10 @@ async function handleNaturalLanguage(event) {
 // Thread ID: discord:{channelId}:{userId}  — one thread per user per channel.
 // Falls back to a simple in-memory reply if Keeper errors.
 
-async function _ollamaChatReply(message, channelId, userId) {
+async function _ollamaChatReply(message, channelId, userId, guildId = null) {
   const threadId = `discord:${channelId}:${userId || 'unknown'}`;
   try {
-    return await keeper.chat(threadId, message);
+    return await keeper.chat(threadId, message, { guildId });
   } catch (err) {
     console.error('[Sentinel] Keeper error, falling back:', err.message);
     // Emergency fallback: gpt-4o-mini stateless
@@ -741,7 +741,7 @@ async function handleReceptionMessage(event) {
       registry.setStatus('nexus', 'idle');
       return;
     }
-    const reply = await _ollamaChatReply(content, channel_id, user_id);
+    const reply = await _ollamaChatReply(content, channel_id, user_id, event.guild_id);
     await discord.sendMessage(channel_id, reply);
     registry.setStatus('nexus', 'idle');
     return;
@@ -765,7 +765,7 @@ async function handleReceptionMessage(event) {
     if (quick) {
       await discord.sendMessage(channel_id, quick);
     } else {
-      const reply = await _ollamaChatReply(content, channel_id, user_id);
+      const reply = await _ollamaChatReply(content, channel_id, user_id, event.guild_id);
       await discord.sendMessage(channel_id, reply);
     }
     registry.setStatus('nexus', 'idle');
@@ -846,7 +846,7 @@ async function handleMentionMessage(event) {
   // Conversational reply for everyone via Keeper (Ollama free-first)
   try {
     const thinkingMsg = await discord.sendMessage(channel_id, '*Ghost is thinking…*');
-    const reply = await _ollamaChatReply(text, channel_id, user_id);
+    const reply = await _ollamaChatReply(text, channel_id, user_id, event.guild_id);
     try { await thinkingMsg.delete(); } catch { /* non-fatal */ }
     await discord.sendMessage(channel_id, reply.slice(0, 2000));
     appendLog('INFO', 'mention-chat', user_role, 'success', `user=${user_id} name=${event.user}`);

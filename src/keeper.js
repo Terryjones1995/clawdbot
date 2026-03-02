@@ -33,6 +33,14 @@ const MAX_MESSAGES       = 80;
 const KEEP_RECENT        = 20;
 const MAX_CONTEXT_MSGS   = 30;
 
+// Guild ID → League mapping (used to inject league-specific context into system prompt)
+const GUILD_LEAGUE_MAP = {
+  '776927230827167794': { name: 'HOF League',      domain: 'hof-arenas.com',     orgId: 'cmjkjlsnw0001gq0geuwgymtg' },
+  '657244609428062226': { name: 'Squad Finder',    domain: 'squadsfinder.com',   orgId: 'cmjjjl2mq0001gq0jz4a94s3o' },
+  '751916925960978442': { name: 'URG Pro-Am',      domain: 'urg-promo.com',      orgId: 'cmjkmig7m0001gq0gttouwuju' },
+  '1105891245391347744': { name: 'BHL League',     domain: 'officialbhl.com',    orgId: 'cmkhtsela0005gq0gudpkk8io' },
+};
+
 function _ghostSystem() {
   const today = new Date().toISOString().slice(0, 10);
   return `You are Ghost, an elite AI operations assistant. You remember everything — use your conversation history.
@@ -135,8 +143,9 @@ async function _maybeSummarise(thread) {
 
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function _buildSystemPrompt(thread, pineconeContext = null, factsContext = null, profileContext = null, lessonsContext = null) {
+function _buildSystemPrompt(thread, pineconeContext = null, factsContext = null, profileContext = null, lessonsContext = null, leagueContext = null) {
   let sys = _ghostSystem();
+  if (leagueContext)   sys += `\n\n## Current league context:\n${leagueContext}`;
   if (lessonsContext)  sys += `\n\n## Lessons learned (avoid repeating these mistakes):\n${lessonsContext}`;
   if (profileContext)  sys += `\n\n## User profile:\n${profileContext}`;
   if (factsContext)    sys += `\n\n## What Ghost knows (persistent memory):\n${factsContext}`;
@@ -159,7 +168,7 @@ function _buildMessages(thread, userMessage) {
  * Chat with persistent memory for a thread.
  * Returns the assistant reply string.
  */
-async function chat(threadId, userMessage) {
+async function chat(threadId, userMessage, { guildId = null } = {}) {
   registry.setStatus('keeper', 'working');
 
   let thread = await _loadThread(threadId);
@@ -229,7 +238,18 @@ async function chat(threadId, userMessage) {
     }
   } catch { /* non-fatal */ }
 
-  const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext, profileContext, lessonsContext);
+  // Build league-specific context from guild ID
+  let leagueContext = null;
+  const league = guildId ? GUILD_LEAGUE_MAP[guildId] : null;
+  if (league) {
+    leagueContext = `You are responding in the **${league.name}** Discord server.\n`
+      + `Website: https://${league.domain}\n`
+      + `When giving URLs, ALWAYS use https://${league.domain} as the base domain.\n`
+      + `Key pages: /events (registration), /standings, /stats, /leaderboard, /teams, /rules, /news, /my-teams, /wallet\n`
+      + `Example: "Register at https://${league.domain}/events"`;
+  }
+
+  const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext, profileContext, lessonsContext, leagueContext);
   const messages     = _buildMessages(
     { ...thread, messages: thread.messages.slice(0, -1) },
     userMessage,
