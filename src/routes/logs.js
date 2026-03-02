@@ -13,7 +13,7 @@
 const express = require('express');
 const db      = require('../db');
 
-async function _queryLogs({ limit = 100, level = null, agent = null, action = null } = {}) {
+async function _queryLogs({ limit = 100, offset = 0, level = null, agent = null, action = null } = {}) {
   const params = [];
   const where  = [];
 
@@ -32,11 +32,17 @@ async function _queryLogs({ limit = 100, level = null, agent = null, action = nu
 
   const whereClause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
   const countParams = params.slice();
-  const rowParams   = [...params, limit];
+  const rowParams   = [...params, limit, offset];
 
   const [countRes, rowsRes] = await Promise.all([
     db.query(`SELECT COUNT(*)::int AS cnt FROM agent_logs${whereClause}`, countParams),
-    db.query(`SELECT id, ts, level, agent, action, outcome, model, user_role, note FROM agent_logs${whereClause} ORDER BY ts DESC LIMIT $${rowParams.length}`, rowParams),
+    db.query(
+      `SELECT id, ts, level, agent, action, outcome, model, user_role, note
+       FROM agent_logs${whereClause}
+       ORDER BY ts DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      rowParams,
+    ),
   ]);
 
   return { rows: rowsRes.rows, total: countRes.rows[0]?.cnt ?? 0 };
@@ -47,14 +53,15 @@ async function _queryLogs({ limit = 100, level = null, agent = null, action = nu
 const router = express.Router();
 
 router.get('/', async (req, res) => {
-  const limit  = Math.min(parseInt(req.query.limit) || 100, 500);
+  const limit  = Math.min(parseInt(req.query.limit)  || 25, 500);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
   const level  = req.query.level  || null;
   const agent  = req.query.agent  || null;
   const action = req.query.action || null;
 
   try {
-    const { rows, total } = await _queryLogs({ limit, level, agent, action });
-    return res.json({ logs: rows, total });
+    const { rows, total } = await _queryLogs({ limit, offset, level, agent, action });
+    return res.json({ logs: rows, total, limit, offset });
   } catch (err) {
     console.error('[logs] query failed:', err.message);
     return res.status(500).json({ error: err.message });
