@@ -1,9 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { CreditCard, TrendingDown, TrendingUp, Zap, RefreshCw, AlertTriangle } from 'lucide-react';
-import { formatCost, formatRelative } from '@/lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  CreditCard, TrendingDown, Zap, RefreshCw, Activity,
+  CheckCircle2, XCircle, AlertTriangle, Clock, Cpu,
+  ChevronDown, ChevronUp, Bot, Hash, ArrowUpRight,
+  Server, DollarSign, Gauge, BarChart3,
+} from 'lucide-react';
+import { formatCost, formatRelative, agentColor, agentEmoji } from '@/lib/utils';
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface ProviderStats {
   provider:             string;
@@ -28,87 +35,294 @@ interface UsageEntry {
   latency_ms:    number;
 }
 
-const PROVIDER_META: Record<string, { name: string; color: string; logo: string }> = {
-  ollama:    { name: 'Ollama (Local)',  color: '#27AE60', logo: '\u25C9' },
-  openai:    { name: 'OpenAI',          color: '#10B981', logo: '\u25CB' },
-  anthropic: { name: 'Anthropic',       color: '#7C3AED', logo: '\u25C8' },
-  xai:       { name: 'xAI / Grok',      color: '#1DA1F2', logo: '\u2715' },
+interface KeyStatus {
+  active: boolean;
+  error:  string | null;
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const PROVIDER_META: Record<string, {
+  name: string; color: string; gradient: string; icon: string; tier: string;
+  models: string[];
+}> = {
+  ollama: {
+    name: 'Ollama', color: '#27AE60', gradient: 'from-emerald-500/20 to-emerald-900/5',
+    icon: '~', tier: 'LOCAL',
+    models: ['qwen2.5:14b', 'qwen3-coder', 'nomic-embed-text'],
+  },
+  openai: {
+    name: 'OpenAI', color: '#10B981', gradient: 'from-teal-500/20 to-teal-900/5',
+    icon: 'O', tier: 'PAID',
+    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-5.3-codex', 'o4-mini'],
+  },
+  anthropic: {
+    name: 'Anthropic', color: '#7C3AED', gradient: 'from-violet-500/20 to-violet-900/5',
+    icon: 'A', tier: 'PAID',
+    models: ['claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-opus-4-6'],
+  },
+  xai: {
+    name: 'xAI / Grok', color: '#3B82F6', gradient: 'from-blue-500/20 to-blue-900/5',
+    icon: 'X', tier: 'PAID',
+    models: ['grok-4-1-fast-reasoning', 'grok-3-fast-beta'],
+  },
 };
 
-const stagger = {
-  container: { animate: { transition: { staggerChildren: 0.06 } } },
-  item:      { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 } },
-};
+const ALL_PROVIDERS = ['ollama', 'openai', 'anthropic', 'xai'];
 
-function ProviderCard({ p }: { p: ProviderStats }) {
-  const meta = PROVIDER_META[p.provider] ?? { name: p.provider, color: '#64748B', logo: '\u2022' };
-  const isFree = p.provider === 'ollama';
-  const totalCost = parseFloat(p.total_cost) || 0;
-  const calls = parseInt(p.calls) || 0;
+// ── Components ───────────────────────────────────────────────────────────────
+
+function StatusDot({ active, error }: { active: boolean; error: string | null }) {
+  if (active) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <div className="relative">
+          <div className="w-2 h-2 rounded-full bg-emerald-400" />
+          <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-400 animate-ping opacity-40" />
+        </div>
+        <span className="text-[9px] font-mono text-emerald-400 uppercase tracking-wider">Active</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-2 h-2 rounded-full bg-red-400" />
+      <span className="text-[9px] font-mono text-red-400 uppercase tracking-wider truncate max-w-24" title={error || 'Inactive'}>
+        {error || 'Inactive'}
+      </span>
+    </div>
+  );
+}
+
+function ProviderCard({
+  provider, stats, keyStatus, loading
+}: {
+  provider: string;
+  stats?: ProviderStats;
+  keyStatus?: KeyStatus;
+  loading: boolean;
+}) {
+  const meta = PROVIDER_META[provider];
+  const isFree = provider === 'ollama';
+  const totalCost = parseFloat(stats?.total_cost || '0');
+  const calls = parseInt(stats?.calls || '0');
+  const inputTokens = parseInt(stats?.total_input_tokens || '0');
+  const outputTokens = parseInt(stats?.total_output_tokens || '0');
+  const totalTokens = inputTokens + outputTokens;
 
   return (
     <motion.div
-      variants={stagger.item}
-      whileHover={{ y: -2 }}
-      className="glass rounded-2xl p-3 sm:p-5 relative overflow-hidden"
-      style={{ border: `1px solid ${meta.color}20` }}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -3, transition: { duration: 0.2 } }}
+      className="relative glass rounded-2xl overflow-hidden group"
+      style={{ border: `1px solid ${meta.color}18` }}
     >
-      <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
-           style={{ background: `linear-gradient(90deg, transparent, ${meta.color}60, transparent)` }} />
+      {/* Top gradient accent */}
+      <div className="absolute top-0 left-0 right-0 h-1"
+           style={{ background: `linear-gradient(90deg, ${meta.color}00, ${meta.color}80, ${meta.color}00)` }} />
 
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center text-base font-bold"
-               style={{ background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}25` }}>
-            {meta.logo}
+      {/* Background glow */}
+      <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full opacity-[0.03] group-hover:opacity-[0.06] transition-opacity"
+           style={{ background: meta.color }} />
+
+      <div className="relative p-4 sm:p-5">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black"
+                 style={{ background: `${meta.color}12`, color: meta.color, border: `1px solid ${meta.color}20`,
+                          boxShadow: `0 0 20px ${meta.color}10` }}>
+              {meta.icon}
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>{meta.name}</p>
+              <p className="text-[9px] font-mono text-ghost-muted/50">
+                {stats?.last_model || meta.models[0]}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>{meta.name}</p>
-            <p className="text-[9px] text-ghost-muted/60 font-mono">{p.last_model || 'N/A'}</p>
+          <div className="flex flex-col items-end gap-1">
+            <span className={`text-[8px] px-2 py-0.5 rounded-full font-mono font-bold tracking-widest ${
+              isFree
+                ? 'text-emerald-300 bg-emerald-400/10 border border-emerald-400/20'
+                : 'text-ghost-accent bg-ghost-accent/10 border border-ghost-accent/20'
+            }`}>
+              {meta.tier}
+            </span>
+            {keyStatus && <StatusDot active={keyStatus.active} error={keyStatus.error} />}
           </div>
         </div>
-        <span className={`text-[9px] px-2 py-0.5 rounded-full font-mono uppercase tracking-wider ${
-          isFree ? 'text-green-400 bg-green-400/10' : 'text-blue-400 bg-blue-400/10'
-        }`}>
-          {isFree ? 'FREE' : 'PAID'}
-        </span>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <div>
-          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Total Cost</p>
-          <p className="text-lg font-bold" style={{ fontFamily: 'Space Grotesk', color: isFree ? '#10B981' : meta.color }}>
-            {isFree ? 'Free' : formatCost(totalCost)}
+        {/* Cost display */}
+        <div className="mb-4">
+          <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider mb-1">Total Spend</p>
+          <p className="text-2xl font-black tracking-tight"
+             style={{ fontFamily: 'Space Grotesk', color: isFree ? '#10B981' : totalCost > 0 ? meta.color : 'rgba(255,255,255,0.3)' }}>
+            {isFree ? '$0.00' : totalCost > 0 ? formatCost(totalCost) : '$0.00'}
           </p>
+          {isFree && (
+            <p className="text-[9px] text-emerald-400/60 font-mono mt-0.5">Always free — local inference</p>
+          )}
         </div>
-        <div>
-          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Total Calls</p>
-          <p className="text-lg font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>
-            {calls.toLocaleString()}
-          </p>
-        </div>
-        <div>
-          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Input Tokens</p>
-          <p className="text-sm font-semibold text-white">{parseInt(p.total_input_tokens || '0').toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Output Tokens</p>
-          <p className="text-sm font-semibold text-white">{parseInt(p.total_output_tokens || '0').toLocaleString()}</p>
-        </div>
-      </div>
 
-      <p className="text-[9px] text-ghost-muted/40 font-mono">
-        Last call: {p.last_call ? formatRelative(p.last_call) : 'never'}
-      </p>
+        {/* Stats grid */}
+        <div className="grid grid-cols-3 gap-2">
+          <StatMini icon={Activity} label="Calls" value={calls.toLocaleString()} color={meta.color} />
+          <StatMini icon={ArrowUpRight} label="In Tokens" value={formatTokens(inputTokens)} color={meta.color} />
+          <StatMini icon={Gauge} label="Out Tokens" value={formatTokens(outputTokens)} color={meta.color} />
+        </div>
+
+        {/* Last call */}
+        {stats?.last_call && (
+          <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+            <p className="text-[9px] text-ghost-muted/30 font-mono flex items-center gap-1">
+              <Clock size={8} /> Last call {formatRelative(stats.last_call)}
+            </p>
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 }
 
+function StatMini({ icon: Icon, label, value, color }: {
+  icon: any; label: string; value: string; color: string;
+}) {
+  return (
+    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+      <p className="text-[7px] sm:text-[8px] text-ghost-muted/30 uppercase tracking-wider mb-0.5 flex items-center gap-0.5">
+        <Icon size={7} /> {label}
+      </p>
+      <p className="text-[10px] sm:text-xs font-bold text-white font-mono">{value}</p>
+    </div>
+  );
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function UsageRow({ u }: { u: UsageEntry }) {
+  const [expanded, setExpanded] = useState(false);
+  const meta = PROVIDER_META[u.provider] ?? { name: u.provider, color: '#64748B', icon: '?', tier: '?' };
+  const aColor = agentColor(u.agent || 'ghost');
+  const totalTokens = (u.input_tokens || 0) + (u.output_tokens || 0);
+
+  return (
+    <div className="glass rounded-xl overflow-hidden"
+         style={{ border: `1px solid ${meta.color}10`, borderLeft: `3px solid ${meta.color}50` }}>
+      <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer hover:bg-white/[0.015] transition-colors"
+           onClick={() => setExpanded(!expanded)}>
+        {/* Provider icon */}
+        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black shrink-0"
+             style={{ background: `${meta.color}12`, color: meta.color }}>
+          {meta.icon}
+        </div>
+
+        {/* Agent badge */}
+        {u.agent && (
+          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded shrink-0 hidden sm:flex items-center gap-1"
+                style={{ color: aColor, background: `${aColor}12`, border: `1px solid ${aColor}20` }}>
+            {agentEmoji(u.agent)} {u.agent}
+          </span>
+        )}
+
+        {/* Model + action */}
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] sm:text-xs font-medium text-white truncate">
+            <span className="sm:hidden text-ghost-muted/60">{u.agent || 'system'} &middot; </span>
+            {u.model}
+          </p>
+          <p className="text-[9px] text-ghost-muted/40 font-mono truncate">{u.action || 'api-call'}</p>
+        </div>
+
+        {/* Tokens */}
+        <span className="text-[9px] font-mono text-ghost-muted/50 hidden sm:inline shrink-0">
+          {totalTokens.toLocaleString()} tok
+        </span>
+
+        {/* Cost */}
+        <span className="text-[10px] font-mono font-bold shrink-0 min-w-12 text-right"
+              style={{ color: u.cost === 0 ? '#10B981' : meta.color }}>
+          {u.cost === 0 ? 'free' : formatCost(u.cost)}
+        </span>
+
+        {/* Time */}
+        <span className="text-[9px] font-mono text-ghost-muted/30 hidden sm:inline shrink-0 min-w-14 text-right">
+          {formatRelative(u.ts)}
+        </span>
+
+        {expanded
+          ? <ChevronUp size={12} className="text-ghost-muted/30 shrink-0" />
+          : <ChevronDown size={12} className="text-ghost-muted/30 shrink-0" />
+        }
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+            className="overflow-hidden"
+          >
+            <div className="p-3 sm:p-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <DetailCell icon={Hash} label="Call ID" value={`#${u.id}`} />
+                <DetailCell icon={Cpu} label="Model" value={u.model} valueColor={meta.color} />
+                <DetailCell icon={Bot} label="Agent" value={u.agent || 'system'} valueColor={aColor} />
+                <DetailCell icon={Clock} label="Latency" value={u.latency_ms ? `${u.latency_ms}ms` : 'n/a'} />
+              </div>
+              <div className="flex items-center gap-3 flex-wrap mt-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Input:</span>
+                  <span className="text-[10px] font-mono text-ghost-muted/70">{(u.input_tokens || 0).toLocaleString()} tokens</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Output:</span>
+                  <span className="text-[10px] font-mono text-ghost-muted/70">{(u.output_tokens || 0).toLocaleString()} tokens</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Provider:</span>
+                  <span className="text-[10px] font-mono" style={{ color: meta.color }}>{meta.name}</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function DetailCell({ icon: Icon, label, value, valueColor }: {
+  icon: any; label: string; value: string; valueColor?: string;
+}) {
+  return (
+    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+      <p className="text-[8px] sm:text-[9px] text-ghost-muted/30 uppercase tracking-wider mb-1 flex items-center gap-1">
+        <Icon size={8} /> {label}
+      </p>
+      <p className="text-[10px] sm:text-xs font-mono text-white truncate" style={valueColor ? { color: valueColor } : undefined}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default function CreditsPage() {
-  const [period, setPeriod]     = useState<'today' | 'week' | 'month' | 'all'>('all');
+  const [period, setPeriod]       = useState<'today' | 'week' | 'month' | 'all'>('all');
   const [providers, setProviders] = useState<ProviderStats[]>([]);
-  const [calls, setCalls]       = useState<UsageEntry[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const [calls, setCalls]         = useState<UsageEntry[]>([]);
+  const [keyStatus, setKeyStatus] = useState<Record<string, KeyStatus>>({});
+  const [loading, setLoading]     = useState(true);
+  const [statusLoading, setStatusLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -125,144 +339,199 @@ export default function CreditsPage() {
     setLoading(false);
   }, [period]);
 
+  const fetchStatus = useCallback(async () => {
+    setStatusLoading(true);
+    try {
+      const res = await fetch('/api/credits/status');
+      const data = await res.json();
+      setKeyStatus(data.status || {});
+    } catch { /* offline */ }
+    setStatusLoading(false);
+  }, []);
+
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const totalSpent = providers.reduce((s, p) => s + (parseFloat(p.total_cost) || 0), 0);
   const totalCalls = providers.reduce((s, p) => s + (parseInt(p.calls) || 0), 0);
-  const freeCalls  = providers.find(p => p.provider === 'ollama')?.calls ?? '0';
+  const freeCalls  = parseInt(providers.find(p => p.provider === 'ollama')?.calls || '0');
+  const paidCalls  = totalCalls - freeCalls;
+  const freePercent = totalCalls > 0 ? Math.round((freeCalls / totalCalls) * 100) : 0;
+
+  // Build a map for quick stats lookup
+  const statsMap: Record<string, ProviderStats> = {};
+  for (const p of providers) statsMap[p.provider] = p;
 
   return (
     <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 sm:mb-6">
+      <div className="flex items-center justify-between mb-5 sm:mb-7 gap-2">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <CreditCard size={16} className="text-ghost-accent" />
+            <CreditCard size={18} className="text-ghost-accent" />
             <h2 className="text-lg sm:text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>API Credits</h2>
           </div>
-          <p className="text-[10px] sm:text-xs text-ghost-muted">Provider usage and cost tracking</p>
+          <p className="text-[10px] sm:text-xs text-ghost-muted">Live provider status, usage tracking, and cost analysis</p>
         </div>
-        <button onClick={fetchData}
+        <button onClick={() => { fetchData(); fetchStatus(); }}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
                 style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
 
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
-        {[
-          { label: 'Total Spend',      value: formatCost(totalSpent),      icon: TrendingDown, color: '#EF4444'  },
-          { label: 'Total Calls',      value: totalCalls.toLocaleString(), icon: CreditCard,   color: '#F59E0B'  },
-          { label: 'Free Calls',       value: parseInt(freeCalls).toLocaleString(), icon: Zap, color: '#10B981' },
-          { label: 'Providers Active', value: providers.length,            icon: TrendingUp,   color: '#00D4FF'  },
-        ].map((kpi) => (
-          <motion.div
-            key={kpi.label}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -2 }}
-            className="glass rounded-xl p-4"
-            style={{ border: `1px solid ${kpi.color}20` }}
-          >
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
-                 style={{ background: `${kpi.color}15`, border: `1px solid ${kpi.color}25` }}>
-              <kpi.icon size={14} style={{ color: kpi.color }} />
+      {/* Hero stats bar */}
+      <div className="glass rounded-2xl p-4 sm:p-5 mb-5 sm:mb-7 relative overflow-hidden"
+           style={{ border: '1px solid rgba(0,212,255,0.1)' }}>
+        {/* Background gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-ghost-accent/5 via-transparent to-emerald-500/5" />
+
+        <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
+          <div>
+            <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <DollarSign size={9} /> Total Spend
+            </p>
+            <p className="text-2xl sm:text-3xl font-black text-white" style={{ fontFamily: 'Space Grotesk' }}>
+              {formatCost(totalSpent)}
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <BarChart3 size={9} /> API Calls
+            </p>
+            <p className="text-2xl sm:text-3xl font-black text-white" style={{ fontFamily: 'Space Grotesk' }}>
+              {totalCalls.toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Zap size={9} /> Free Rate
+            </p>
+            <p className="text-2xl sm:text-3xl font-black" style={{ fontFamily: 'Space Grotesk', color: '#10B981' }}>
+              {freePercent}%
+            </p>
+            <p className="text-[9px] text-ghost-muted/30 font-mono">{freeCalls.toLocaleString()} free / {paidCalls.toLocaleString()} paid</p>
+          </div>
+          <div>
+            <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Server size={9} /> Providers
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              {ALL_PROVIDERS.map(prov => {
+                const ks = keyStatus[prov];
+                const meta = PROVIDER_META[prov];
+                return (
+                  <div key={prov} className="flex items-center gap-1" title={`${meta.name}: ${ks?.active ? 'Active' : ks?.error || 'Checking...'}`}>
+                    <div className={`w-2.5 h-2.5 rounded-full ${
+                      !ks ? 'bg-ghost-muted/20 animate-pulse' :
+                      ks.active ? 'bg-emerald-400' : 'bg-red-400'
+                    }`} />
+                    <span className="text-[9px] font-mono text-ghost-muted/50">{meta.icon}</span>
+                  </div>
+                );
+              })}
             </div>
-            <p className="text-xl font-bold text-white mb-1" style={{ fontFamily: 'Space Grotesk' }}>{kpi.value}</p>
-            <p className="text-[10px] text-ghost-muted">{kpi.label}</p>
-          </motion.div>
-        ))}
+          </div>
+        </div>
+
+        {/* Free-first progress bar */}
+        <div className="relative mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[9px] text-ghost-muted/40 font-mono flex items-center gap-1">
+              <Zap size={8} className="text-emerald-400" /> Free-first routing efficiency
+            </p>
+            <p className="text-[9px] font-mono text-emerald-400">{freePercent}% free</p>
+          </div>
+          <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
+            <motion.div
+              className="h-full rounded-full"
+              style={{ background: 'linear-gradient(90deg, #10B981, #34D399)' }}
+              initial={{ width: 0 }}
+              animate={{ width: `${freePercent}%` }}
+              transition={{ duration: 1, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Period filter */}
-      <div className="flex gap-1 mb-4 sm:mb-6 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex gap-1 mb-4 sm:mb-5 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
         {(['today','week','month','all'] as const).map(p => (
           <button key={p} onClick={() => setPeriod(p)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-mono capitalize transition-all ${
-                    period === p ? 'text-ghost-accent bg-ghost-accent/15' : 'text-ghost-muted hover:text-white hover:bg-white/5'
+                  className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-mono capitalize transition-all ${
+                    period === p ? 'text-ghost-accent bg-ghost-accent/15' : 'text-ghost-muted/50 hover:text-white hover:bg-white/5'
                   }`}>{p}</button>
         ))}
       </div>
 
       {/* Provider cards */}
-      <motion.div
-        variants={stagger.container}
-        initial="initial"
-        animate="animate"
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-6"
-      >
-        {providers.length === 0 && !loading && (
-          <div className="col-span-full glass rounded-2xl p-8 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-            <p className="text-sm text-ghost-muted">No API usage recorded yet. Send a message to start tracking.</p>
-          </div>
-        )}
-        {providers.map(p => <ProviderCard key={p.provider} p={p} />)}
-      </motion.div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+        {ALL_PROVIDERS.map((prov, i) => (
+          <motion.div key={prov} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
+            <ProviderCard
+              provider={prov}
+              stats={statsMap[prov]}
+              keyStatus={keyStatus[prov]}
+              loading={loading}
+            />
+          </motion.div>
+        ))}
+      </div>
 
-      {/* Recent usage log */}
-      <div className="glass rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-white/5">
-          <h3 className="text-sm font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>Recent API Calls</h3>
-          <div className="flex gap-1">
-            {(['today','week','month','all'] as const).map(p => (
-              <button key={p} onClick={() => setPeriod(p)}
-                      className={`px-2.5 py-1 rounded text-[10px] font-mono capitalize transition-all ${
-                        period === p ? 'text-ghost-accent bg-ghost-accent/15' : 'text-ghost-muted hover:text-white hover:bg-white/5'
-                      }`}>{p}</button>
-            ))}
+      {/* Anthropic warning banner */}
+      {keyStatus.anthropic && !keyStatus.anthropic.active && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass rounded-xl p-3 sm:p-4 mb-5 flex items-start gap-3"
+          style={{ border: '1px solid rgba(239,68,68,0.15)', background: 'rgba(239,68,68,0.03)' }}
+        >
+          <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-medium text-red-300 mb-0.5">Anthropic API Inactive</p>
+            <p className="text-[10px] text-ghost-muted/60">
+              {keyStatus.anthropic.error || 'Key is not active.'}
+              {keyStatus.anthropic.error?.includes('credit') && ' Add credits at console.anthropic.com to re-enable Claude models.'}
+            </p>
           </div>
+        </motion.div>
+      )}
+
+      {/* Recent API calls */}
+      <div className="mb-2">
+        <div className="flex items-center gap-2 mb-3">
+          <Activity size={14} className="text-ghost-accent" />
+          <h3 className="text-sm font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Recent API Calls</h3>
+          <span className="text-[9px] font-mono text-ghost-muted/40 px-1.5 py-0.5 rounded-full"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            {calls.length}
+          </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-white/5">
-                {['Time', 'Provider', 'Model', 'Agent', 'Tokens', 'Cost'].map(h => (
-                  <th key={h} className="text-left px-4 py-2.5 text-[9px] uppercase tracking-wider text-ghost-muted/50 font-mono">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {calls.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-[10px] text-ghost-muted/40">
-                    {loading ? 'Loading...' : 'No API calls recorded yet'}
-                  </td>
-                </tr>
-              ) : calls.map((u) => {
-                const meta = PROVIDER_META[u.provider] ?? { name: u.provider, color: '#64748B', logo: '\u2022' };
-                return (
-                  <tr key={u.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                    <td className="px-4 py-2.5 text-[10px] text-ghost-muted/60 font-mono">{formatRelative(u.ts)}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="text-[10px] font-medium" style={{ color: meta.color }}>
-                        {meta.logo} {meta.name}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-[10px] text-ghost-muted font-mono">{u.model}</td>
-                    <td className="px-4 py-2.5 text-[10px] text-ghost-muted font-mono">{u.agent || '-'}</td>
-                    <td className="px-4 py-2.5 text-[10px] text-ghost-muted font-mono">{((u.input_tokens || 0) + (u.output_tokens || 0)).toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-[10px] font-mono" style={{ color: u.cost === 0 ? '#10B981' : '#F59E0B' }}>
-                      {u.cost === 0 ? 'free' : formatCost(u.cost)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="space-y-1.5">
+          {loading ? (
+            <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              <RefreshCw size={18} className="text-ghost-accent animate-spin mx-auto mb-2" />
+              <p className="text-xs text-ghost-muted">Loading usage data...</p>
+            </div>
+          ) : calls.length === 0 ? (
+            <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              <Activity size={24} className="text-ghost-muted/20 mx-auto mb-2" />
+              <p className="text-xs text-ghost-muted/40">No API calls recorded for this period</p>
+            </div>
+          ) : (
+            calls.map(u => <UsageRow key={u.id} u={u} />)
+          )}
         </div>
       </div>
 
-      {/* Free-first note */}
-      <div className="mt-3 sm:mt-4 glass rounded-xl p-3 flex items-start sm:items-center gap-2 sm:gap-3"
+      {/* Free-first footer */}
+      <div className="mt-4 glass rounded-xl p-3 flex items-start sm:items-center gap-2 sm:gap-3"
            style={{ border: '1px solid rgba(39,174,96,0.12)' }}>
-        <Zap size={13} className="text-green-400 shrink-0 mt-0.5 sm:mt-0" />
+        <Zap size={13} className="text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
         <p className="text-[9px] sm:text-[10px] text-ghost-muted">
-          <span className="text-green-400 font-medium">Free-first routing active</span> — Ghost defaults to Ollama qwen3-coder (local, zero cost).
-          Paid APIs are only called for real-time data, vision, or when Ollama is unavailable.
+          <span className="text-emerald-400 font-medium">Free-first routing active</span> — Ghost defaults to Ollama (local, zero cost).
+          Paid APIs are only called for real-time data, web research, code repair, or when Ollama is unavailable.
         </p>
       </div>
     </div>
