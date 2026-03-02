@@ -54,7 +54,7 @@ const RECENT_TWEETS: Tweet[] = [
   {
     id:       '1',
     accountId:'crow',
-    content:  '🔍 Ghost Scout just finished a deep research run on HOF League draft trends. 14 sources, 3.2k tokens, delivered in under 2s via Grok. The AI agent era is here.',
+    content:  '🔍 Ghost Scout just finished a deep research run. 14 sources, 3.2k tokens, delivered in under 2s via Grok. The AI agent era is here.',
     postedAt: new Date(Date.now()-3600000*4).toISOString(),
     likes:    14, reposts: 3, replies: 2, views: 892,
   },

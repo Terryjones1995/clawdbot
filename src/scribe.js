@@ -316,11 +316,11 @@ async function statusReport({ agentFilter } = {}) {
 const REFLECT_SYSTEM = `You are a memory consolidation agent for Ghost, an AI assistant.
 Review the conversation below and extract any facts worth storing permanently in Ghost's memory.
 
-Focus on: people (names, roles, Discord handles), org facts, league data, decisions made, preferences stated, corrections given.
+Focus on: people (names, roles, Discord handles), org facts, decisions made, preferences stated, corrections given.
 Skip: chitchat, questions without clear answers, anything temporary.
 
 Return ONLY a JSON array. Each item:
-{ "key": "unique-slug", "content": "Complete fact as a clear sentence.", "category": "person|org|league|preference|decision|correction|misc" }
+{ "key": "unique-slug", "content": "Complete fact as a clear sentence.", "category": "person|org|preference|decision|correction|misc" }
 
 If no notable facts, return [].`;
 

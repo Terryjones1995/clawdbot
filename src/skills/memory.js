@@ -27,14 +27,13 @@ const ollama = require('../../openclaw/skills/ollama');
 const redis  = require('../redis');
 const learning = require('./learning');
 
-const EXTRACT_SYSTEM = `You are a fact extractor for Ghost, an AI assistant managing a league operations platform (HOF League) and Discord server.
+const EXTRACT_SYSTEM = `You are a fact extractor for Ghost, an AI assistant managing a multi-agent Discord system and operations platform.
 
 Given a conversation exchange (user message + assistant reply), extract any facts worth remembering permanently.
 
 Focus on:
 - People: names, roles, Discord usernames, contact info, preferences
-- Organization: team names, captains, MMR, schedules, payments, decisions
-- League: season info, rules, registrations, brackets, scores
+- Organization: team names, projects, schedules, payments, decisions
 - Preferences: how the user likes things done, communication style, tools they use
 - Decisions: anything decided that should inform future responses
 
@@ -44,12 +43,12 @@ Skip:
 - Chitchat with no lasting value
 
 Return ONLY a JSON array. Each item:
-{ "key": "category:normalized_topic", "content": "Complete fact as a clear sentence.", "category": "person|org|league|preference|decision|misc" }
+{ "key": "category:normalized_topic", "content": "Complete fact as a clear sentence.", "category": "person|org|preference|decision|misc" }
 
 KEY FORMAT — use category:normalized_topic with underscores (no dashes), e.g.:
   preference:favorite_color, preference:communication_style
   person:taylor_discord_username, person:taylor_role
-  org:hof_league_season, league:season_3_start_date
+  org:team_count, org:season_start_date
   decision:payment_method
 
 The same concept must ALWAYS produce the same key. Use the category prefix + a stable snake_case topic.
