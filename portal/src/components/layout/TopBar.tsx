@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession, signOut } from 'next-auth/react';
 import { useGhostStore } from '@/store';
@@ -42,13 +43,18 @@ export function TopBar({ title, orgId }: TopBarProps) {
         <Menu size={20} />
       </button>
 
-      {/* Page title */}
+      {/* Ghost logo + page title */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0 mr-2 sm:mr-4">
-        <Activity size={14} className="text-ghost-accent shrink-0 hidden sm:block" />
-        <h1 className="text-sm sm:text-sm font-bold text-white truncate tracking-wider uppercase"
-            style={{ fontFamily: 'Space Grotesk' }}>
-          {title}
-        </h1>
+        <div className="relative shrink-0 w-7 h-7 md:w-8 md:h-8" style={{ filter: 'drop-shadow(0 0 6px rgba(0,212,255,0.4))' }}>
+          <Image src="/logo.png" alt="Ghost" width={32} height={32} style={{ objectFit: 'contain' }} priority />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-sm font-bold text-white truncate tracking-wider uppercase leading-tight"
+              style={{ fontFamily: 'Space Grotesk' }}>
+            {title}
+          </h1>
+          <p className="text-[9px] text-ghost-accent/50 tracking-[0.1em] hidden md:block leading-none">GHOST OS</p>
+        </div>
       </div>
 
       {/* Search bar — hidden on mobile */}

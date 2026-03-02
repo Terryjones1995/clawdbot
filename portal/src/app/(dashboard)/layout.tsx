@@ -95,8 +95,8 @@ export default function DashboardLayout({ children }: {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar title={getTitle()} orgId={orgId} />
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden relative"
-              style={{ paddingBottom: 'max(5rem, env(safe-area-inset-bottom, 1.25rem))' }}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative pb-20"
+              style={{ paddingBottom: 'max(5rem, env(safe-area-inset-bottom, 5rem))' }}>
           <AnimatePresence mode="wait">
             <motion.div
               key={typeof window !== 'undefined' ? window.location.pathname : 'page'}
