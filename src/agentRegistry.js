@@ -22,10 +22,7 @@ const AGENTS = [
   { id: 'lens',        name: 'Lens',        role: 'Analytics'               },
   { id: 'keeper',      name: 'Keeper',      role: 'Conversation Memory'     },
   { id: 'sentinel',    name: 'Sentinel',    role: 'Discord Connector'       },
-  { id: 'crow',        name: 'Crow',        role: 'Social Media / X'        },
-  { id: 'operator',    name: 'Operator',    role: 'Task Decomposition'      },
   { id: 'helm',        name: 'Helm',        role: 'SRE / Deploy'            },
-  { id: 'codex',       name: 'Codex',       role: 'League Knowledge'        },
 ];
 
 // In-memory state
@@ -38,6 +35,7 @@ AGENTS.forEach(a => {
     status:       'idle',
     lastActivity: null,
     meta:         {},
+    events:       [],   // recent events (max 20 in-memory)
   };
 });
 
@@ -64,9 +62,12 @@ function setStatus(agentId, status, meta = {}) {
   _emit(agentId, { id: agentId, status, lastActivity: state[agentId].lastActivity, ...meta });
 }
 
-function pushEvent(agentId, message) {
+function pushEvent(agentId, message, type = 'info') {
+  if (!state[agentId]) return;
   const ts = new Date().toISOString();
-  _emit(agentId, { __event: true, id: agentId, message, ts });
+  const event = { ts, message, type };
+  state[agentId].events = [...state[agentId].events.slice(-19), event];
+  _emit(agentId, { __event: true, id: agentId, message, type, ts });
 }
 
 function getAll() {
@@ -77,4 +78,59 @@ function get(agentId) {
   return state[agentId] || null;
 }
 
-module.exports = { subscribe, setStatus, pushEvent, getAll, get };
+/**
+ * Load recent events from agent_logs DB and populate in-memory events.
+ * Called once at startup so new WS clients see historical activity.
+ */
+async function loadRecentEvents() {
+  try {
+    const db = require('./db');
+    const { rows } = await db.query(
+      `SELECT ts, level, agent, action, outcome, note
+       FROM agent_logs
+       ORDER BY ts DESC
+       LIMIT 100`,
+    );
+
+    // Map agent names to registry IDs
+    const nameToId = {};
+    AGENTS.forEach(a => { nameToId[a.name.toLowerCase()] = a.id; });
+
+    // Also map common variations
+    nameToId.ghost = 'ghost';
+    nameToId.reception = 'ghost';
+
+    // Group by agent, newest first (reversed so oldest is pushed first)
+    const byAgent = {};
+    for (const row of rows.reverse()) {
+      const id = nameToId[(row.agent || '').toLowerCase()];
+      if (!id || !state[id]) continue;
+      if (!byAgent[id]) byAgent[id] = [];
+
+      const type = row.level === 'ERROR' ? 'error'
+        : row.level === 'WARN' ? 'warning'
+        : row.outcome === 'success' ? 'success'
+        : 'info';
+
+      byAgent[id].push({
+        ts:      row.ts instanceof Date ? row.ts.toISOString() : String(row.ts),
+        message: `${row.action}: ${row.note || row.outcome}`,
+        type,
+      });
+    }
+
+    for (const [id, events] of Object.entries(byAgent)) {
+      state[id].events = events.slice(-20);
+      // Update lastActivity to most recent event
+      if (events.length) {
+        state[id].lastActivity = events[events.length - 1].ts;
+      }
+    }
+
+    console.log(`[Registry] Loaded recent events for ${Object.keys(byAgent).length} agents`);
+  } catch (err) {
+    console.warn('[Registry] Failed to load recent events:', err.message);
+  }
+}
+
+module.exports = { subscribe, setStatus, pushEvent, getAll, get, loadRecentEvents };

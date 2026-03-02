@@ -29,9 +29,10 @@ const NAV = [
 
 interface SidebarProps {
   orgId: string;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ orgId }: SidebarProps) {
+export function Sidebar({ orgId, onNavigate }: SidebarProps) {
   const pathname   = usePathname();
   const { data: session } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed, wsConnected, agents } = useGhostStore();
@@ -42,14 +43,18 @@ export function Sidebar({ orgId }: SidebarProps) {
   const onlineCount  = Object.values(agents).filter(a => a.status === 'online' || a.status === 'working').length;
   const workingCount = Object.values(agents).filter(a => a.status === 'working').length;
 
+  // When used in mobile overlay, always show expanded
+  const isMobileOverlay = !!onNavigate;
+  const collapsed = isMobileOverlay ? false : sidebarCollapsed;
+
   return (
     <motion.aside
       initial={false}
-      animate={{ width: sidebarCollapsed ? 64 : 220 }}
+      animate={{ width: isMobileOverlay ? 260 : collapsed ? 64 : 220 }}
       transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
       className="relative flex flex-col h-full shrink-0 overflow-hidden z-20"
       style={{
-        background:  'rgba(5, 10, 20, 0.95)',
+        background:  'rgba(5, 10, 20, 0.98)',
         borderRight: '1px solid rgba(0,212,255,0.08)',
       }}
     >
@@ -61,7 +66,7 @@ export function Sidebar({ orgId }: SidebarProps) {
         </div>
 
         <AnimatePresence>
-          {!sidebarCollapsed && (
+          {!collapsed && (
             <motion.div
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
@@ -79,7 +84,7 @@ export function Sidebar({ orgId }: SidebarProps) {
 
       {/* Status bar */}
       <AnimatePresence>
-        {!sidebarCollapsed && (
+        {!collapsed && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -107,7 +112,7 @@ export function Sidebar({ orgId }: SidebarProps) {
           return (
             <div key={section} className="mb-3">
               <AnimatePresence>
-                {!sidebarCollapsed && (
+                {!collapsed && (
                   <motion.p
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -125,7 +130,7 @@ export function Sidebar({ orgId }: SidebarProps) {
                 const Icon    = item.icon;
 
                 return (
-                  <Link key={item.href} href={href}>
+                  <Link key={item.href} href={href} onClick={onNavigate}>
                     <motion.div
                       whileHover={{ x: 2 }}
                       transition={{ duration: 0.1 }}
@@ -134,7 +139,7 @@ export function Sidebar({ orgId }: SidebarProps) {
                         active
                           ? 'text-ghost-accent bg-ghost-accent/10'
                           : 'text-ghost-muted hover:text-white hover:bg-white/5',
-                        sidebarCollapsed && 'justify-center px-0'
+                        collapsed && 'justify-center px-0'
                       )}
                     >
                       {active && (
@@ -147,7 +152,7 @@ export function Sidebar({ orgId }: SidebarProps) {
                       <Icon size={16} className={cn('shrink-0', active && 'drop-shadow-[0_0_6px_rgba(0,212,255,0.8)]')} />
 
                       <AnimatePresence>
-                        {!sidebarCollapsed && (
+                        {!collapsed && (
                           <motion.span
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -160,7 +165,7 @@ export function Sidebar({ orgId }: SidebarProps) {
                         )}
                       </AnimatePresence>
 
-                      {item.badge && !sidebarCollapsed && (
+                      {item.badge && !collapsed && (
                         <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono tracking-wider"
                               style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444' }}>
                           {item.badge}
@@ -168,7 +173,7 @@ export function Sidebar({ orgId }: SidebarProps) {
                       )}
 
                       {/* Tooltip when collapsed */}
-                      {sidebarCollapsed && (
+                      {collapsed && (
                         <div className="absolute left-14 whitespace-nowrap px-2 py-1 rounded-md text-xs text-white pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50"
                              style={{ background: '#0A1628', border: '1px solid rgba(0,212,255,0.2)' }}>
                           {item.label}
@@ -191,7 +196,7 @@ export function Sidebar({ orgId }: SidebarProps) {
             {userInitial}
           </div>
           <AnimatePresence>
-            {!sidebarCollapsed && (
+            {!collapsed && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -204,14 +209,17 @@ export function Sidebar({ orgId }: SidebarProps) {
             )}
           </AnimatePresence>
 
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="ml-auto shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ghost-muted hover:text-ghost-accent hover:bg-ghost-accent/10 transition-all"
-          >
-            {sidebarCollapsed
-              ? <ChevronRight size={14} />
-              : <ChevronLeft size={14} />}
-          </button>
+          {/* Only show collapse toggle on desktop (not in mobile overlay) */}
+          {!isMobileOverlay && (
+            <button
+              onClick={() => setSidebarCollapsed(!collapsed)}
+              className="ml-auto shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-ghost-muted hover:text-ghost-accent hover:bg-ghost-accent/10 transition-all"
+            >
+              {collapsed
+                ? <ChevronRight size={14} />
+                : <ChevronLeft size={14} />}
+            </button>
+          )}
         </div>
       </div>
     </motion.aside>

@@ -323,7 +323,6 @@ const AGENT_FILE_MAP = {
   archivist:   'src/archivist.js',
   courier:     'src/courier.js',
   ghost:       'src/routes/reception.js',
-  codex:       'src/codex.js',
   switchboard: 'src/switchboard.js',
 };
 

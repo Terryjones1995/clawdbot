@@ -149,14 +149,14 @@ export default function TasksPage() {
   }, {} as Record<TaskStatus, number>);
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
+      <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <ClipboardList size={16} className="text-ghost-accent" />
-            <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Task Board</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Task Board</h2>
           </div>
-          <p className="text-xs text-ghost-muted">Agent work items and mission objectives</p>
+          <p className="text-[10px] sm:text-xs text-ghost-muted">Agent work items and objectives</p>
         </div>
         <button
           onClick={() => setShowNew(!showNew)}
@@ -176,9 +176,9 @@ export default function TasksPage() {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden mb-5"
           >
-            <div className="glass rounded-2xl p-5" style={{ border: '1px solid rgba(0,212,255,0.15)' }}>
-              <p className="text-xs font-semibold text-white mb-4" style={{ fontFamily: 'Space Grotesk' }}>Add New Task</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="glass rounded-2xl p-3 sm:p-5" style={{ border: '1px solid rgba(0,212,255,0.15)' }}>
+              <p className="text-xs font-semibold text-white mb-3 sm:mb-4" style={{ fontFamily: 'Space Grotesk' }}>Add New Task</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mb-3 sm:mb-4">
                 <input
                   value={newTitle}
                   onChange={e => setNewTitle(e.target.value)}
@@ -211,7 +211,7 @@ export default function TasksPage() {
         )}
       </AnimatePresence>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
         {COLS.map(col => {
           const colTasks = tasks.filter(t => t.status === col.key);
           const sCfg = STATUS_CONFIG[col.key];
@@ -246,13 +246,14 @@ export default function TasksPage() {
         })}
       </div>
 
-      <div className="mt-8 flex items-center gap-6 text-[10px] text-ghost-muted/40 font-mono">
-        <span>{tasks.length} total tasks</span>
+      <div className="mt-6 sm:mt-8 flex items-center gap-3 sm:gap-6 text-[9px] sm:text-[10px] text-ghost-muted/40 font-mono flex-wrap">
+        <span>{tasks.length} total</span>
         <span>{counts.in_progress || 0} in progress</span>
-        <span>{counts.done || 0} completed</span>
+        <span>{counts.done || 0} done</span>
         <span className="ml-auto flex items-center gap-1.5">
           <Zap size={10} className="text-ghost-accent/40" />
-          Persisted to database
+          <span className="hidden sm:inline">Persisted to database</span>
+          <span className="sm:hidden">Saved</span>
         </span>
       </div>
     </div>

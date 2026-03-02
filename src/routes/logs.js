@@ -14,7 +14,6 @@ const express = require('express');
 const db      = require('../db');
 
 async function _queryLogs({ limit = 100, level = null, agent = null, action = null } = {}) {
-  let sql    = `SELECT id, ts, level, agent, action, outcome, model, user_role, note FROM agent_logs`;
   const params = [];
   const where  = [];
 
@@ -31,11 +30,16 @@ async function _queryLogs({ limit = 100, level = null, agent = null, action = nu
     where.push(`LOWER(action) = $${params.length}`);
   }
 
-  if (where.length) sql += ` WHERE ${where.join(' AND ')}`;
-  params.push(limit);
-  sql += ` ORDER BY ts DESC LIMIT $${params.length}`;
+  const whereClause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+  const countParams = params.slice();
+  const rowParams   = [...params, limit];
 
-  return db.query(sql, params);
+  const [countRes, rowsRes] = await Promise.all([
+    db.query(`SELECT COUNT(*)::int AS cnt FROM agent_logs${whereClause}`, countParams),
+    db.query(`SELECT id, ts, level, agent, action, outcome, model, user_role, note FROM agent_logs${whereClause} ORDER BY ts DESC LIMIT $${rowParams.length}`, rowParams),
+  ]);
+
+  return { rows: rowsRes.rows, total: countRes.rows[0]?.cnt ?? 0 };
 }
 
 // ── /api/logs router ─────────────────────────────────────────────────────────
@@ -49,8 +53,8 @@ router.get('/', async (req, res) => {
   const action = req.query.action || null;
 
   try {
-    const { rows } = await _queryLogs({ limit, level, agent, action });
-    return res.json({ logs: rows, total: rows.length });
+    const { rows, total } = await _queryLogs({ limit, level, agent, action });
+    return res.json({ logs: rows, total });
   } catch (err) {
     console.error('[logs] query failed:', err.message);
     return res.status(500).json({ error: err.message });
@@ -66,8 +70,8 @@ errorsRouter.get('/', async (req, res) => {
   const agent = req.query.agent || null;
 
   try {
-    const { rows } = await _queryLogs({ limit, level: 'ERROR', agent });
-    return res.json({ errors: rows, total: rows.length });
+    const { rows, total } = await _queryLogs({ limit, level: 'ERROR', agent });
+    return res.json({ errors: rows, total });
   } catch (err) {
     console.error('[errors] query failed:', err.message);
     return res.status(500).json({ error: err.message });

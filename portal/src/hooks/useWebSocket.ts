@@ -33,7 +33,7 @@ export function useGhostWebSocket() {
                 break;
               case 'agent:event':
                 if (msg.id && msg.message) {
-                  pushAgentEvent(msg.id, msg.message);
+                  pushAgentEvent(msg.id, msg.message, msg.eventType || 'info');
                   // Also push as a message for beam animation
                   if (msg.toId) {
                     pushMessage({

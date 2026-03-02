@@ -266,6 +266,31 @@ async function logEntry({ level = 'INFO', agent, action, outcome, model = null, 
   } catch { /* non-fatal */ }
 }
 
+// ── Agent stats aggregation ──────────────────────────────────────────────────
+
+/**
+ * Per-agent stats from agent_logs — calls, errors, success rate, last active.
+ * Returns { [agentName]: { total_calls, total_errors, calls_today, errors_today, successes, last_active } }
+ */
+async function getAgentStats() {
+  if (!process.env.NEON_DATABASE_URL) return {};
+  const { rows } = await query(`
+    SELECT
+      LOWER(agent)                                                              AS agent,
+      COUNT(*)::int                                                             AS total_calls,
+      COUNT(*) FILTER (WHERE level = 'ERROR')::int                              AS total_errors,
+      COUNT(*) FILTER (WHERE ts > NOW() - INTERVAL '24 hours')::int             AS calls_today,
+      COUNT(*) FILTER (WHERE level = 'ERROR' AND ts > NOW() - INTERVAL '24 hours')::int AS errors_today,
+      COUNT(*) FILTER (WHERE outcome IN ('success','fixed'))::int               AS successes,
+      MAX(ts)                                                                   AS last_active
+    FROM agent_logs
+    GROUP BY LOWER(agent)
+  `);
+  const map = {};
+  for (const r of rows) map[r.agent] = r;
+  return map;
+}
+
 // ── Conversation thread helpers ───────────────────────────────────────────────
 
 /**
@@ -696,4 +721,5 @@ module.exports = {
   createTask, getTasks, updateTask, deleteTask,
   getSetting, setSetting, getAllSettings,
   createLesson, getLessons, getActiveLessons, getActiveLessonsByEmbedding, updateLesson, incrementLessonApplied, deleteLesson,
+  getAgentStats,
 };

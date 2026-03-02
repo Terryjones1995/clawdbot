@@ -60,7 +60,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden flex items-center justify-center"
+    <div className="relative min-h-screen overflow-x-hidden overflow-y-auto flex items-start sm:items-center justify-center px-4 pt-10 pb-32 sm:py-8"
          style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(0,100,180,0.15) 0%, #050A14 60%)' }}>
 
       {/* Background grid */}
@@ -119,7 +119,7 @@ export default function LoginPage() {
         initial={{ opacity: 0, y: 40, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 w-full max-w-md px-4"
+        className="relative z-10 w-full max-w-md"
       >
         {/* Logo + branding */}
         <motion.div
@@ -129,19 +129,19 @@ export default function LoginPage() {
           className="text-center mb-8"
         >
           {/* Ghost logo */}
-          <div className="relative inline-block mb-6">
+          <div className="relative inline-block mb-4 sm:mb-6">
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-              className="absolute inset-[-20px] rounded-full"
+              className="absolute inset-[-16px] sm:inset-[-20px] rounded-full"
               style={{
                 background: 'conic-gradient(from 0deg, transparent 60%, rgba(0,212,255,0.6) 100%)',
                 filter: 'blur(2px)',
               }}
             />
-            <div className="relative w-24 h-24 flex items-center justify-center"
+            <div className="relative w-18 h-18 sm:w-24 sm:h-24 flex items-center justify-center"
                  style={{ filter: 'drop-shadow(0 0 20px rgba(0,212,255,0.5))' }}>
-              <Image src="/logo.png" alt="Ghost" width={96} height={96} style={{ objectFit: 'contain' }} priority />
+              <Image src="/logo.png" alt="Ghost" width={96} height={96} className="w-[72px] h-[72px] sm:w-24 sm:h-24" style={{ objectFit: 'contain' }} priority />
             </div>
             {/* Orbital dot */}
             <motion.div
@@ -162,14 +162,14 @@ export default function LoginPage() {
             </motion.div>
           </div>
 
-          <h1 className="text-2xl font-bold tracking-wide text-white mb-1"
+          <h1 className="text-xl sm:text-2xl font-bold tracking-wide text-white mb-1"
               style={{ fontFamily: 'Space Grotesk', letterSpacing: '0.1em' }}>
             OPERATION GHOST
           </h1>
-          <p className="text-xs tracking-[0.3em] text-ghost-accent/70 uppercase mb-1">
+          <p className="text-[10px] sm:text-xs tracking-[0.3em] text-ghost-accent/70 uppercase mb-1">
             Mission Control Center
           </p>
-          <p className="text-xs text-ghost-muted tracking-[0.2em] uppercase">
+          <p className="text-[10px] sm:text-xs text-ghost-muted tracking-[0.2em] uppercase">
             Command · Automate · Dominate
           </p>
         </motion.div>
@@ -179,7 +179,7 @@ export default function LoginPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.5 }}
-          className="glass rounded-2xl p-8 relative overflow-hidden"
+          className="glass rounded-2xl p-5 sm:p-8 relative overflow-hidden"
           style={{ boxShadow: '0 0 60px rgba(0,212,255,0.08), 0 0 120px rgba(0,212,255,0.04)' }}
         >
           {/* Corner accents */}

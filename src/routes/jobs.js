@@ -23,7 +23,6 @@ router.get('/', async (req, res) => {
   const agent  = req.query.agent  || null;
 
   try {
-    let sql    = `SELECT id, ts, level, agent, action, outcome, model, user_role, note FROM agent_logs`;
     const params = [];
     const where  = [];
 
@@ -33,20 +32,25 @@ router.get('/', async (req, res) => {
     }
 
     if (status === 'failed') {
-      where.push(`level = 'ERROR' OR outcome = 'failed'`);
+      where.push(`(level = 'ERROR' OR outcome = 'failed')`);
     } else if (status === 'completed') {
       where.push(`outcome IN ('success', 'sent', 'drafted', 'stored', 'completed')`);
     } else if (status === 'running') {
       where.push(`outcome = 'running'`);
     }
 
-    if (where.length) sql += ` WHERE ${where.join(' AND ')}`;
-    params.push(limit);
-    sql += ` ORDER BY ts DESC LIMIT $${params.length}`;
+    const whereClause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
 
-    const { rows } = await db.query(sql, params);
+    // Get total count and limited rows in parallel
+    const countParams = params.slice();
+    const rowParams   = [...params, limit];
+    const [countRes, rowsRes] = await Promise.all([
+      db.query(`SELECT COUNT(*)::int AS cnt FROM agent_logs${whereClause}`, countParams),
+      db.query(`SELECT id, ts, level, agent, action, outcome, model, user_role, note FROM agent_logs${whereClause} ORDER BY ts DESC LIMIT $${rowParams.length}`, rowParams),
+    ]);
 
-    const jobs = rows.map(r => ({
+    const total = countRes.rows[0]?.cnt ?? 0;
+    const jobs = rowsRes.rows.map(r => ({
       id:     String(r.id),
       agent:  r.agent,
       action: r.action,
@@ -56,7 +60,7 @@ router.get('/', async (req, res) => {
       note:   r.note || '',
     }));
 
-    return res.json({ jobs, total: jobs.length });
+    return res.json({ jobs, total });
   } catch (err) {
     console.error('[jobs] query failed:', err.message);
     return res.status(500).json({ error: err.message });

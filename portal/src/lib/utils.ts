@@ -62,10 +62,7 @@ export function agentColor(agentKey: string) {
     lens:        '#34D399',
     keeper:      '#38BDF8',
     sentinel:    '#E879F9',
-    crow:        '#94A3B8',
-    operator:    '#FCD34D',
     helm:        '#6EE7B7',
-    codex:       '#FCA5A5',
   };
   return colors[agentKey.toLowerCase()] ?? '#64748B';
 }
@@ -83,10 +80,7 @@ export function agentEmoji(agentKey: string) {
     lens:        '👁️',
     keeper:      '🧠',
     sentinel:    '📡',
-    crow:        '🐦',
-    operator:    '⚙️',
     helm:        '🧭',
-    codex:       '📖',
   };
   return emojis[agentKey.toLowerCase()] ?? '🤖';
 }

@@ -103,15 +103,15 @@ export default function LessonsPage() {
   const totalApplied  = lessons.reduce((s, l) => s + l.applied_count, 0);
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <GraduationCap size={16} className="text-ghost-accent" />
-            <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Agent Lessons</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Agent Lessons</h2>
           </div>
-          <p className="text-xs text-ghost-muted">Knowledge learned from corrections, fixes, and feedback</p>
+          <p className="text-[10px] sm:text-xs text-ghost-muted">Knowledge from corrections and feedback</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={fetchLessons}
@@ -129,7 +129,7 @@ export default function LessonsPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mb-6">
         {[
           { label: 'Total Lessons', value: lessons.length, color: '#00D4FF' },
           { label: 'Active',        value: activeCount,    color: '#10B981' },
@@ -145,10 +145,10 @@ export default function LessonsPage() {
       {/* New lesson form */}
       <AnimatePresence>
         {showNew && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-5">
-            <div className="glass rounded-2xl p-5" style={{ border: '1px solid rgba(0,212,255,0.15)' }}>
-              <p className="text-xs font-semibold text-white mb-4" style={{ fontFamily: 'Space Grotesk' }}>Add Manual Lesson</p>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-4 sm:mb-5">
+            <div className="glass rounded-2xl p-3 sm:p-5" style={{ border: '1px solid rgba(0,212,255,0.15)' }}>
+              <p className="text-xs font-semibold text-white mb-3 sm:mb-4" style={{ fontFamily: 'Space Grotesk' }}>Add Manual Lesson</p>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 sm:gap-3 mb-3 sm:mb-4">
                 <textarea value={newLesson} onChange={e => setNewLesson(e.target.value)} placeholder="What should the agent learn?"
                   className="sm:col-span-4 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-ghost-muted/40 outline-none focus:border-ghost-accent/40 transition-colors resize-none h-16" />
                 <select value={newAgent} onChange={e => setNewAgent(e.target.value)}
@@ -180,7 +180,7 @@ export default function LessonsPage() {
       </AnimatePresence>
 
       {/* Filters */}
-      <div className="flex gap-2 mb-4 flex-wrap">
+      <div className="flex gap-1.5 sm:gap-2 mb-3 sm:mb-4 flex-wrap">
         <select value={filterAgent} onChange={e => setFilterAgent(e.target.value)}
           className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
           <option value="">All Agents</option>

@@ -52,7 +52,6 @@ const AGENT_FILE_MAP: Record<string, string> = {
   archivist:   'src/archivist.js',
   courier:     'src/courier.js',
   ghost:       'src/routes/reception.js',
-  codex:       'src/codex.js',
   switchboard: 'src/switchboard.js',
 };
 
@@ -386,27 +385,27 @@ export default function ErrorsPage() {
   const showProgressPanel = fixAllRunning || (progress?.type?.startsWith('fix-all:') ?? false);
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto space-y-5">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto space-y-4 sm:space-y-5">
 
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <AlertTriangle size={16} className="text-red-400" />
-            <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Error Console</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Error Console</h2>
           </div>
-          <p className="text-xs text-ghost-muted">Claude Code CLI · real-time via WebSocket · refresh every 30s</p>
+          <p className="text-[10px] sm:text-xs text-ghost-muted">Claude Code CLI · real-time via WebSocket</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Fix All button */}
           <button
             onClick={triggerFixAll}
             disabled={fixAllRunning || currentErrors.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.3)', color: '#00D4FF' }}>
             {fixAllRunning
               ? <><Loader2 size={12} className="animate-spin" /> Fixing…</>
-              : <><Zap size={12} /> Fix All Errors ({currentErrors.length})</>}
+              : <><Zap size={12} /> <span className="hidden sm:inline">Fix All Errors</span><span className="sm:hidden">Fix All</span> ({currentErrors.length})</>}
           </button>
 
           {/* Refresh */}
@@ -422,14 +421,14 @@ export default function ErrorsPage() {
       {showProgressPanel && <FixAllProgressPanel progress={progress} />}
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
         {tabItems.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-lg text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
               tab === t.key ? 'bg-white/8 text-white shadow-sm' : 'text-ghost-muted hover:text-white'
             }`}>
             <span style={{ color: tab === t.key ? t.color : undefined }}>{t.label}</span>
-            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-md"
+            <span className="font-mono text-[9px] sm:text-[10px] px-1 sm:px-1.5 py-0.5 rounded-md"
                   style={{
                     background: `${t.color}18`,
                     color: t.color,
@@ -467,20 +466,19 @@ export default function ErrorsPage() {
                   style={{ border: `1px solid ${rowBorderColor(entry)}`, '--strip-color': entry.level === 'ERROR' ? '#EF4444' : entry.level === 'WARN' ? '#F59E0B' : '#00D4FF' } as React.CSSProperties}>
 
                   {/* Row header — click to expand */}
-                  <div className="flex items-center gap-3 p-4 cursor-pointer select-none"
+                  <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer select-none"
                        onClick={() => setExpanded(isExpanded ? null : entry.id)}>
                     <LevelBadge level={entry.level} />
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded text-ghost-muted/70 shrink-0"
+                    <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded text-ghost-muted/70 shrink-0 hidden sm:inline"
                           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
                       {entry.agent}
                     </span>
-                    <p className="flex-1 text-xs text-white truncate min-w-0">
+                    <p className="flex-1 text-[10px] sm:text-xs text-white truncate min-w-0">
                       {entry.action} → {entry.outcome}
-                      {entry.note ? ` · ${entry.note}` : ''}
                     </p>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {repairStatus && <StatusBadge status={repairStatus} />}
-                      <span className="text-[10px] text-ghost-muted font-mono">{formatRelative(entry.ts)}</span>
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                      {repairStatus && <span className="hidden sm:flex"><StatusBadge status={repairStatus} /></span>}
+                      <span className="text-[9px] sm:text-[10px] text-ghost-muted font-mono hidden sm:inline">{formatRelative(entry.ts)}</span>
                       {isExpanded ? <ChevronUp size={13} className="text-ghost-muted" /> : <ChevronDown size={13} className="text-ghost-muted" />}
                     </div>
                   </div>
@@ -494,10 +492,10 @@ export default function ErrorsPage() {
                         exit={{ height: 0, opacity: 0 }}
                         className="overflow-hidden"
                         style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div className="p-4 space-y-3">
+                        <div className="p-3 sm:p-4 space-y-3">
 
                           {/* Meta grid */}
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
                             <div>
                               <p className="text-[9px] text-ghost-muted uppercase mb-1">Agent</p>
                               <p className="text-xs font-mono text-white">{entry.agent}</p>
@@ -536,20 +534,20 @@ export default function ErrorsPage() {
                                   {getErrorFile(entry) && <span className="font-mono text-ghost-muted">({getErrorFile(entry)})</span>}
                                 </div>
                               ) : (
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                                   <button
                                     onClick={() => triggerFixOne(entry)}
                                     disabled={fixing === entry.id}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-60"
+                                    className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-semibold transition-all disabled:opacity-60"
                                     style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.25)', color: '#00D4FF' }}>
                                     {fixing === entry.id
-                                      ? <><Loader2 size={12} className="animate-spin" /> Analyzing with Claude Code…</>
+                                      ? <><Loader2 size={12} className="animate-spin" /> Analyzing…</>
                                       : <><Terminal size={12} /> Fix with Claude Code</>}
                                   </button>
                                   <button
                                     onClick={() => markFixed(entry)}
                                     disabled={marking === entry.id}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:opacity-60"
+                                    className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-semibold transition-all disabled:opacity-60"
                                     style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ADE80' }}>
                                     {marking === entry.id
                                       ? <><Loader2 size={12} className="animate-spin" /> Marking…</>
@@ -577,10 +575,10 @@ export default function ErrorsPage() {
       )}
 
       {/* Footer */}
-      <div className="glass rounded-xl p-4 flex items-center gap-3"
+      <div className="glass rounded-xl p-3 sm:p-4 flex items-start sm:items-center gap-2 sm:gap-3"
            style={{ border: '1px solid rgba(0,212,255,0.08)' }}>
-        <AlertTriangle size={13} className="text-ghost-accent shrink-0" />
-        <p className="text-xs text-ghost-muted">
+        <AlertTriangle size={13} className="text-ghost-accent shrink-0 mt-0.5 sm:mt-0" />
+        <p className="text-[10px] sm:text-xs text-ghost-muted">
           <span className="text-white font-medium">Forge</span> watches all agent errors in real-time.
           Fixed files are patched by <span className="text-white font-medium">Claude Code CLI</span> and Ghost restarts automatically.
           Use <span className="text-white font-medium">Fix All Errors</span> to repair all current errors sequentially with live WS progress.

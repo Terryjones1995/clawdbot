@@ -17,7 +17,6 @@ const mini             = require('../skills/openai-mini');
 const keeper           = require('../keeper');
 const { instantReply } = require('../skills/instant');
 const scout          = require('../scout');
-const codex          = require('../codex');
 const courier        = require('../courier');
 const registry       = require('../agentRegistry');
 const db             = require('../db');
@@ -26,18 +25,6 @@ const router = express.Router();
 
 // ── Keyword routing table (instant, no LLM) ──
 const KEYWORD_ROUTES = [
-  // League/HOF knowledge → Codex (file-based, fast, no web needed)
-  {
-    patterns: [
-      /\bhof\b/i, /\bhof league\b/i, /\bregist/i, /\bsign.?up\b/i,
-      /\bhow.*join\b/i, /\bjoin.*league\b/i,
-      /\broster\b/i, /\bcaptain\b/i, /\bmmr\b/i,
-      /\bseason\b/i, /\bplayoff\b/i, /\bbracket\b/i,
-      /\beligib/i, /\bpayment fee\b/i, /\bleague fee\b/i,
-      /\bscore report\b/i, /\bsubmit.*score\b/i, /\bteam balance\b/i,
-    ],
-    agent: 'codex',
-  },
   { patterns: [/\bemail\b/i, /\bsend.*mail\b/i, /\bdraft.*email\b/i],  agent: 'courier' },
   // Discord management → execute real Discord API actions (must stay before scout)
   {
@@ -97,25 +84,11 @@ router.post('/', async (req, res) => {
   }
 
   registry.setStatus('switchboard', 'working');
+  registry.pushEvent('switchboard', `Routing: "${message.slice(0, 50)}"`, 'info');
 
   try {
     // Step 1: Keyword routing (instant)
     const keywordAgent = keywordRoute(message.trim());
-
-    if (keywordAgent === 'codex') {
-      registry.setStatus('codex', 'working');
-      try {
-        const result = await codex.answer({ question: message.trim(), org_name: 'HOF LEAGUE' });
-        registry.setStatus('codex', 'idle');
-        registry.setStatus('switchboard', 'idle');
-        db.logEntry({ level: 'INFO', agent: 'Codex', action: 'answer', outcome: 'success', model: result.model, note: `q="${message.slice(0,60)}"` });
-        return res.json({ reply: result.answer, agent: 'codex', intent: 'league-knowledge', model: result.model, latency_ms: Date.now() - t0 });
-      } catch (err) {
-        registry.setStatus('codex', 'idle');
-        db.logEntry({ level: 'ERROR', agent: 'Codex', action: 'answer', outcome: 'failed', note: err.message });
-        // fall through to general chat
-      }
-    }
 
     if (keywordAgent === 'scout') {
       // Check ghost_memory first — if we already know the answer, skip the web call
@@ -130,19 +103,23 @@ router.post('/', async (req, res) => {
 
       if (memoryHit) {
         registry.setStatus('switchboard', 'idle');
+        registry.pushEvent('ghost', `Memory hit for "${message.slice(0, 40)}"`, 'success');
         db.logEntry({ level: 'INFO', agent: 'Ghost', action: 'memory-hit', outcome: 'success', model: 'ghost_memory', note: `q="${message.slice(0,60)}"` });
         return res.json({ reply: `From memory:\n${memoryHit}`, agent: 'ghost', intent: 'memory', model: 'ghost_memory', latency_ms: Date.now() - t0 });
       }
 
       registry.setStatus('scout', 'working');
+      registry.pushEvent('scout', `Researching: "${message.slice(0, 40)}"`, 'info');
       try {
         const result = await scout.run({ query: message.trim(), type: 'web', depth: 'quick', store_result: false });
         registry.setStatus('scout', 'idle');
         registry.setStatus('switchboard', 'idle');
+        registry.pushEvent('scout', `Research complete via ${result.model_used}`, 'success');
         db.logEntry({ level: 'INFO', agent: 'Scout', action: 'research', outcome: 'success', model: result.model_used, note: `q="${message.slice(0,60)}"` });
         return res.json({ reply: result.summary ?? 'Research complete.', agent: 'scout', intent: 'research', model: result.model_used, latency_ms: Date.now() - t0 });
       } catch (err) {
         registry.setStatus('scout', 'idle');
+        registry.pushEvent('scout', `Research failed: ${err.message.slice(0, 60)}`, 'error');
         db.logEntry({ level: 'ERROR', agent: 'Scout', action: 'research', outcome: 'failed', note: err.message });
         // fall through to general chat
       }
@@ -150,6 +127,7 @@ router.post('/', async (req, res) => {
 
     if (keywordAgent === 'courier') {
       registry.setStatus('courier', 'working');
+      registry.pushEvent('courier', `Drafting email`, 'info');
       try {
         const { result, escalate } = await mini.tryChat([
           { role: 'system', content: 'You are Courier, an email specialist. Draft professional emails when asked. Keep it concise.' },
@@ -157,25 +135,30 @@ router.post('/', async (req, res) => {
         ]);
         registry.setStatus('courier', 'idle');
         registry.setStatus('switchboard', 'idle');
+        registry.pushEvent('courier', `Email drafted`, 'success');
         return res.json({ reply: result?.message?.content ?? 'Unable to draft email.', agent: 'courier', intent: 'email', model: mini.MODEL, latency_ms: Date.now() - t0 });
       } catch {
         registry.setStatus('courier', 'idle');
+        registry.pushEvent('courier', `Email draft failed`, 'error');
         // fall through to general chat
       }
     }
 
     if (keywordAgent === 'discord-admin') {
       registry.setStatus('sentinel', 'working');
+      registry.pushEvent('sentinel', `Discord action: "${message.slice(0, 40)}"`, 'info');
       try {
         const discordAdmin = require('../discordAdminHandler');
         const userRole     = req.user?.role?.toUpperCase() || 'ADMIN';
         const reply        = await discordAdmin.run(message.trim(), userRole);
         registry.setStatus('sentinel', 'idle');
         registry.setStatus('switchboard', 'idle');
+        registry.pushEvent('sentinel', `Discord action completed`, 'success');
         db.logEntry({ level: 'INFO', agent: 'Sentinel', action: 'discord-admin', outcome: 'success', model: 'ollama/mini', note: `cmd="${message.slice(0,60)}"` });
         return res.json({ reply, agent: 'sentinel', intent: 'discord-admin', model: 'ollama/mini', latency_ms: Date.now() - t0 });
       } catch (err) {
         registry.setStatus('sentinel', 'idle');
+        registry.pushEvent('sentinel', `Discord action failed: ${err.message.slice(0, 60)}`, 'error');
         db.logEntry({ level: 'ERROR', agent: 'Sentinel', action: 'discord-admin', outcome: 'failed', note: err.message });
         return res.json({ reply: `Discord action failed: ${err.message}`, agent: 'sentinel', intent: 'discord-admin', latency_ms: Date.now() - t0 });
       }
@@ -183,6 +166,7 @@ router.post('/', async (req, res) => {
 
     // Step 2: General chat — keeper.chat() with persistent thread memory (Ollama free-first)
     registry.setStatus('ghost', 'working');
+    registry.pushEvent('ghost', `Chat: "${message.slice(0, 40)}"`, 'info');
 
     const threadId = `portal-${userId}`;
     let reply, modelUsed;
@@ -197,6 +181,12 @@ router.post('/', async (req, res) => {
     registry.setStatus('ghost', 'idle');
     registry.setStatus('switchboard', 'idle');
 
+    if (modelUsed === 'error') {
+      registry.pushEvent('ghost', `Chat failed`, 'error');
+    } else {
+      registry.pushEvent('ghost', `Replied via ${modelUsed}`, 'success');
+    }
+
     db.logEntry({ level: modelUsed === 'error' ? 'ERROR' : 'INFO', agent: 'Ghost', action: 'chat', outcome: modelUsed === 'error' ? 'failed' : 'success', model: modelUsed, note: `msg="${message.slice(0,60)}"` });
 
     return res.json({
@@ -210,6 +200,7 @@ router.post('/', async (req, res) => {
   } catch (err) {
     console.error('[Reception] Error:', err.message);
     registry.setStatus('switchboard', 'idle');
+    registry.pushEvent('switchboard', `Error: ${err.message.slice(0, 60)}`, 'error');
     return res.status(500).json({ error: err.message });
   }
 });

@@ -17,8 +17,6 @@ const lensRoutes      = require('./src/routes/lens');
 const courierRoutes   = require('./src/routes/courier');
 const archivistRoutes = require('./src/routes/archivist');
 const keeperRoutes    = require('./src/routes/keeper');
-const operatorRoutes  = require('./src/routes/operator');
-const codexRoutes     = require('./src/routes/codex');
 const jobsRoutes      = require('./src/routes/jobs');
 const logsRoutes      = require('./src/routes/logs');
 const creditsRoutes   = require('./src/routes/credits');
@@ -63,6 +61,33 @@ app.get('/api/heartbeat', async (req, res) => {
   res.json(await heartbeat.getStatus());
 });
 
+app.get('/api/health', async (req, res) => {
+  const checks = {};
+  // Database
+  try {
+    const t0 = Date.now();
+    await db.query('SELECT 1');
+    checks.database = { status: 'up', ping: Date.now() - t0 };
+  } catch { checks.database = { status: 'down' }; }
+  // Redis
+  try {
+    const t0 = Date.now();
+    const ok = await redis.ping();
+    checks.redis = { status: ok ? 'up' : 'down', ping: ok ? Date.now() - t0 : undefined };
+  } catch { checks.redis = { status: 'down' }; }
+  // Ollama
+  try {
+    const t0  = Date.now();
+    const olr = await fetch(`${process.env.OLLAMA_HOST || 'http://localhost:11434'}/api/tags`);
+    checks.ollama = { status: olr.ok ? 'up' : 'down', ping: Date.now() - t0 };
+  } catch { checks.ollama = { status: 'down' }; }
+  // Discord
+  const sent = registry.get('sentinel');
+  checks.discord = { status: sent?.status === 'online' || sent?.status === 'working' ? 'up' : 'down' };
+
+  res.json(checks);
+});
+
 app.use('/auth', authRoutes);
 
 app.get('/login', (req, res) => {
@@ -96,6 +121,15 @@ const PORTAL_BYPASS = (req, res, next) => {
   requireAuth(req, res, next);
 };
 
+app.get('/api/agents/stats', PORTAL_BYPASS, async (req, res) => {
+  try {
+    const stats = await db.getAgentStats();
+    res.json({ stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use('/api/feedback',      PORTAL_BYPASS, feedbackRoutes);
 app.use('/api/discord',       PORTAL_BYPASS, discordRoutes);
 app.use('/api/jobs',          PORTAL_BYPASS, jobsRoutes);
@@ -108,12 +142,40 @@ app.use('/api/settings',      PORTAL_BYPASS, settingsRoutes);
 app.use('/api/lessons',       PORTAL_BYPASS, lessonsRoutes);
 app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
   try {
-    const summary = await scribe.dailySummary({ narrative: false });
-    res.json({
-      briefing: summary.content || 'No briefing available.',
-      period:   summary.date   || new Date().toISOString().slice(0, 10),
-      ts:       new Date().toISOString(),
-    });
+    // Build brief from agent_logs DB (the real data source), not the flat file
+    const today = new Date().toISOString().slice(0, 10);
+    const [statsRes, errRes, recentRes] = await Promise.all([
+      db.query(`SELECT agent, COUNT(*)::int AS cnt FROM agent_logs WHERE ts::date >= $1 GROUP BY agent ORDER BY cnt DESC`, [today]),
+      db.query(`SELECT COUNT(*)::int AS cnt FROM agent_logs WHERE level = 'ERROR' AND ts::date >= $1`, [today]),
+      db.query(`SELECT agent, action, outcome, note, ts FROM agent_logs WHERE ts::date >= $1 ORDER BY ts DESC LIMIT 5`, [today]),
+    ]);
+
+    const totalActions = statsRes.rows.reduce((sum, r) => sum + r.cnt, 0);
+    const errCount     = errRes.rows[0]?.cnt ?? 0;
+
+    const agentLines = statsRes.rows.length
+      ? statsRes.rows.map(r => `  - ${r.agent}: ${r.cnt} actions`).join('\n')
+      : '  - No activity recorded';
+
+    const recentLines = recentRes.rows.length
+      ? recentRes.rows.map(r => {
+          const time = new Date(r.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          return `  - ${time} ${r.agent}: ${r.action} → ${r.outcome}`;
+        }).join('\n')
+      : '  - None';
+
+    const briefing = [
+      `Ghost Daily Briefing — ${today}`,
+      '',
+      `Activity (${totalActions} actions today)`,
+      agentLines,
+      errCount > 0 ? `\nErrors: ${errCount} error(s) logged today` : '',
+      '',
+      `Recent Activity`,
+      recentLines,
+    ].filter(l => l !== undefined).join('\n');
+
+    res.json({ briefing, period: today, ts: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -131,8 +193,6 @@ app.use('/api/lens',      lensRoutes);
 app.use('/api/courier',   courierRoutes);
 app.use('/api/archivist', archivistRoutes);
 app.use('/api/keeper',    keeperRoutes);
-app.use('/api/operator',  operatorRoutes);
-app.use('/api/codex',     codexRoutes);
 app.use('/api/helm',      helmRoutes);
 
 // ── SPA catch-all — serve React app for any non-API route ─────────────────────
@@ -168,7 +228,7 @@ function _broadcast(msg) {
 // Subscribe to agent registry changes and broadcast them
 registry.subscribe((agentId, update) => {
   if (update.__event) {
-    _broadcast({ type: 'agent:event', id: agentId, message: update.message, ts: update.ts });
+    _broadcast({ type: 'agent:event', id: agentId, message: update.message, eventType: update.type || 'info', ts: update.ts });
   } else {
     _broadcast({ type: 'agent:update', agent: update });
   }
@@ -228,6 +288,7 @@ server.listen(PORT, () => {
   console.log(`OpenClaw gateway running on http://localhost:${PORT}`);
   db.initSchema()
     .then(() => botAdmins.load())
+    .then(() => registry.loadRecentEvents())
     .catch(err => console.error('[DB] Schema init failed:', err.message));
   redis.waitReady(5000).then(ok =>
     console.log(`[Redis] ${ok ? 'Connected ✓' : 'Unavailable — fallbacks active'}`)

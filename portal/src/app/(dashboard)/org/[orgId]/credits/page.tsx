@@ -50,7 +50,7 @@ function ProviderCard({ p }: { p: ProviderStats }) {
     <motion.div
       variants={stagger.item}
       whileHover={{ y: -2 }}
-      className="glass rounded-2xl p-5 relative overflow-hidden"
+      className="glass rounded-2xl p-3 sm:p-5 relative overflow-hidden"
       style={{ border: `1px solid ${meta.color}20` }}
     >
       <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
@@ -132,15 +132,15 @@ export default function CreditsPage() {
   const freeCalls  = providers.find(p => p.provider === 'ollama')?.calls ?? '0';
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <CreditCard size={16} className="text-ghost-accent" />
-            <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>API Credits</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>API Credits</h2>
           </div>
-          <p className="text-xs text-ghost-muted">Provider usage and cost tracking</p>
+          <p className="text-[10px] sm:text-xs text-ghost-muted">Provider usage and cost tracking</p>
         </div>
         <button onClick={fetchData}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
@@ -150,7 +150,7 @@ export default function CreditsPage() {
       </div>
 
       {/* Summary KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
         {[
           { label: 'Total Spend',      value: formatCost(totalSpent),      icon: TrendingDown, color: '#EF4444'  },
           { label: 'Total Calls',      value: totalCalls.toLocaleString(), icon: CreditCard,   color: '#F59E0B'  },
@@ -176,7 +176,7 @@ export default function CreditsPage() {
       </div>
 
       {/* Period filter */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex gap-1 mb-4 sm:mb-6 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
         {(['today','week','month','all'] as const).map(p => (
           <button key={p} onClick={() => setPeriod(p)}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-mono capitalize transition-all ${
@@ -202,7 +202,7 @@ export default function CreditsPage() {
 
       {/* Recent usage log */}
       <div className="glass rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center justify-between p-4 border-b border-white/5">
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-white/5">
           <h3 className="text-sm font-semibold text-white" style={{ fontFamily: 'Space Grotesk' }}>Recent API Calls</h3>
           <div className="flex gap-1">
             {(['today','week','month','all'] as const).map(p => (
@@ -257,10 +257,10 @@ export default function CreditsPage() {
       </div>
 
       {/* Free-first note */}
-      <div className="mt-4 glass rounded-xl p-3 flex items-center gap-3"
+      <div className="mt-3 sm:mt-4 glass rounded-xl p-3 flex items-start sm:items-center gap-2 sm:gap-3"
            style={{ border: '1px solid rgba(39,174,96,0.12)' }}>
-        <Zap size={13} className="text-green-400 shrink-0" />
-        <p className="text-[10px] text-ghost-muted">
+        <Zap size={13} className="text-green-400 shrink-0 mt-0.5 sm:mt-0" />
+        <p className="text-[9px] sm:text-[10px] text-ghost-muted">
           <span className="text-green-400 font-medium">Free-first routing active</span> — Ghost defaults to Ollama qwen3-coder (local, zero cost).
           Paid APIs are only called for real-time data, vision, or when Ollama is unavailable.
         </p>

@@ -78,20 +78,20 @@ export default function LogsPage() {
   });
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between mb-4 sm:mb-6 gap-2">
         <div>
-          <div className="flex items-center gap-3 mb-1">
+          <div className="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">
             <ScrollText size={16} className="text-ghost-accent" />
-            <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Command Logs</h2>
-            <span className="px-2 py-0.5 rounded-full text-xs font-mono text-ghost-accent"
+            <h2 className="text-lg sm:text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Command Logs</h2>
+            <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-mono text-ghost-accent"
                   style={{ background: 'rgba(0,212,255,0.10)', border: '1px solid rgba(0,212,255,0.2)' }}>
-              {logs.length} entries
+              {logs.length}
             </span>
           </div>
-          <p className="text-xs text-ghost-muted">Live agent audit trail · auto-refresh 30s</p>
+          <p className="text-[10px] sm:text-xs text-ghost-muted">Live agent audit trail</p>
         </div>
         <button onClick={fetchLogs}
           className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
@@ -101,7 +101,7 @@ export default function LogsPage() {
       </div>
 
       {/* Filters */}
-      <div className="glass rounded-xl p-4 mb-5 space-y-3" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="glass rounded-xl p-3 sm:p-4 mb-4 sm:mb-5 space-y-2 sm:space-y-3" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
         {/* Search */}
         <div className="relative">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ghost-muted" />
@@ -115,13 +115,13 @@ export default function LogsPage() {
           />
         </div>
         {/* Agent + Level filters */}
-        <div className="flex flex-wrap gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-ghost-muted uppercase tracking-wider">Agent</span>
-            <div className="flex flex-wrap gap-1">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+          <div>
+            <span className="text-[9px] sm:text-[10px] text-ghost-muted uppercase tracking-wider block mb-1 sm:mb-0 sm:inline sm:mr-2">Agent</span>
+            <div className="flex flex-wrap gap-0.5 sm:gap-1">
               {AGENTS.map(a => (
                 <button key={a} onClick={() => setAgent(a)}
-                  className={`px-2 py-1 rounded-md text-[10px] font-mono transition-all ${
+                  className={`px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md text-[9px] sm:text-[10px] font-mono transition-all ${
                     agent === a ? 'text-ghost-accent bg-ghost-accent/15' : 'text-ghost-muted hover:text-white hover:bg-white/5'
                   }`}>
                   {a}
@@ -129,12 +129,12 @@ export default function LogsPage() {
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-ghost-muted uppercase tracking-wider">Level</span>
-            <div className="flex flex-wrap gap-1">
+          <div>
+            <span className="text-[9px] sm:text-[10px] text-ghost-muted uppercase tracking-wider block mb-1 sm:mb-0 sm:inline sm:mr-2">Level</span>
+            <div className="flex flex-wrap gap-0.5 sm:gap-1">
               {LEVELS.map(l => (
                 <button key={l} onClick={() => setLevel(l)}
-                  className={`px-2 py-1 rounded-md text-[10px] font-mono transition-all ${
+                  className={`px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md text-[9px] sm:text-[10px] font-mono transition-all ${
                     level === l ? 'text-ghost-accent bg-ghost-accent/15' : 'text-ghost-muted hover:text-white hover:bg-white/5'
                   }`}>
                   {l}
@@ -166,15 +166,15 @@ export default function LogsPage() {
                 className="glass rounded-xl overflow-hidden row-strip"
                 style={{ border: '1px solid rgba(255,255,255,0.05)', '--strip-color': (LEVEL_COLORS[log.level] ?? LEVEL_COLORS.INFO).color } as React.CSSProperties}>
 
-                <div className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+                <div className="flex items-center gap-2 sm:gap-3 px-2.5 sm:px-4 py-2.5 sm:py-3 cursor-pointer"
                      onClick={() => setExpanded(expanded === log.id ? null : log.id)}>
                   <LevelBadge level={log.level} />
-                  <span className="text-[10px] font-mono text-ghost-accent/70 shrink-0 w-20 truncate">{log.agent}</span>
-                  <p className="flex-1 text-xs text-white/80 truncate font-mono">
+                  <span className="text-[9px] sm:text-[10px] font-mono text-ghost-accent/70 shrink-0 w-12 sm:w-20 truncate">{log.agent}</span>
+                  <p className="flex-1 text-[10px] sm:text-xs text-white/80 truncate font-mono">
                     {log.action}
-                    {log.outcome ? <span className="text-ghost-muted"> → {log.outcome}</span> : ''}
+                    {log.outcome ? <span className="text-ghost-muted hidden sm:inline"> → {log.outcome}</span> : ''}
                   </p>
-                  <span className="text-[10px] text-ghost-muted font-mono shrink-0">{formatRelative(log.ts)}</span>
+                  <span className="text-[9px] sm:text-[10px] text-ghost-muted font-mono shrink-0 hidden sm:inline">{formatRelative(log.ts)}</span>
                   {expanded === log.id
                     ? <ChevronUp size={12} className="text-ghost-muted shrink-0" />
                     : <ChevronDown size={12} className="text-ghost-muted shrink-0" />}
@@ -185,7 +185,7 @@ export default function LogsPage() {
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }} className="overflow-hidden"
                       style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                      <div className="px-4 py-3 grid grid-cols-3 gap-3">
+                      <div className="px-3 sm:px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                         <div>
                           <p className="text-[9px] text-ghost-muted uppercase mb-1">Model</p>
                           <p className="text-xs font-mono text-white">{log.model || 'n/a'}</p>

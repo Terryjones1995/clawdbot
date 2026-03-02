@@ -89,8 +89,8 @@ function AccountCard({ account }: { account: XAccount }) {
       style={{ border: `1px solid ${account.color}20` }}
     >
       {/* Account header */}
-      <div className="p-5">
-        <div className="flex items-start justify-between mb-4">
+      <div className="p-3 sm:p-5">
+        <div className="flex items-start justify-between mb-3 sm:mb-4">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-full flex items-center justify-center text-xl relative shrink-0"
                  style={{ background: `${account.color}15`, border: `2px solid ${account.color}30` }}>
@@ -152,12 +152,12 @@ function AccountCard({ account }: { account: XAccount }) {
       {/* Recent tweets */}
       {tweets.length > 0 && (
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider px-5 pt-4 pb-2">Recent Posts</p>
+          <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider px-3 sm:px-5 pt-3 sm:pt-4 pb-2">Recent Posts</p>
           <div className="space-y-0">
             {tweets.map((tweet, i) => (
-              <div key={tweet.id} className={`px-5 py-3 hover:bg-white/[0.02] transition-all ${i < tweets.length-1 ? 'border-b border-white/[0.04]' : ''}`}>
-                <p className="text-[11px] text-ghost-muted leading-relaxed mb-2">{tweet.content}</p>
-                <div className="flex items-center gap-4 text-[9px] text-ghost-muted/40 font-mono">
+              <div key={tweet.id} className={`px-3 sm:px-5 py-2.5 sm:py-3 hover:bg-white/[0.02] transition-all ${i < tweets.length-1 ? 'border-b border-white/[0.04]' : ''}`}>
+                <p className="text-[10px] sm:text-[11px] text-ghost-muted leading-relaxed mb-2">{tweet.content}</p>
+                <div className="flex items-center gap-3 sm:gap-4 text-[9px] text-ghost-muted/40 font-mono">
                   <span className="flex items-center gap-1"><Heart size={9} />{tweet.likes}</span>
                   <span className="flex items-center gap-1"><Repeat2 size={9} />{tweet.reposts}</span>
                   <span className="flex items-center gap-1"><MessageCircle size={9} />{tweet.replies}</span>
@@ -182,15 +182,15 @@ export default function SocialPage() {
   const totalViews     = RECENT_TWEETS.reduce((s, t) => s + t.views, 0);
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Twitter size={16} className="text-[#1DA1F2]" />
-            <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>X Accounts</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>X Accounts</h2>
           </div>
-          <p className="text-xs text-ghost-muted">Connected X/Twitter accounts managed by Crow agent</p>
+          <p className="text-[10px] sm:text-xs text-ghost-muted">Connected accounts managed by Crow agent</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
@@ -199,11 +199,11 @@ export default function SocialPage() {
           </button>
           <button
             onClick={() => setShowConnect(!showConnect)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-ghost-accent bg-ghost-accent/10 hover:bg-ghost-accent/20 transition-all"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-medium text-ghost-accent bg-ghost-accent/10 hover:bg-ghost-accent/20 transition-all"
             style={{ border: '1px solid rgba(0,212,255,0.2)' }}
           >
             <Plus size={13} />
-            Connect Account
+            <span className="hidden sm:inline">Connect Account</span><span className="sm:hidden">Connect</span>
           </button>
         </div>
       </div>
@@ -237,7 +237,7 @@ export default function SocialPage() {
       )}
 
       {/* KPI stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
         {[
           { label: 'Total Followers', value: totalFollowers.toLocaleString(), icon: TrendingUp, color: '#1DA1F2' },
           { label: 'Posts Tracked',   value: totalPosts,                       icon: Twitter,    color: '#10B981' },
@@ -279,10 +279,10 @@ export default function SocialPage() {
       </motion.div>
 
       {/* Crow agent info */}
-      <div className="mt-6 glass rounded-xl p-4 flex items-center gap-3"
+      <div className="mt-4 sm:mt-6 glass rounded-xl p-3 sm:p-4 flex items-start sm:items-center gap-2 sm:gap-3"
            style={{ border: '1px solid rgba(29,161,242,0.08)' }}>
-        <Twitter size={14} className="text-[#1DA1F2] shrink-0" />
-        <p className="text-[10px] text-ghost-muted">
+        <Twitter size={14} className="text-[#1DA1F2] shrink-0 mt-0.5 sm:mt-0" />
+        <p className="text-[9px] sm:text-[10px] text-ghost-muted">
           <span className="text-white font-medium">Crow Agent</span> manages all X/Twitter automation — scheduling posts,
           monitoring mentions, tracking engagement, and drafting content with Scribe.
         </p>

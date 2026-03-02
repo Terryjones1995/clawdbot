@@ -33,21 +33,21 @@ function JobRow({ job }: { job: Job }) {
       className="glass rounded-xl overflow-hidden row-strip"
       style={{ border: `1px solid ${cfg.color}15`, '--strip-color': cfg.color } as React.CSSProperties}
     >
-      <div className="flex items-center gap-4 p-4 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <Icon size={15} style={{ color: cfg.color }} className={job.status === 'running' ? 'animate-spin' : ''} />
+      <div className="flex items-center gap-2 sm:gap-4 p-3 sm:p-4 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <Icon size={14} style={{ color: cfg.color }} className={job.status === 'running' ? 'animate-spin' : ''} />
 
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-mono text-white">{job.agent}.{job.action}</p>
-          <p className="text-[10px] text-ghost-muted">{job.model}</p>
+          <p className="text-[10px] sm:text-xs font-mono text-white truncate">{job.agent}.{job.action}</p>
+          <p className="text-[9px] sm:text-[10px] text-ghost-muted truncate">{job.model}</p>
         </div>
 
-        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full capitalize"
+        <span className="text-[9px] sm:text-[10px] font-mono px-1.5 sm:px-2 py-0.5 rounded-full capitalize shrink-0"
               style={{ color: cfg.color, background: `${cfg.color}15`, border: `1px solid ${cfg.color}25` }}>
           {cfg.label}
         </span>
 
-        <span className="text-[10px] font-mono text-ghost-muted">{formatRelative(job.ts)}</span>
-        {expanded ? <ChevronUp size={12} className="text-ghost-muted" /> : <ChevronDown size={12} className="text-ghost-muted" />}
+        <span className="text-[9px] sm:text-[10px] font-mono text-ghost-muted hidden sm:inline shrink-0">{formatRelative(job.ts)}</span>
+        {expanded ? <ChevronUp size={12} className="text-ghost-muted shrink-0" /> : <ChevronDown size={12} className="text-ghost-muted shrink-0" />}
       </div>
 
       <AnimatePresence>
@@ -59,7 +59,7 @@ function JobRow({ job }: { job: Job }) {
             style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
             className="overflow-hidden"
           >
-            <div className="p-4 grid grid-cols-2 gap-3">
+            <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
               <div>
                 <p className="text-[9px] text-ghost-muted uppercase mb-1">Job ID</p>
                 <p className="text-xs font-mono text-white">#{job.id}</p>
@@ -118,7 +118,7 @@ export default function JobsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -135,10 +135,10 @@ export default function JobsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px' }}>
+      <div className="flex gap-1 mb-5 overflow-x-auto" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px' }}>
         {tabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-medium transition-all whitespace-nowrap ${
               tab === t.key ? 'text-ghost-accent bg-ghost-accent/15' : 'text-ghost-muted hover:text-white hover:bg-white/5'
             }`}>
             {t.label}

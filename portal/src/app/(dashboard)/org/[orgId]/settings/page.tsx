@@ -46,10 +46,10 @@ function SectionNav({ active, setActive }: { active: Section; setActive: (s: Sec
 
 function SettingRow({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-4 border-b border-white/[0.05] last:border-0">
-      <div className="flex-1 pr-8">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 py-3 sm:py-4 border-b border-white/[0.05] last:border-0">
+      <div className="flex-1">
         <p className="text-xs font-medium text-white mb-0.5">{label}</p>
-        {desc && <p className="text-[10px] text-ghost-muted/60">{desc}</p>}
+        {desc && <p className="text-[9px] sm:text-[10px] text-ghost-muted/60">{desc}</p>}
       </div>
       {children}
     </div>
@@ -159,7 +159,7 @@ export default function SettingsPage() {
   const ACCENT_COLORS = ['#00D4FF','#7C3AED','#10B981','#F59E0B','#EF4444','#E91E63','#1DA1F2'];
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -180,7 +180,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-6">
         <div className="lg:col-span-1">
           <div className="glass rounded-2xl p-3 sticky top-4" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
             <p className="text-[9px] uppercase tracking-[0.2em] text-ghost-muted/30 px-3 py-2">Configuration</p>
@@ -189,7 +189,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="lg:col-span-3">
-          <div className="glass rounded-2xl p-6 relative overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="glass rounded-2xl p-4 sm:p-6 relative overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="absolute top-0 left-0 right-0 h-0.5" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,255,0.3), transparent)' }} />
 
             {section === 'general' && (
@@ -197,11 +197,11 @@ export default function SettingsPage() {
                 <h3 className="text-sm font-bold text-white mb-5" style={{ fontFamily: 'Space Grotesk' }}>General</h3>
                 <SettingRow label="Organization Name" desc="Displayed in the portal header and reports">
                   <input value={orgName} onChange={e => setOrgName(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white w-44 outline-none focus:border-ghost-accent/40 transition-colors" />
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white w-full sm:w-44 outline-none focus:border-ghost-accent/40 transition-colors" />
                 </SettingRow>
                 <SettingRow label="Timezone" desc="Used for scheduled tasks and timestamps">
                   <select value={timezone} onChange={e => setTimezone(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-ghost-accent/40 w-44">
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-ghost-accent/40 w-full sm:w-44">
                     {['UTC','America/New_York','America/Los_Angeles','Europe/London','Asia/Tokyo'].map(tz => (
                       <option key={tz} value={tz}>{tz}</option>
                     ))}
@@ -240,7 +240,7 @@ export default function SettingsPage() {
                 </SettingRow>
                 <SettingRow label="Ollama Model" desc="Default local LLM for all agents">
                   <select value={ollamaModel} onChange={e => setOllamaModel(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-44">
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none w-full sm:w-44">
                     <option>qwen3-coder</option>
                     <option>qwen3:8b</option>
                     <option>qwen2.5-coder:7b</option>
@@ -282,9 +282,9 @@ export default function SettingsPage() {
                 {showApiKeys && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-2 space-y-2">
                     {['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GROK_API_KEY', 'NEON_DATABASE_URL'].map(key => (
-                      <div key={key} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-black/30 font-mono">
-                        <span className="text-[9px] text-ghost-muted/60 w-44">{key}</span>
-                        <span className="text-[9px] text-ghost-muted/40">{'\u2022'.repeat(16)}</span>
+                      <div key={key} className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 rounded-lg bg-black/30 font-mono overflow-hidden">
+                        <span className="text-[8px] sm:text-[9px] text-ghost-muted/60 shrink-0">{key}</span>
+                        <span className="text-[9px] text-ghost-muted/40 truncate">{'\u2022'.repeat(16)}</span>
                       </div>
                     ))}
                   </motion.div>
@@ -328,10 +328,10 @@ export default function SettingsPage() {
                   { label: 'Clear Logs', desc: 'Delete all agent logs from database.', color: '#F59E0B', action: 'Clear Logs', onClick: handleClearLogs },
                   { label: 'Stop Ghost', desc: 'Send PM2 stop command. Bot will go offline.', color: '#EF4444', action: 'Stop Bot', onClick: handleStopGhost },
                 ].map(item => (
-                  <div key={item.label} className="flex items-center justify-between py-4 border-b border-white/[0.05] last:border-0">
-                    <div className="flex-1 pr-8">
+                  <div key={item.label} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 py-3 sm:py-4 border-b border-white/[0.05] last:border-0">
+                    <div className="flex-1">
                       <p className="text-xs font-medium text-white mb-0.5">{item.label}</p>
-                      <p className="text-[10px] text-ghost-muted/60">{item.desc}</p>
+                      <p className="text-[9px] sm:text-[10px] text-ghost-muted/60">{item.desc}</p>
                     </div>
                     <button onClick={item.onClick}
                       className="px-3 py-1.5 rounded-lg text-[10px] font-medium transition-all shrink-0"

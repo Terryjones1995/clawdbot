@@ -81,6 +81,10 @@ interface GhostStore {
   // Sidebar
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
+
+  // Mobile menu
+  mobileMenuOpen: boolean;
+  setMobileMenuOpen: (v: boolean) => void;
 }
 
 export const useGhostStore = create<GhostStore>((set, get) => ({
@@ -97,10 +101,7 @@ export const useGhostStore = create<GhostStore>((set, get) => ({
     lens:        { id: 'lens',        name: 'Lens',        role: 'Analytics',                  status: 'idle',   lastSeenAt: null, events: [] },
     keeper:      { id: 'keeper',      name: 'Keeper',      role: 'Conversation Memory',        status: 'idle',   lastSeenAt: null, events: [] },
     sentinel:    { id: 'sentinel',    name: 'Sentinel',    role: 'Discord Connector',          status: 'idle',   lastSeenAt: null, events: [] },
-    crow:        { id: 'crow',        name: 'Crow',        role: 'Social Media / X',           status: 'idle',   lastSeenAt: null, events: [] },
-    operator:    { id: 'operator',    name: 'Operator',    role: 'Task Decomposition',         status: 'idle',   lastSeenAt: null, events: [] },
     helm:        { id: 'helm',        name: 'Helm',        role: 'SRE / Deploy',               status: 'idle',   lastSeenAt: null, events: [] },
-    codex:       { id: 'codex',       name: 'Codex',       role: 'League Knowledge',           status: 'idle',   lastSeenAt: null, events: [] },
   },
 
   upsertAgent: (agent) =>
@@ -180,4 +181,8 @@ export const useGhostStore = create<GhostStore>((set, get) => ({
   // ── Sidebar ──
   sidebarCollapsed: false,
   setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
+
+  // ── Mobile menu ──
+  mobileMenuOpen: false,
+  setMobileMenuOpen: (v) => set({ mobileMenuOpen: v }),
 }));

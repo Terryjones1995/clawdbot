@@ -161,9 +161,9 @@ function BotAdminsPanel() {
         </span>
       </div>
 
-      <div className="p-5 space-y-4">
+      <div className="p-3 sm:p-5 space-y-3 sm:space-y-4">
         {/* Add admin input */}
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             value={inputId}
@@ -271,7 +271,7 @@ export default function ServersPage() {
   const totalChannels = guilds.reduce((s, g) => s + g.channels.length, 0);
 
   return (
-    <div className="p-6 max-w-screen-xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -348,40 +348,40 @@ export default function ServersPage() {
               >
                 {/* Guild header */}
                 <div
-                  className="flex items-center gap-4 p-5 cursor-pointer select-none"
+                  className="flex items-center gap-3 sm:gap-4 p-3 sm:p-5 cursor-pointer select-none"
                   onClick={() => setExpanded(expanded === guild.id ? null : guild.id)}
                 >
                   <GuildIcon guild={guild} />
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <p className="text-sm font-bold text-white truncate" style={{ fontFamily: 'Space Grotesk' }}>
+                      <p className="text-xs sm:text-sm font-bold text-white truncate" style={{ fontFamily: 'Space Grotesk' }}>
                         {guild.name}
                       </p>
                       {guild.isPrimary && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded font-mono text-yellow-400 shrink-0"
+                        <span className="text-[8px] sm:text-[9px] px-1 sm:px-1.5 py-0.5 rounded font-mono text-yellow-400 shrink-0"
                               style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.2)' }}>
                           PRIMARY
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 text-[10px] text-ghost-muted font-mono">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[9px] sm:text-[10px] text-ghost-muted font-mono">
                       <span className="flex items-center gap-1">
-                        <Users size={10} />{guild.memberCount.toLocaleString()} members
+                        <Users size={10} />{guild.memberCount.toLocaleString()}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Hash size={10} />{guild.channels.length} channels
+                        <Hash size={10} />{guild.channels.length} ch
                       </span>
                       {guild.botJoinedAt && (
-                        <span>Joined {formatRelative(guild.botJoinedAt)}</span>
+                        <span className="hidden sm:inline">Joined {formatRelative(guild.botJoinedAt)}</span>
                       )}
-                      <span className="text-[9px] text-ghost-muted/40 font-mono">ID: {guild.id}</span>
+                      <span className="text-[8px] sm:text-[9px] text-ghost-muted/40 font-mono hidden sm:inline">ID: {guild.id}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="status-dot online" style={{ width: 8, height: 8 }} />
-                    <span className="text-[10px] text-green-400 font-mono">Connected</span>
+                    <span className="text-[9px] sm:text-[10px] text-green-400 font-mono hidden sm:inline">Connected</span>
                   </div>
                 </div>
 
@@ -394,7 +394,7 @@ export default function ServersPage() {
                     className="overflow-hidden"
                     style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
                   >
-                    <div className="p-5 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="p-3 sm:p-5 grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                       {/* Channels */}
                       <div className="lg:col-span-2">
                         <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-3">
@@ -456,10 +456,10 @@ export default function ServersPage() {
       <BotAdminsPanel />
 
       {/* Footer notice */}
-      <div className="glass rounded-xl p-4 flex items-center gap-3"
+      <div className="glass rounded-xl p-3 sm:p-4 flex items-start sm:items-center gap-2 sm:gap-3"
            style={{ border: '1px solid rgba(0,212,255,0.08)' }}>
-        <Shield size={14} className="text-ghost-accent shrink-0" />
-        <p className="text-[10px] text-ghost-muted">
+        <Shield size={14} className="text-ghost-accent shrink-0 mt-0.5 sm:mt-0" />
+        <p className="text-[9px] sm:text-[10px] text-ghost-muted">
           <span className="text-white font-medium">@Ghost responds to everyone in any server.</span>{' '}
           Bot admins and users with the &quot;admin&quot; Discord role can run privileged commands. Dangerous actions (kick/ban) require OWNER approval via Warden.
         </p>
