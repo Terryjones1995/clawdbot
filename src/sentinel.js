@@ -33,6 +33,8 @@ const db              = require('./db');
 const discordAdmin    = require('./discordAdminHandler');
 const registry        = require('./agentRegistry');
 const helm            = require('./helm');
+const leagueApi       = require('./skills/league-api');
+const memory          = require('./skills/memory');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -67,6 +69,80 @@ setInterval(() => {
     if (now - entry.ts > CONVO_TTL_MS) _activeConvos.delete(key);
   }
 }, 10 * 60 * 1000);
+
+// ── Ticket channel tracking ──────────────────────────────────────────────────
+// Cached detection of ticket channels. Once a channel is checked, result is
+// stored permanently (ticket channels don't change type mid-lifecycle).
+const _ticketChannelChecked = new Set(); // channels we've already checked
+const _knownTicketChannels  = new Set(); // confirmed ticket channels
+
+async function _detectAndTrackTicket(channelId, guildId) {
+  if (_ticketChannelChecked.has(channelId)) return _knownTicketChannels.has(channelId);
+  _ticketChannelChecked.add(channelId);
+  const isTicket = await _isTicketChannel(channelId);
+  if (isTicket) {
+    _knownTicketChannels.add(channelId);
+    db.upsertTicket({ channelId, guildId }).catch(() => {});
+  }
+  return isTicket;
+}
+
+// Close ticket intent detection
+const CLOSE_TICKET_RE = /\b(close\s*(this\s*)?ticket|close\s*this|close\s*it|mark\s*(this\s*)?(as\s*)?closed)\b/i;
+
+// Detect ticket bot close messages (content or embeds)
+const TICKET_BOT_CLOSE_RE = /ticket.*(?:has been |was )?closed|closing this ticket|channel will be deleted/i;
+
+/**
+ * Handle bot messages in ticket channels — detect when a ticket bot closes a ticket
+ * so Ghost can save the transcript before the channel is deleted.
+ */
+async function _handleTicketBotClose(event) {
+  if (!event.guild_id) return;
+  // Only process if this is a known ticket channel
+  if (!_knownTicketChannels.has(event.channel_id)) return;
+
+  // Check message content and embeds for close patterns
+  const content   = event.content || '';
+  const embedText = (event.raw?.embeds || [])
+    .map(e => `${e.title || ''} ${e.description || ''}`)
+    .join(' ');
+  const allText = `${content} ${embedText}`;
+  if (!TICKET_BOT_CLOSE_RE.test(allText)) return;
+
+  // Ticket bot is closing this ticket — save transcript immediately
+  console.log(`[Sentinel] Ticket bot closing channel ${event.channel_id} — saving transcript`);
+  try {
+    const history = await discord.fetchChannelHistory(event.channel_id, 100);
+    const info    = await discord.getChannelInfo(event.channel_id);
+    const opener  = history.find(m => !m.isBot);
+
+    const summaryLines = history.map(m => {
+      const parts = [];
+      for (const embed of (m.embeds || [])) {
+        if (embed.title || embed.description) {
+          parts.push(`[EMBED] ${embed.title || ''}: ${(embed.description || '').slice(0, 200)}`);
+        }
+      }
+      if (m.content) parts.push(`${m.author}: ${m.content}`);
+      return parts.join('\n');
+    }).filter(Boolean);
+    const summaryText = summaryLines.join('\n').slice(0, 3000);
+
+    await db.upsertTicket({
+      channelId:    event.channel_id,
+      guildId:      event.guild_id,
+      openerId:     opener?.authorId,
+      openerName:   opener?.author,
+      categoryName: info?.parentName,
+      transcript:   history,
+    });
+    await db.closeTicket(event.channel_id, history, summaryText);
+
+    appendLog('INFO', 'ticket-bot-closed', 'BOT', 'success',
+      `channel=${event.channel_id} guild=${event.guild_id} messages=${history.length}`);
+  } catch { /* channel may already be gone — non-fatal */ }
+}
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -834,13 +910,19 @@ async function handleReceptionMessage(event) {
 const ADMIN_INTENT_RE = /\b(kick|ban|timeout|mute|dm\s+<@|assign\s+role|remove\s+role|give\s+role|create\s+role|delete\s+role|create\s+channel|delete\s+channel|list\s+roles|list\s+members|find\s+user|look\s+up)\b/i;
 
 // Detect ticket channels by name or parent category
-const TICKET_RE = /^(ticket|support|help|report|issue|open-a-ticket)/i;
+// Tolerant: strips emojis/symbols, matches "ticket" or "support" anywhere in name
+function _looksLikeTicketName(name) {
+  if (!name) return false;
+  // Strip emojis, special chars, and leading punctuation
+  const clean = name.replace(/[^\w\s-]/g, '').trim().toLowerCase();
+  return /ticket|support|open-a-ticket/.test(clean);
+}
 
 async function _isTicketChannel(channelId) {
   try {
     const info = await discord.getChannelInfo(channelId);
     if (!info) return false;
-    return TICKET_RE.test(info.name) || TICKET_RE.test(info.parentName);
+    return _looksLikeTicketName(info.name) || _looksLikeTicketName(info.parentName);
   } catch { return false; }
 }
 
@@ -915,18 +997,107 @@ async function handleMentionMessage(event) {
     return;
   }
 
-  // Ticket channel — read full channel history for context
+  // ── Close ticket — ADMIN/OWNER says "close ticket" in a ticket channel ──
+  if (isTicket && CLOSE_TICKET_RE.test(text) && (user_role === 'OWNER' || user_role === 'ADMIN')) {
+    try {
+      await discord.sendMessage(channel_id, '*Saving and closing ticket…*');
+
+      // Fetch full channel history and channel info
+      const history = await discord.fetchChannelHistory(channel_id, 100);
+      const info    = await discord.getChannelInfo(channel_id);
+      const opener  = history.find(m => !m.isBot);
+
+      // Build a text summary of the conversation
+      const summaryLines = history.map(m => {
+        const parts = [];
+        for (const embed of m.embeds) {
+          if (embed.title || embed.description) {
+            parts.push(`[EMBED] ${embed.title || ''}: ${(embed.description || '').slice(0, 200)}`);
+          }
+        }
+        if (m.content) parts.push(`${m.author}: ${m.content}`);
+        return parts.join('\n');
+      }).filter(Boolean);
+      const summaryText = summaryLines.join('\n').slice(0, 3000);
+
+      // Save transcript and mark as closed
+      await db.upsertTicket({
+        channelId:    channel_id,
+        guildId:      event.guild_id,
+        openerId:     opener?.authorId,
+        openerName:   opener?.author,
+        categoryName: info?.parentName,
+        transcript:   history,
+      });
+      await db.closeTicket(channel_id, history, summaryText);
+
+      appendLog('INFO', 'ticket-closed', user_role, 'success',
+        `channel=${channel_id} guild=${event.guild_id} messages=${history.length}`);
+
+      // Send closing embed
+      await discord.sendMessage(channel_id, {
+        embeds: [new EmbedBuilder()
+          .setTitle('Ticket Closed')
+          .setDescription(`This ticket has been closed by <@${user_id}>. The channel will be deleted in 60 seconds.`)
+          .setColor(0x2ECC71)
+          .setTimestamp()
+        ],
+      });
+
+      // Delete the channel after 60 seconds
+      setTimeout(() => {
+        discord.closeChannel(channel_id).catch(() => {});
+      }, 60_000);
+      return;
+    } catch (err) {
+      await discord.sendMessage(channel_id, `Failed to close ticket: ${err.message}`);
+      appendLog('ERROR', 'ticket-close', user_role, 'failed', err.message, err);
+      return;
+    }
+  }
+
+  // Build message for Keeper — with ticket context and live league data if applicable
   try {
-    const thinkingMsg = await discord.sendMessage(channel_id, '*Ghost is reading the ticket…*');
+    const thinkingMsg = await discord.sendMessage(channel_id,
+      isTicket ? '*Ghost is reading the ticket…*' : '*Thinking…*');
 
     let messageForKeeper = text;
     if (isTicket) {
       const ticketContext = await _buildTicketContext(channel_id);
+      let liveLeagueData = '';
+
+      // For ticket channels in league guilds, always fetch events + home stats
+      const leagueKey = event.guild_id ? leagueApi.leagueFromGuild(event.guild_id) : null;
+      if (leagueKey) {
+        try {
+          const [eventsResult, statsResult] = await Promise.all([
+            leagueApi.query(leagueKey, 'events'),
+            leagueApi.query(leagueKey, 'home-stats'),
+          ]);
+          if (eventsResult.data || eventsResult.formatted) {
+            const eventsFormatted = eventsResult.formatted || leagueApi.formatResults('events', [eventsResult]);
+            const label = eventsResult.cached ? 'CACHED LEAGUE DATA' : 'LIVE LEAGUE DATA';
+            liveLeagueData += `\n\n[${label} — Events from ${eventsResult.league} website]:\n` + eventsFormatted;
+          }
+          if (statsResult.data || statsResult.formatted) {
+            if (statsResult.formatted) {
+              liveLeagueData += `\n\n[LEAGUE STATS]: ${statsResult.formatted}`;
+            } else {
+              const stats = statsResult.data;
+              const statsLine = typeof stats === 'object'
+                ? Object.entries(stats).map(([k, v]) => `${k}: ${v}`).join(', ')
+                : JSON.stringify(stats);
+              liveLeagueData += `\n\n[LEAGUE STATS]: ${statsLine}`;
+            }
+          }
+        } catch { /* non-fatal — proceed without live data */ }
+      }
+
       if (ticketContext) {
-        messageForKeeper = `[TICKET CHANNEL — Full conversation below]\n\n${ticketContext}\n\n[User just asked Ghost]: ${text || 'Help with this ticket'}`;
+        messageForKeeper = `[TICKET CHANNEL — Full conversation below]\n\n${ticketContext}${liveLeagueData}\n\n[User just asked Ghost]: ${text || 'Help with this ticket'}`;
       }
       appendLog('INFO', 'mention-ticket', user_role, 'received',
-        `channel=${channel_id} contextLen=${ticketContext?.length || 0}`);
+        `channel=${channel_id} league=${leagueKey || 'none'} contextLen=${ticketContext?.length || 0}`);
     }
 
     const reply = await _ollamaChatReply(messageForKeeper, channel_id, user_id, event.guild_id);
@@ -935,6 +1106,25 @@ async function handleMentionMessage(event) {
     _markConvoActive(channel_id, user_id, event.guild_id);
     appendLog('INFO', isTicket ? 'mention-ticket' : 'mention-chat', user_role, 'success',
       `user=${user_id} name=${event.user}`);
+
+    // Auto-save ticket transcript after every Ghost interaction (non-blocking)
+    if (isTicket) {
+      (async () => {
+        try {
+          const history = await discord.fetchChannelHistory(channel_id, 100);
+          const info    = await discord.getChannelInfo(channel_id);
+          const opener  = history.find(m => !m.isBot);
+          await db.upsertTicket({
+            channelId:    channel_id,
+            guildId:      event.guild_id,
+            openerId:     opener?.authorId,
+            openerName:   opener?.author,
+            categoryName: info?.parentName,
+            transcript:   history,
+          });
+        } catch { /* non-fatal */ }
+      })();
+    }
   } catch (err) {
     await discord.sendMessage(channel_id, `Something went wrong: ${err.message}`);
     appendLog('ERROR', 'mention-chat', user_role, 'failed', err.message, err);
@@ -949,6 +1139,28 @@ async function start() {
 
   discord.onMessage((event) => {
     heartbeat.pulse();
+
+    // ── Bot messages — only handle ticket bot close detection ──
+    if (event.is_bot) {
+      _handleTicketBotClose(event).catch(() => {});
+      return;
+    }
+
+    // ── Admin observation — passive learning from admin/owner messages ──
+    // Runs in background on every admin message in every channel.
+    // Ghost absorbs domain knowledge over time without anyone having to train it.
+    if (event.user_role === 'OWNER' || event.user_role === 'ADMIN') {
+      memory.observeAdminMessage(
+        event.channel_id, event.user, event.user_id,
+        event.content, event.guild_id,
+      );
+    }
+
+    // ── Passive ticket channel tracking — detect and register in DB ──
+    if (event.guild_id) {
+      _detectAndTrackTicket(event.channel_id, event.guild_id).catch(() => {});
+    }
+
     const agentMap      = getAgentChannelMap();
     const agentName     = agentMap[event.channel_id];
     const inCommands    = event.channel_id === process.env.DISCORD_COMMANDS_CHANNEL_ID;

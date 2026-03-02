@@ -51,8 +51,11 @@ Current date: ${today}.
 
 ## Ticket handling:
 When responding in a ticket channel (messages prefixed with [TICKET CHANNEL]):
-- Read the ENTIRE ticket context carefully before responding.
+- Read the ENTIRE ticket context carefully — including ALL embeds and messages — before responding.
+- The ticket issue is usually in an EMBED from a bot (look for [EMBED from ...] lines). Read it thoroughly.
 - Answer the user's question honestly using your knowledge of the league, platform, events, rules, and registration.
+- If [LIVE LEAGUE DATA] is provided, USE IT to give a concrete, data-backed answer. List specific events, fees, teams, etc.
+- If there are no active events/seasons and the user asks about one, tell them there isn't one currently but the league will announce new seasons — suggest checking the website or staying tuned for announcements.
 - If you genuinely don't know the answer or can't help, say so clearly and tell them an admin will follow up.
 - Never guess or make up information. Only state what you know for sure.
 - Be helpful and professional — these are real users with real issues.`;
@@ -152,13 +155,13 @@ async function _maybeSummarise(thread) {
 
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function _buildSystemPrompt(thread, pineconeContext = null, factsContext = null, profileContext = null, lessonsContext = null, leagueContext = null) {
+function _buildSystemPrompt(thread, archiveContext = null, factsContext = null, profileContext = null, lessonsContext = null, leagueContext = null) {
   let sys = _ghostSystem();
   if (leagueContext)   sys += `\n\n## Current league context:\n${leagueContext}`;
   if (lessonsContext)  sys += `\n\n## Lessons learned (avoid repeating these mistakes):\n${lessonsContext}`;
   if (profileContext)  sys += `\n\n## User profile:\n${profileContext}`;
   if (factsContext)    sys += `\n\n## What Ghost knows (persistent memory):\n${factsContext}`;
-  if (pineconeContext) sys += `\n\n## Relevant long-term memories:\n${pineconeContext}`;
+  if (archiveContext)  sys += `\n\n## Relevant long-term memories:\n${archiveContext}`;
   if (thread.summary)  sys += `\n\n## Conversation summary so far:\n${thread.summary}`;
   return sys;
 }
@@ -232,18 +235,18 @@ async function chat(threadId, userMessage, { guildId = null } = {}) {
     }
   } catch { /* non-fatal */ }
 
-  // Augment with relevant Pinecone memories
-  let pineconeContext = null;
+  // Augment with relevant long-term memories (conversation summaries, research, decisions)
+  let archiveContext = null;
   try {
     const { results } = await archivist.retrieve({
       query:         userMessage,
-      type_filter:   'conversation',
+      type_filter:   'all',
       top_k:         3,
       output_format: 'raw',
     });
     const goodHits = (results || []).filter(r => r.score > 0.7);
     if (goodHits.length > 0) {
-      pineconeContext = goodHits.map(r => r.content).join('\n\n---\n\n');
+      archiveContext = goodHits.map(r => r.content).join('\n\n---\n\n');
     }
   } catch { /* non-fatal */ }
 
@@ -267,16 +270,20 @@ async function chat(threadId, userMessage, { guildId = null } = {}) {
         ? [await leagueApi.query(leagueKey, leagueDetect.queryType)]
         : await leagueApi.queryAll(leagueDetect.queryType);
 
-      const hasData = results.some(r => !r.error && r.data);
+      const hasData = results.some(r => !r.error && (r.data || r.formatted));
       if (hasData) {
-        const formatted = leagueApi.formatResults(leagueDetect.queryType, results);
-        const liveSection = `\n\n## Live league data (just fetched):\n${formatted}`;
+        const anyCached = results.some(r => r.cached);
+        const formatted = results.some(r => r.formatted)
+          ? results.map(r => r.formatted).filter(Boolean).join('\n\n')
+          : leagueApi.formatResults(leagueDetect.queryType, results);
+        const label = anyCached ? 'League data (from local cache)' : 'Live league data (just fetched)';
+        const liveSection = `\n\n## ${label}:\n${formatted}`;
         leagueContext = (leagueContext || '') + liveSection;
       }
     } catch { /* non-fatal — proceed without live data */ }
   }
 
-  const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext, profileContext, lessonsContext, leagueContext);
+  const systemPrompt = _buildSystemPrompt(thread, archiveContext, factsContext, profileContext, lessonsContext, leagueContext);
   const messages     = _buildMessages(
     { ...thread, messages: thread.messages.slice(0, -1) },
     userMessage,

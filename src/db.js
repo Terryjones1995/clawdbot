@@ -144,6 +144,12 @@ async function initSchema() {
     console.warn('[DB] Could not add embedding column (pgvector may be unavailable):', err.message);
   }
 
+  // Access tracking columns for memory pruning
+  try {
+    await query(`ALTER TABLE ghost_memory ADD COLUMN IF NOT EXISTS last_accessed_at TIMESTAMPTZ DEFAULT NOW()`);
+    await query(`ALTER TABLE ghost_memory ADD COLUMN IF NOT EXISTS access_count INT NOT NULL DEFAULT 0`);
+  } catch { /* non-fatal — columns may already exist */ }
+
   await query(`
     CREATE TABLE IF NOT EXISTS user_profiles (
       user_id    TEXT PRIMARY KEY,
@@ -245,6 +251,27 @@ async function initSchema() {
   } catch (err) {
     console.warn('[DB] Could not add embedding column to agent_lessons:', err.message);
   }
+
+  // ── Tickets ──
+  await query(`
+    CREATE TABLE IF NOT EXISTS tickets (
+      id              BIGSERIAL PRIMARY KEY,
+      channel_id      TEXT NOT NULL UNIQUE,
+      guild_id        TEXT,
+      opener_id       TEXT,
+      opener_name     TEXT,
+      category_name   TEXT,
+      status          TEXT NOT NULL DEFAULT 'open',
+      transcript      JSONB DEFAULT '[]',
+      summary         TEXT,
+      lessons_extracted BOOLEAN NOT NULL DEFAULT false,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      closed_at       TIMESTAMPTZ,
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS tickets_status_idx ON tickets (status)`);
+  await query(`CREATE INDEX IF NOT EXISTS tickets_guild_idx  ON tickets (guild_id)`);
 
   console.log('[DB] Schema ready');
 }
@@ -396,7 +423,7 @@ async function getFacts(queryText = '', limit = 15, queryEmbedding = null) {
     try {
       const embStr = `[${queryEmbedding.join(',')}]`;
       const { rows } = await query(
-        `SELECT content, category, updated_at, 1 AS relevant
+        `SELECT id, content, category, updated_at, 1 AS relevant
          FROM ghost_memory
          WHERE embedding IS NOT NULL
          ORDER BY embedding <=> $1::vector
@@ -418,7 +445,7 @@ async function getFacts(queryText = '', limit = 15, queryEmbedding = null) {
 
   if (!keywords.length) {
     const { rows } = await query(
-      `SELECT content, category, updated_at, 0 AS relevant
+      `SELECT id, content, category, updated_at, 0 AS relevant
        FROM ghost_memory ORDER BY updated_at DESC LIMIT $1`,
       [limit],
     );
@@ -430,7 +457,7 @@ async function getFacts(queryText = '', limit = 15, queryEmbedding = null) {
   const params     = [limit, ...keywords.map(w => `%${w}%`)];
 
   const { rows } = await query(
-    `SELECT content, category, updated_at,
+    `SELECT id, content, category, updated_at,
             CASE WHEN ${conditions} THEN 1 ELSE 0 END AS relevant
      FROM ghost_memory
      ORDER BY relevant DESC, updated_at DESC
@@ -710,6 +737,176 @@ async function deleteLesson(id) {
   return rowCount > 0;
 }
 
+// ── Memory Pruning ────────────────────────────────────────────────────────────
+
+/**
+ * Bump access tracking when a fact is retrieved.
+ * @param {number[]} ids — array of ghost_memory row IDs
+ */
+async function touchFacts(ids) {
+  if (!ids.length) return;
+  await query(
+    `UPDATE ghost_memory SET last_accessed_at = NOW(), access_count = access_count + 1 WHERE id = ANY($1::bigint[])`,
+    [ids],
+  ).catch(() => {});
+}
+
+/**
+ * Prune stale/low-quality memories. Returns count of deleted rows.
+ *
+ * Rules:
+ * 1. Conversation-extracted facts > 60 days old that have NEVER been accessed → delete
+ * 2. Any fact > 180 days old with 0 access → delete
+ * 3. League API cache entries > 48h old → delete (they get refreshed)
+ * 4. Never touch: training, seed-hof-knowledge, manual sources unless > 365d
+ */
+async function pruneStaleMemory() {
+  const results = { conversationPruned: 0, oldUnused: 0, staleCache: 0, ancientManual: 0 };
+
+  // 1. Auto-extracted conversation facts — 60d + 0 access
+  const r1 = await query(
+    `DELETE FROM ghost_memory
+     WHERE source = 'conversation' AND access_count = 0
+       AND created_at < NOW() - INTERVAL '60 days'`,
+  );
+  results.conversationPruned = r1.rowCount || 0;
+
+  // 2. Any fact — 180d + 0 access (except protected sources)
+  const r2 = await query(
+    `DELETE FROM ghost_memory
+     WHERE source NOT IN ('training', 'seed-hof-knowledge', 'manual')
+       AND access_count = 0
+       AND created_at < NOW() - INTERVAL '180 days'`,
+  );
+  results.oldUnused = r2.rowCount || 0;
+
+  // 3. Stale league API cache — 48h old
+  const r3 = await query(
+    `DELETE FROM ghost_memory
+     WHERE source = 'league-api-cache'
+       AND updated_at < NOW() - INTERVAL '48 hours'`,
+  );
+  results.staleCache = r3.rowCount || 0;
+
+  // 4. Very ancient manually-added facts — 365d + 0 access
+  const r4 = await query(
+    `DELETE FROM ghost_memory
+     WHERE source IN ('training', 'seed-hof-knowledge', 'manual')
+       AND access_count = 0
+       AND created_at < NOW() - INTERVAL '365 days'`,
+  );
+  results.ancientManual = r4.rowCount || 0;
+
+  const total = results.conversationPruned + results.oldUnused + results.staleCache + results.ancientManual;
+  return { total, ...results };
+}
+
+/**
+ * Prune old conversations that haven't been updated in > 90 days.
+ * Keeps summary, removes messages to free space.
+ */
+async function archiveOldThreads() {
+  const { rowCount } = await query(
+    `UPDATE conversations
+     SET messages = '[]'::jsonb
+     WHERE updated_at < NOW() - INTERVAL '90 days'
+       AND messages != '[]'::jsonb`,
+  );
+  return rowCount || 0;
+}
+
+/**
+ * Prune old agent_logs entries (> 90 days).
+ */
+async function pruneOldLogs() {
+  const { rowCount } = await query(
+    `DELETE FROM agent_logs WHERE ts < NOW() - INTERVAL '90 days'`,
+  );
+  return rowCount || 0;
+}
+
+/**
+ * Get memory stats for monitoring.
+ */
+async function getMemoryStats() {
+  const { rows } = await query(`
+    SELECT
+      COUNT(*) as total_facts,
+      COUNT(*) FILTER (WHERE access_count = 0) as never_accessed,
+      COUNT(*) FILTER (WHERE source = 'conversation') as from_conversations,
+      COUNT(*) FILTER (WHERE source = 'league-api-cache') as league_cache,
+      COUNT(*) FILTER (WHERE source IN ('training', 'seed-hof-knowledge', 'manual')) as curated,
+      COUNT(*) FILTER (WHERE created_at < NOW() - INTERVAL '30 days') as older_30d,
+      COUNT(*) FILTER (WHERE created_at < NOW() - INTERVAL '90 days') as older_90d
+    FROM ghost_memory
+  `);
+  return rows[0] || {};
+}
+
+// ── Ticket helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Create or update a ticket record.
+ * Lightweight on first detection (just channel_id + guild_id).
+ * Full data on save/close (transcript, opener, category).
+ */
+async function upsertTicket({ channelId, guildId = null, openerId = null, openerName = null, categoryName = null, transcript = null }) {
+  const txJson = transcript ? JSON.stringify(transcript) : null;
+  await query(
+    `INSERT INTO tickets (channel_id, guild_id, opener_id, opener_name, category_name, transcript)
+     VALUES ($1, $2, $3, $4, $5, COALESCE($6::jsonb, '[]'::jsonb))
+     ON CONFLICT (channel_id) DO UPDATE
+       SET guild_id       = COALESCE(EXCLUDED.guild_id, tickets.guild_id),
+           opener_id      = COALESCE(EXCLUDED.opener_id, tickets.opener_id),
+           opener_name    = COALESCE(EXCLUDED.opener_name, tickets.opener_name),
+           category_name  = COALESCE(EXCLUDED.category_name, tickets.category_name),
+           transcript     = CASE
+             WHEN EXCLUDED.transcript IS NOT NULL AND EXCLUDED.transcript != '[]'::jsonb
+             THEN EXCLUDED.transcript ELSE tickets.transcript END,
+           updated_at     = NOW()`,
+    [channelId, guildId, openerId, openerName, categoryName, txJson],
+  );
+}
+
+async function getTicket(channelId) {
+  const { rows } = await query('SELECT * FROM tickets WHERE channel_id = $1', [channelId]);
+  return rows[0] ?? null;
+}
+
+async function closeTicket(channelId, transcript, summary = null) {
+  await query(
+    `UPDATE tickets
+     SET status = 'closed', transcript = $2, summary = $3,
+         closed_at = NOW(), updated_at = NOW()
+     WHERE channel_id = $1`,
+    [channelId, JSON.stringify(transcript), summary],
+  );
+}
+
+async function getUnanalyzedTickets(limit = 20) {
+  const { rows } = await query(
+    `SELECT * FROM tickets
+     WHERE status = 'closed' AND lessons_extracted = false
+     ORDER BY closed_at DESC LIMIT $1`,
+    [limit],
+  );
+  return rows;
+}
+
+async function markTicketAnalyzed(channelId) {
+  await query(
+    'UPDATE tickets SET lessons_extracted = true, updated_at = NOW() WHERE channel_id = $1',
+    [channelId],
+  );
+}
+
+async function getOpenTickets() {
+  const { rows } = await query(
+    `SELECT channel_id, guild_id FROM tickets WHERE status = 'open' ORDER BY created_at DESC`,
+  );
+  return rows;
+}
+
 module.exports = {
   pool, query, initSchema, logEntry, events,
   getThread, upsertThread, listThreads,
@@ -722,4 +919,6 @@ module.exports = {
   getSetting, setSetting, getAllSettings,
   createLesson, getLessons, getActiveLessons, getActiveLessonsByEmbedding, updateLesson, incrementLessonApplied, deleteLesson,
   getAgentStats,
+  touchFacts, pruneStaleMemory, archiveOldThreads, pruneOldLogs, getMemoryStats,
+  upsertTicket, getTicket, closeTicket, getUnanalyzedTickets, markTicketAnalyzed, getOpenTickets,
 };

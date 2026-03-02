@@ -142,6 +142,23 @@ app.use('/api/tasks',         PORTAL_BYPASS, tasksRoutes);
 app.use('/api/settings',      PORTAL_BYPASS, settingsRoutes);
 app.use('/api/lessons',       PORTAL_BYPASS, lessonsRoutes);
 app.use('/api/training',      PORTAL_BYPASS, trainingRoutes);
+
+// ── Memory management routes ──
+app.get('/api/memory/stats', PORTAL_BYPASS, async (req, res) => {
+  try {
+    const memory = require('./src/skills/memory');
+    const stats = await memory.getMemoryStats();
+    res.json({ ok: true, stats });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/memory/prune', PORTAL_BYPASS, async (req, res) => {
+  try {
+    const memory = require('./src/skills/memory');
+    const results = await memory.pruneMemory();
+    res.json({ ok: true, results });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
   try {
     // Build brief from agent_logs DB (the real data source), not the flat file
@@ -183,6 +200,9 @@ app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
   }
 });
 
+// Archivist needs portal access (moved above requireAuth)
+app.use('/api/archivist', PORTAL_BYPASS, archivistRoutes);
+
 // ── Protected routes ──────────────────────────────────────────────────────────
 app.use(requireAuth);
 
@@ -193,7 +213,6 @@ app.use('/api/scribe',    scribeRoutes);
 app.use('/api/scout',     scoutRoutes);
 app.use('/api/lens',      lensRoutes);
 app.use('/api/courier',   courierRoutes);
-app.use('/api/archivist', archivistRoutes);
 app.use('/api/keeper',    keeperRoutes);
 app.use('/api/helm',      helmRoutes);
 

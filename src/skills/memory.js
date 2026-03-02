@@ -189,6 +189,10 @@ async function getRelevantFacts(query, limit = 15) {
       return null;
     }
 
+    // Bump access tracking (non-blocking)
+    const ids = rows.map(r => r.id).filter(Boolean);
+    if (ids.length) db.touchFacts(ids).catch(() => {});
+
     // Group by category for cleaner injection
     const grouped = {};
     for (const row of rows) {
@@ -270,4 +274,466 @@ async function detectAndStoreCorrection(userMessage, previousReply, threadId) {
   return true;
 }
 
-module.exports = { extractAndStore, getRelevantFacts, detectAndStoreCorrection };
+// ── Memory Pruning ────────────────────────────────────────────────────────────
+
+/**
+ * Run memory cleanup — removes stale facts, archives old threads, prunes logs.
+ * Called by Scribe's weekly scheduler.
+ * Returns a summary of what was cleaned.
+ */
+async function pruneMemory() {
+  const results = {};
+
+  // 1. Prune stale ghost_memory facts
+  try {
+    results.facts = await db.pruneStaleMemory();
+  } catch (err) {
+    results.facts = { error: err.message };
+  }
+
+  // 2. Archive old conversation threads (clear messages, keep summary)
+  try {
+    results.archivedThreads = await db.archiveOldThreads();
+  } catch (err) {
+    results.archivedThreads = { error: err.message };
+  }
+
+  // 3. Prune old agent logs
+  try {
+    results.prunedLogs = await db.pruneOldLogs();
+  } catch (err) {
+    results.prunedLogs = { error: err.message };
+  }
+
+  const totalPruned = (results.facts?.total || 0) + (results.archivedThreads || 0) + (results.prunedLogs || 0);
+  console.log(`[Memory] Pruning complete — ${totalPruned} items cleaned:`,
+    JSON.stringify(results));
+
+  return results;
+}
+
+/**
+ * Get memory health stats.
+ */
+async function getMemoryStats() {
+  return db.getMemoryStats();
+}
+
+// ── League Data Cache ─────────────────────────────────────────────────────────
+
+const LEAGUE_CACHE_TTL = 24 * 60 * 60; // 24h in seconds (for Redis)
+const LEAGUE_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h
+
+/**
+ * Cache league API results in ghost_memory for local-first retrieval.
+ * @param {string} leagueKey - 'hof', 'sf', 'urg', 'bhl'
+ * @param {string} dataType  - 'events', 'standings', etc.
+ * @param {*}      data      - raw API response data
+ * @param {string} formatted - human-readable formatted string
+ */
+async function cacheLeagueData(leagueKey, dataType, data, formatted) {
+  const key = `league-cache:${leagueKey}:${dataType}`;
+  const content = formatted || JSON.stringify(data);
+
+  await db.storeFact({
+    key,
+    content,
+    category: 'league-data',
+    source:   'league-api-cache',
+  }).catch(() => {});
+
+  // Also cache in Redis for fast reads
+  const redisKey = `leaguecache:${leagueKey}:${dataType}`;
+  await redis.set(redisKey, JSON.stringify({ data, formatted: content, ts: Date.now() }), LEAGUE_CACHE_TTL);
+}
+
+/**
+ * Get cached league data. Returns null if cache is missing or stale.
+ * @param {string} leagueKey
+ * @param {string} dataType
+ * @param {number} [maxAgeMs] - max cache age in ms (default 24h)
+ * @returns {{ data: *, formatted: string, ts: number } | null}
+ */
+async function getCachedLeagueData(leagueKey, dataType, maxAgeMs = LEAGUE_CACHE_MAX_AGE_MS) {
+  // Try Redis first (fast)
+  const redisKey = `leaguecache:${leagueKey}:${dataType}`;
+  const cached = await redis.get(redisKey);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - parsed.ts < maxAgeMs) return parsed;
+    } catch { /* corrupt cache */ }
+  }
+
+  // Fallback: check ghost_memory (Neon)
+  try {
+    const { rows } = await db.query(
+      `SELECT content, updated_at FROM ghost_memory
+       WHERE key = $1 AND source = 'league-api-cache'
+       LIMIT 1`,
+      [`league-cache:${leagueKey}:${dataType}`],
+    );
+    if (rows.length && (Date.now() - new Date(rows[0].updated_at).getTime()) < maxAgeMs) {
+      return { data: null, formatted: rows[0].content, ts: new Date(rows[0].updated_at).getTime() };
+    }
+  } catch { /* non-fatal */ }
+
+  return null;
+}
+
+// ── Admin Observation — passive learning from admin messages ──────────────────
+//
+// Ghost monitors all admin messages and extracts useful domain knowledge.
+// This makes Ghost progressively learn how admins think, what they know,
+// and how they handle situations — becoming more like them over time.
+
+// Buffer: channelId → { messages: [{author, content, ts}], lastAnalysis: timestamp }
+const _adminBuffer = new Map();
+const OBSERVE_COOLDOWN_MS  = 5 * 60 * 1000;  // Analyze at most once per 5 min per channel
+const OBSERVE_MIN_CHARS    = 30;              // Skip very short messages
+const OBSERVE_BUFFER_MAX   = 10;              // Max messages to buffer before forcing analysis
+const OBSERVE_FLUSH_MS     = 2 * 60 * 1000;  // Flush buffer after 2 min of silence
+
+// Quick pre-filter: skip obvious noise that never contains extractable knowledge
+const NOISE_RE = /^(![\w]+|<[@#]\d+>|https?:\/\/\S+|[^\w\s]{1,5}|lol|lmao|ok|bet|nah|yeah|yep|nope|idk|smh|bruh|haha|damn|true|facts|yo|hey|sup|gm|gn|gg|w+|l+)$/i;
+
+function _isNoise(text) {
+  const t = text.trim();
+  if (t.length < OBSERVE_MIN_CHARS) return true;
+  if (NOISE_RE.test(t)) return true;
+  // Pure emoji messages
+  if (/^[\p{Emoji}\s]+$/u.test(t)) return true;
+  // Pure URL
+  if (/^https?:\/\/\S+$/i.test(t)) return true;
+  return false;
+}
+
+const OBSERVE_SYSTEM = `You are a knowledge extractor for Ghost, an AI assistant that manages Discord communities for NBA 2K esports leagues.
+
+You are reading messages from league ADMINS — the people who run the leagues. Your job is to extract any useful knowledge that would help Ghost answer questions and assist users better.
+
+Extract knowledge about:
+- League operations: rules, schedules, processes, how things work
+- Events/seasons: registration, fees, dates, formats, roster rules
+- Players/teams: roster changes, bans, notable players, team info
+- Platform: how the website works, features, settings, admin tools
+- Decisions: policy changes, rule updates, announcements
+- Community: how to handle situations, common issues, dispute resolution
+- Anything an AI assistant would need to know to help run the league
+
+SKIP:
+- Casual chat, banter, memes, jokes
+- Personal conversations unrelated to the league
+- Messages that are just reactions or acknowledgments
+- Things too vague or context-dependent to be useful standalone
+
+Return ONLY a JSON array of extracted facts. Each fact must be a complete, standalone sentence.
+Format: [{ "key": "category:topic_slug", "content": "Complete fact sentence.", "category": "org|decision|person|league-ops|event|rule" }]
+
+Categories:
+- org: organizational facts (team names, member roles, processes)
+- decision: policy decisions, rule changes
+- person: info about specific people (admins, players)
+- league-ops: how the league operates day-to-day
+- event: event/season/tournament details
+- rule: rules, regulations, requirements
+
+If NOTHING useful can be extracted, return [].
+Keep it strict — only extract genuinely useful, durable knowledge.`;
+
+/**
+ * Buffer an admin message for observation. Non-blocking.
+ * Messages are batched per channel and analyzed periodically.
+ *
+ * @param {string} channelId
+ * @param {string} authorName - Discord username
+ * @param {string} authorId   - Discord user ID
+ * @param {string} content    - message text
+ * @param {string} guildId    - guild the message was sent in
+ */
+function observeAdminMessage(channelId, authorName, authorId, content, guildId) {
+  // Pre-filter noise synchronously — no async overhead
+  if (_isNoise(content)) return;
+
+  const key = channelId;
+  if (!_adminBuffer.has(key)) {
+    _adminBuffer.set(key, { messages: [], lastAnalysis: 0, guildId, flushTimer: null });
+  }
+
+  const buf = _adminBuffer.get(key);
+  buf.messages.push({ author: authorName, authorId, content, ts: Date.now() });
+  buf.guildId = guildId;
+
+  // Clear existing flush timer and set a new one
+  if (buf.flushTimer) clearTimeout(buf.flushTimer);
+  buf.flushTimer = setTimeout(() => _flushBuffer(key), OBSERVE_FLUSH_MS);
+
+  // Force flush if buffer is full
+  if (buf.messages.length >= OBSERVE_BUFFER_MAX) {
+    clearTimeout(buf.flushTimer);
+    _flushBuffer(key);
+  }
+}
+
+async function _flushBuffer(key) {
+  const buf = _adminBuffer.get(key);
+  if (!buf || buf.messages.length === 0) return;
+
+  // Cooldown check
+  if (Date.now() - buf.lastAnalysis < OBSERVE_COOLDOWN_MS) return;
+
+  // Grab messages and clear buffer
+  const messages = buf.messages.splice(0);
+  buf.lastAnalysis = Date.now();
+
+  // Analyze in background
+  _analyzeAdminMessages(messages, buf.guildId).catch(err => {
+    console.warn('[Memory] Admin observation analysis failed:', err.message);
+  });
+}
+
+async function _analyzeAdminMessages(messages, guildId) {
+  // Build a transcript of the buffered messages
+  const transcript = messages
+    .map(m => `${m.author}: ${m.content}`)
+    .join('\n');
+
+  if (transcript.length < 40) return; // Still too short after batching
+
+  // Determine which league this is from
+  const leagueApi = require('./league-api');
+  const leagueKey = guildId ? leagueApi.leagueFromGuild(guildId) : null;
+  const leagueName = leagueKey ? leagueApi.LEAGUES[leagueKey]?.name : 'Unknown league';
+
+  const prompt = `League context: ${leagueName}\n\nAdmin messages:\n${transcript}`;
+
+  // Use Ollama (free) for triage + extraction in one call
+  const { result, escalate } = await ollama.tryChat([
+    { role: 'system', content: OBSERVE_SYSTEM },
+    { role: 'user',   content: prompt },
+  ], { params: { num_ctx: 4096 } });
+
+  if (escalate || !result?.message?.content) return;
+
+  let facts;
+  try {
+    const raw = result.message.content.trim()
+      .replace(/^```(?:json)?\n?/, '')
+      .replace(/\n?```$/, '');
+    // Handle /think blocks from reasoning models
+    const jsonStart = raw.indexOf('[');
+    const jsonEnd   = raw.lastIndexOf(']');
+    if (jsonStart === -1 || jsonEnd === -1) return;
+    facts = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+    if (!Array.isArray(facts) || facts.length === 0) return;
+  } catch {
+    return; // Model returned garbage — skip silently
+  }
+
+  let stored = 0;
+  for (const fact of facts) {
+    if (!fact.key || !fact.content) continue;
+    const category = fact.category ?? 'org';
+
+    // Prefix key with league for scoping
+    const scopedKey = leagueKey ? `${leagueKey}:${fact.key}` : fact.key;
+
+    // Sweep conflicts before storing
+    await _sweepConflicts(scopedKey, category);
+
+    // Generate embedding
+    let embedding = null;
+    try {
+      embedding = await ollama.embed(fact.content);
+    } catch { /* non-fatal */ }
+
+    await db.storeFact({
+      key:      scopedKey,
+      content:  fact.content,
+      category,
+      source:   'admin-observation',
+      embedding,
+    }).catch(() => {});
+
+    stored++;
+  }
+
+  if (stored > 0) {
+    console.log(`[Memory] Admin observation: extracted ${stored} fact(s) from ${messages.length} message(s) in ${leagueName}`);
+    db.logEntry({
+      level: 'INFO', agent: 'Memory', action: 'admin-observation',
+      outcome: 'success', note: `${stored} facts from ${messages.length} msgs (${leagueName})`,
+    }).catch(() => {});
+  }
+}
+
+// Cleanup stale buffers every 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, buf] of _adminBuffer) {
+    if (buf.messages.length === 0 && now - buf.lastAnalysis > 30 * 60 * 1000) {
+      if (buf.flushTimer) clearTimeout(buf.flushTimer);
+      _adminBuffer.delete(key);
+    }
+  }
+}, 30 * 60 * 1000);
+
+// ── Ticket Analysis — extract lessons from closed ticket conversations ────────
+
+const TICKET_ANALYSIS_SYSTEM = `You are analyzing a closed support ticket conversation. Extract useful lessons and patterns.
+
+Focus on:
+- Common issue types and root causes
+- What solutions worked (or didn't)
+- Knowledge gaps — things Ghost didn't know but should
+- Process patterns — how tickets get resolved
+- User sentiment — satisfaction signals
+
+Return a JSON array. Each item:
+{ "lesson": "Clear description of what was learned", "category": "issue-pattern|resolution|knowledge-gap|process|sentiment", "severity": "low|medium|high" }
+
+If no meaningful lessons, return [].
+Keep each lesson under 200 characters. Max 5 lessons per ticket.`;
+
+/**
+ * Analyze closed ticket transcripts and extract lessons.
+ * Called nightly by Scribe. Returns { analyzed, lessons }.
+ */
+async function analyzeClosedTickets() {
+  const tickets = await db.getUnanalyzedTickets(15);
+  if (!tickets.length) return { analyzed: 0, lessons: 0 };
+
+  let totalLessons = 0;
+
+  for (const ticket of tickets) {
+    try {
+      // Build transcript text from JSONB array
+      const msgs = Array.isArray(ticket.transcript) ? ticket.transcript : [];
+      if (msgs.length < 3) {
+        await db.markTicketAnalyzed(ticket.channel_id);
+        continue;
+      }
+
+      const transcript = msgs.map(m => {
+        const parts = [];
+        for (const embed of (m.embeds || [])) {
+          if (embed.title || embed.description) {
+            parts.push(`[EMBED] ${embed.title || ''}: ${(embed.description || '').slice(0, 300)}`);
+          }
+        }
+        if (m.content) parts.push(`${m.isBot ? '[BOT] ' : ''}${m.author}: ${m.content}`);
+        return parts.join('\n');
+      }).filter(Boolean).join('\n');
+
+      if (transcript.length < 50) {
+        await db.markTicketAnalyzed(ticket.channel_id);
+        continue;
+      }
+
+      const prompt = `Ticket from guild ${ticket.guild_id || 'unknown'}, category: ${ticket.category_name || 'unknown'}.\nOpened by: ${ticket.opener_name || 'unknown'}\n\n--- TRANSCRIPT ---\n${transcript.slice(0, 6000)}\n--- END ---\n\nExtract lessons:`;
+
+      const ollamaLib = require('../../openclaw/skills/ollama');
+      const { result, escalate } = await ollamaLib.tryChat([
+        { role: 'system', content: TICKET_ANALYSIS_SYSTEM },
+        { role: 'user',   content: prompt },
+      ], { params: { num_ctx: 8192 } });
+
+      if (escalate || !result?.message?.content) {
+        await db.markTicketAnalyzed(ticket.channel_id);
+        continue;
+      }
+
+      let raw = result.message.content.trim();
+      // Handle /think blocks from reasoning models
+      if (raw.includes('</think>')) raw = raw.split('</think>').pop().trim();
+      const start = raw.indexOf('[');
+      const end   = raw.lastIndexOf(']');
+      if (start < 0 || end < 0) {
+        await db.markTicketAnalyzed(ticket.channel_id);
+        continue;
+      }
+
+      const lessons = JSON.parse(raw.slice(start, end + 1));
+      if (!Array.isArray(lessons) || !lessons.length) {
+        await db.markTicketAnalyzed(ticket.channel_id);
+        continue;
+      }
+
+      for (const l of lessons.slice(0, 5)) {
+        if (!l.lesson || l.lesson.length < 10) continue;
+
+        let embedding = null;
+        try { embedding = await ollamaLib.embed(l.lesson); } catch { /* non-fatal */ }
+
+        await db.createLesson({
+          agent:    'ghost',
+          lesson:   l.lesson,
+          category: l.category || 'ticket-insight',
+          severity: l.severity || 'medium',
+          source:   'ticket-analysis',
+          context:  `ticket:${ticket.channel_id}:${ticket.guild_id || ''}`,
+          embedding,
+        });
+        totalLessons++;
+      }
+
+      await db.markTicketAnalyzed(ticket.channel_id);
+    } catch (err) {
+      console.warn(`[Memory] Ticket analysis failed for ${ticket.channel_id}:`, err.message);
+      await db.markTicketAnalyzed(ticket.channel_id);
+    }
+  }
+
+  if (totalLessons > 0) {
+    console.log(`[Memory] Ticket analysis: ${totalLessons} lesson(s) from ${tickets.length} ticket(s)`);
+    db.logEntry({
+      level: 'INFO', agent: 'Memory', action: 'ticket-analysis',
+      outcome: 'success', note: `${totalLessons} lessons from ${tickets.length} tickets`,
+    }).catch(() => {});
+  }
+
+  return { analyzed: tickets.length, lessons: totalLessons };
+}
+
+/**
+ * Snapshot open ticket transcripts — fetch current channel history and save.
+ * Called nightly to ensure we have transcripts even if Ghost never directly interacted.
+ */
+async function snapshotOpenTickets() {
+  const discord = require('../../openclaw/skills/discord');
+  const openTickets = await db.getOpenTickets();
+  let saved = 0, closed = 0;
+
+  for (const t of openTickets) {
+    try {
+      const history = await discord.fetchChannelHistory(t.channel_id, 100);
+      if (history.length > 0) {
+        const info   = await discord.getChannelInfo(t.channel_id);
+        const opener = history.find(m => !m.isBot);
+        await db.upsertTicket({
+          channelId:    t.channel_id,
+          guildId:      t.guild_id,
+          openerId:     opener?.authorId,
+          openerName:   opener?.author,
+          categoryName: info?.parentName,
+          transcript:   history,
+        });
+        saved++;
+      }
+    } catch {
+      // Channel likely deleted — mark ticket as closed
+      await db.closeTicket(t.channel_id, [], 'Channel no longer exists (detected during nightly snapshot)');
+      closed++;
+    }
+  }
+
+  return { saved, closed };
+}
+
+module.exports = {
+  extractAndStore, getRelevantFacts, detectAndStoreCorrection,
+  pruneMemory, getMemoryStats,
+  cacheLeagueData, getCachedLeagueData,
+  observeAdminMessage,
+  analyzeClosedTickets, snapshotOpenTickets,
+};

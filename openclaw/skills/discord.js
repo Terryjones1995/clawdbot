@@ -57,12 +57,14 @@ class DiscordConnector {
     });
 
     this.client.on('messageCreate', (message) => {
-      if (message.author.bot) return;
+      // Skip our own messages
+      if (message.author.id === this.client.user?.id) return;
 
       // Allow all guilds — responses are scoped per-guild in sentinel
       // (Primary guild gets full agent routing; all guilds get @mention responses)
 
-      const userRole = this._resolveRole(message.author.id, message.member);
+      const isBot    = message.author.bot;
+      const userRole = isBot ? 'BOT' : this._resolveRole(message.author.id, message.member);
       const event = {
         event:      'message',
         channel:    message.channel.name || 'dm',
@@ -72,6 +74,7 @@ class DiscordConnector {
         user:       message.author.tag,
         user_id:    message.author.id,
         user_role:  userRole,
+        is_bot:     isBot,
         content:    message.content,
         raw:        message,
       };
@@ -312,6 +315,25 @@ class DiscordConnector {
     } catch (err) {
       this._log('ERROR', 'delete-channel', 'system', 'failed', err.message);
       throw err;
+    }
+  }
+
+  /** Close (delete) a channel by ID. Used for ticket closure. Graceful if already gone. */
+  async closeChannel(channelId) {
+    this._assertReady();
+    try {
+      const channel = await this.client.channels.fetch(channelId);
+      const name = channel.name || channelId;
+      await channel.delete('Ticket closed by Ghost');
+      this._log('INFO', 'close-channel', 'system', 'success', `channel=${name} (${channelId})`);
+      return true;
+    } catch (err) {
+      // Channel already deleted or not found — not an error
+      if (err.code === 10003 || /unknown channel/i.test(err.message)) {
+        return false;
+      }
+      this._log('WARN', 'close-channel', 'system', 'skipped', `channel=${channelId} ${err.message}`);
+      return false;
     }
   }
 

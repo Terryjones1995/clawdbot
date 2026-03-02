@@ -429,6 +429,47 @@ function start() {
       );
     }
 
+    // Nightly ticket analysis at 03:30 UTC — snapshot open tickets, analyze closed ones
+    if (hour === 3 && minute === 30) {
+      const memory = require('./skills/memory');
+
+      // Snapshot open ticket transcripts (detect deleted channels)
+      memory.snapshotOpenTickets().then(r => {
+        if (r.saved > 0 || r.closed > 0) {
+          appendLog('INFO', 'ticket-snapshot', 'system', 'success',
+            `saved=${r.saved} closedDetected=${r.closed}`);
+        }
+      }).catch(err =>
+        appendLog('ERROR', 'ticket-snapshot', 'system', 'failed', err.message)
+      );
+
+      // Analyze closed tickets and extract lessons
+      memory.analyzeClosedTickets().then(r => {
+        if (r.lessons > 0) {
+          appendLog('INFO', 'ticket-analysis', 'system', 'success',
+            `analyzed=${r.analyzed} lessons=${r.lessons}`);
+          _deliverToDiscord(`📋 **Ticket Analysis**\nAnalyzed ${r.analyzed} closed ticket(s), extracted ${r.lessons} lesson(s).`);
+        }
+      }).catch(err =>
+        appendLog('ERROR', 'ticket-analysis', 'system', 'failed', err.message)
+      );
+    }
+
+    // Weekly memory pruning — Sunday 04:00 UTC
+    if (day === 0 && hour === 4 && minute === 0) {
+      const memory = require('./skills/memory');
+      memory.pruneMemory().then(results => {
+        const total = results.facts?.total || 0;
+        appendLog('INFO', 'memory-prune', 'system', 'success',
+          `pruned=${total} conv=${results.facts?.conversationPruned || 0} old=${results.facts?.oldUnused || 0} cache=${results.facts?.staleCache || 0} threads=${results.archivedThreads || 0} logs=${results.prunedLogs || 0}`);
+        if (total > 0) {
+          _deliverToDiscord(`🧹 **Weekly Memory Cleanup**\nPruned ${total} stale facts, archived ${results.archivedThreads || 0} old threads, removed ${results.prunedLogs || 0} old logs.`);
+        }
+      }).catch(err =>
+        appendLog('ERROR', 'memory-prune', 'system', 'failed', err.message)
+      );
+    }
+
     // Daily briefing at 08:00 UTC
     if (hour === 8 && minute === 0) {
       const report = await dailySummary();

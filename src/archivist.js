@@ -1,35 +1,28 @@
 'use strict';
 
 /**
- * Archivist — Memory / Pinecone
+ * Archivist — Long-term memory agent (pgvector)
  *
- * Manages Ghost's long-term memory across three tiers:
- *   Hot  → Redis        (future; skipped in MVP)
- *   Warm → Pinecone     (agent outputs, research, decisions — 90-day TTL)
- *   Cold → memory/ files (audit logs, approvals, schema — permanent)
+ * Manages Ghost's long-term memory using Neon PostgreSQL + pgvector.
+ * All memory lives in the ghost_memory table with semantic embeddings.
  *
  * Actions:
- *   store    — embed content and upsert to Pinecone
- *   retrieve — semantic search + optional LLM synthesis
- *   purge    — delete Pinecone entries whose expires_at has passed
+ *   store    — embed content and upsert to ghost_memory
+ *   retrieve — semantic search via pgvector + optional LLM synthesis
+ *   purge    — delete stale entries (delegates to memory.pruneMemory)
  *
  * Usage:
  *   const archivist = require('./archivist');
  *   await archivist.store({ type, content, tags, ttl_days });
  *   const res = await archivist.retrieve({ query, type_filter, top_k, output_format });
- *
- * Required env:
- *   PINECONE_API_KEY        — Pinecone API key
- *   PINECONE_INDEX_HOST     — full index host URL (from Pinecone dashboard)
- *   PINECONE_NAMESPACE      — namespace to use (default: 'ghost')
  */
 
-const fs      = require('fs');
-const path    = require('path');
-const https   = require('https');
-const Anthropic = require('@anthropic-ai/sdk');
-const ollama  = require('../openclaw/skills/ollama'); // kept for embed() only
-const mini    = require('./skills/openai-mini');
+const fs   = require('fs');
+const path = require('path');
+
+const db     = require('./db');
+const ollama = require('../openclaw/skills/ollama');
+const mini   = require('./skills/openai-mini');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -37,101 +30,31 @@ const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
 /**
  * Determine model for optional synthesis on retrieve.
- *
- * @param {string} action       - 'store' | 'retrieve' | 'purge'
- * @param {string} query        - natural language query (retrieve only)
- * @param {number} topK         - number of results requested
- * @param {string} outputFormat - 'raw' | 'summary'
- * @returns {{ model: string, synthesize: boolean, reason: string }}
  */
 function detectModel(action, query = '', topK = 5, outputFormat = 'raw') {
-  // store / purge never need LLM
   if (action === 'store' || action === 'purge') {
     return { model: 'none', synthesize: false, reason: `${action} — no LLM needed` };
   }
-
-  // raw output — return results as-is, no synthesis
   if (outputFormat === 'raw') {
     return { model: 'none', synthesize: false, reason: 'raw output — no LLM needed' };
   }
 
   const q = (query || '').toLowerCase();
-
-  // Explicit escalation flags
   if (q.includes('escalate:hard') || q.includes('escalate: hard')) {
     return { model: 'claude-sonnet-4-6', synthesize: true, reason: 'ESCALATE:HARD flag' };
   }
   if (q.includes('escalate')) {
     return { model: 'claude-sonnet-4-6', synthesize: true, reason: 'ESCALATE flag' };
   }
-
-  // Large result sets require deep synthesis → Claude Sonnet
   if (topK > 10) {
     return { model: 'claude-sonnet-4-6', synthesize: true, reason: 'large result set requires deep synthesis' };
   }
-
-  // Standard targeted retrieval → local model
   return { model: 'qwen2.5:14b', synthesize: true, reason: 'targeted retrieval — local model sufficient' };
-}
-
-// ── Pinecone HTTP client ──────────────────────────────────────────────────────
-
-function _pineconeHost() {
-  const raw = process.env.PINECONE_INDEX_HOST || '';
-  return raw.startsWith('http') ? raw : `https://${raw}`;
-}
-
-function _pineconeRequest(method, urlPath, body = null) {
-  return new Promise((resolve, reject) => {
-    const apiKey = process.env.PINECONE_API_KEY;
-    if (!apiKey) return reject(new Error('PINECONE_API_KEY not set'));
-
-    const hostUrl = _pineconeHost();
-    if (!hostUrl || hostUrl === 'https://') {
-      return reject(new Error('PINECONE_INDEX_HOST not set'));
-    }
-
-    const url     = new URL(urlPath, hostUrl);
-    const bodyStr = body ? JSON.stringify(body) : null;
-
-    const options = {
-      hostname: url.hostname,
-      path:     url.pathname + url.search,
-      method,
-      headers: {
-        'Api-Key':      apiKey,
-        'Content-Type': 'application/json',
-        ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
-      },
-    };
-
-    const req = https.request(options, res => {
-      let raw = '';
-      res.on('data', chunk => { raw += chunk; });
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(raw);
-          if (res.statusCode >= 400) {
-            return reject(new Error(`Pinecone HTTP ${res.statusCode}: ${json.message || raw}`));
-          }
-          resolve(json);
-        } catch (err) {
-          reject(new Error(`Pinecone parse error: ${err.message}`));
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.setTimeout(30_000, () => req.destroy(new Error('Pinecone request timeout')));
-    if (bodyStr) req.write(bodyStr);
-    req.end();
-  });
 }
 
 // ── Embedding ─────────────────────────────────────────────────────────────────
 
 async function _embed(text) {
-  // Truncate to ~8k chars to stay within embed model context limits
   const truncated = text.slice(0, 8000);
   const vec = await ollama.embed(truncated);
   if (!vec || !vec.length) throw new Error('Embedding returned empty vector — is Ollama running?');
@@ -147,35 +70,35 @@ If nothing stored answers the query, say so plainly. Be concise (under 300 words
 
 async function _synthesize(query, entries, model) {
   const entriesText = entries
-    .map((e, i) => `[${i + 1}] (${e.type} — score: ${e.score.toFixed(3)})\n${e.content}`)
+    .map((e, i) => `[${i + 1}] (${e.type}${e.score ? ` — score: ${e.score.toFixed(3)}` : ''})\n${e.content}`)
     .join('\n\n');
 
   const userMessage = `Query: ${query}\n\nRetrieved memory entries:\n${entriesText}`;
 
   if (model === 'claude-sonnet-4-6') {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error('ANTHROPIC_API_KEY required for synthesis escalation');
-    const client = new Anthropic({ apiKey });
-    const res = await client.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 512,
-      system:     SYNTH_SYSTEM,
-      messages:   [{ role: 'user', content: userMessage }],
-    });
-    return res.content[0]?.text || '';
+    try {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) throw new Error('ANTHROPIC_API_KEY required');
+      const client = new Anthropic({ apiKey });
+      const res = await client.messages.create({
+        model:      'claude-sonnet-4-6',
+        max_tokens: 512,
+        system:     SYNTH_SYSTEM,
+        messages:   [{ role: 'user', content: userMessage }],
+      });
+      return res.content[0]?.text || '';
+    } catch {
+      // Fall through to mini
+    }
   }
 
-  // gpt-4o-mini (fast, cheap)
-  const { result, escalate, reason } = await mini.tryChat([
+  const { result, escalate } = await mini.tryChat([
     { role: 'system', content: SYNTH_SYSTEM },
     { role: 'user',   content: userMessage },
   ]);
 
-  if (escalate) {
-    appendLog('WARN', 'synthesize', 'system', 'mini-failed', `escalating — ${reason}`);
-    return _synthesize(query, entries, 'claude-sonnet-4-6');
-  }
-  return result?.message?.content || '';
+  return (!escalate && result?.message?.content) ? result.message.content : '';
 }
 
 // ── Entry ID generator ────────────────────────────────────────────────────────
@@ -189,13 +112,13 @@ function _newId(type) {
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 /**
- * Store content to Pinecone (warm tier).
+ * Store content to ghost_memory with semantic embedding.
  *
  * @param {object} input
  *   - type          {string}   'research' | 'decision' | 'conversation' | 'agent_output' | 'approval'
  *   - content       {string}   text to embed and store
- *   - tags          {string[]} metadata tags
- *   - ttl_days      {number}   days before expiry (default: 90)
+ *   - tags          {string[]} metadata tags (stored in key for searchability)
+ *   - ttl_days      {number}   days before expiry (default: 90) — enforced by pruning system
  *   - source_agent  {string}   which agent is storing this
  */
 async function store({ type = 'agent_output', content, tags = [], ttl_days = 90, source_agent = 'unknown' } = {}) {
@@ -204,33 +127,28 @@ async function store({ type = 'agent_output', content, tags = [], ttl_days = 90,
   const validTypes = ['research', 'decision', 'conversation', 'agent_output', 'approval'];
   if (!validTypes.includes(type)) throw new Error(`type must be one of: ${validTypes.join(', ')}`);
 
-  const id        = _newId(type);
-  const now       = new Date();
-  const expiresAt = new Date(now.getTime() + ttl_days * 86400000);
+  const id  = _newId(type);
+  const now = new Date();
 
-  const vector = await _embed(content);
+  // Generate embedding
+  let embedding = null;
+  try {
+    embedding = await _embed(content);
+  } catch { /* non-fatal — store without embedding */ }
 
-  const namespace = process.env.PINECONE_NAMESPACE || 'ghost';
-
-  await _pineconeRequest('POST', '/vectors/upsert', {
-    vectors: [{
-      id,
-      values:   vector,
-      metadata: {
-        type,
-        tags,
-        source_agent,
-        created_at:      now.toISOString(),
-        expires_at:      expiresAt.toISOString(),
-        ttl_days,
-        content_preview: content.slice(0, 200),
-        content:         content.slice(0, 39000), // stay under 40KB Pinecone limit
-      },
-    }],
-    namespace,
+  // Store in ghost_memory with category=type, source=archivist:{source_agent}
+  // Tags are encoded in the key for grep-ability
+  const tagSuffix = tags.length ? `:${tags.join(',')}` : '';
+  await db.storeFact({
+    key:      `archivist:${id}${tagSuffix}`,
+    content,
+    category: type,
+    source:   `archivist:${source_agent}`,
+    threadId: tags[0] || null,
+    embedding,
   });
 
-  appendLog('INFO', 'store', source_agent, 'success',
+  _appendLog('INFO', 'store', source_agent, 'success',
     `id=${id} type=${type} tags=[${tags.join(',')}] ttl=${ttl_days}d`);
 
   return {
@@ -239,13 +157,13 @@ async function store({ type = 'agent_output', content, tags = [], ttl_days = 90,
     type,
     tags,
     created_at: now.toISOString(),
-    expires_at: expiresAt.toISOString(),
+    expires_at: new Date(now.getTime() + ttl_days * 86400000).toISOString(),
     logged:     true,
   };
 }
 
 /**
- * Retrieve relevant context via semantic search.
+ * Retrieve relevant context via pgvector semantic search.
  *
  * @param {object} input
  *   - query         {string}  natural language question
@@ -257,38 +175,67 @@ async function retrieve({ query, type_filter = 'all', top_k = 5, output_format =
   if (!query) throw new Error('query is required for retrieve');
 
   const { model, synthesize } = detectModel('retrieve', query, top_k, output_format);
-  const namespace = process.env.PINECONE_NAMESPACE || 'ghost';
 
-  const vector = await _embed(query);
+  let results = [];
 
-  const queryBody = {
-    vector,
-    topK:            top_k,
-    includeMetadata: true,
-    namespace,
-  };
+  // Try semantic search via pgvector
+  let queryEmbedding = null;
+  try {
+    queryEmbedding = await _embed(query);
+  } catch { /* Ollama unavailable — fall back to ILIKE */ }
 
-  if (type_filter !== 'all') {
-    queryBody.filter = { type: { $eq: type_filter } };
+  if (queryEmbedding) {
+    const embStr = `[${queryEmbedding.join(',')}]`;
+    const typeClause = type_filter !== 'all'
+      ? `AND category = '${type_filter.replace(/'/g, "''")}'`
+      : '';
+
+    const { rows } = await db.query(
+      `SELECT id, key, content, category, source, created_at, updated_at,
+              1 - (embedding <=> $1::vector) AS score
+       FROM ghost_memory
+       WHERE embedding IS NOT NULL ${typeClause}
+       ORDER BY embedding <=> $1::vector
+       LIMIT $2`,
+      [embStr, top_k],
+    );
+
+    // Bump access tracking
+    const ids = rows.map(r => r.id);
+    if (ids.length) db.touchFacts(ids).catch(() => {});
+
+    results = rows.map(r => ({
+      id:           r.key,
+      content:      r.content,
+      tags:         r.key.includes(':') ? r.key.split(':').slice(2) : [],
+      type:         r.category,
+      source_agent: r.source?.replace('archivist:', '') || null,
+      created_at:   r.created_at,
+      score:        parseFloat(r.score) || 0,
+    }));
+  } else {
+    // ILIKE fallback
+    const rows = await db.getFacts(query, top_k, null);
+    const ids = rows.map(r => r.id).filter(Boolean);
+    if (ids.length) db.touchFacts(ids).catch(() => {});
+
+    results = rows.map(r => ({
+      id:           r.key || `fact-${r.id}`,
+      content:      r.content,
+      tags:         [],
+      type:         r.category,
+      source_agent: null,
+      created_at:   r.updated_at,
+      score:        0.5,
+    }));
   }
-
-  const data    = await _pineconeRequest('POST', '/query', queryBody);
-  const results = (data.matches || []).map(m => ({
-    id:         m.id,
-    content:    m.metadata?.content || m.metadata?.content_preview || '',
-    tags:       m.metadata?.tags || [],
-    type:       m.metadata?.type || 'unknown',
-    source_agent: m.metadata?.source_agent || null,
-    created_at: m.metadata?.created_at || null,
-    score:      m.score,
-  }));
 
   let summary = null;
   if (synthesize && results.length > 0) {
     summary = await _synthesize(query, results, model);
   }
 
-  appendLog('INFO', 'retrieve', 'system', 'success',
+  _appendLog('INFO', 'retrieve', 'system', 'success',
     `query="${query.slice(0, 50)}" type=${type_filter} k=${top_k} hits=${results.length} model=${model}`);
 
   return {
@@ -303,41 +250,26 @@ async function retrieve({ query, type_filter = 'all', top_k = 5, output_format =
 }
 
 /**
- * Purge expired Pinecone entries (TTL enforcement).
- * Uses Pinecone filter delete — requires a serverless index.
- *
- * @param {object} input
- *   - namespace {string}  override namespace (default: PINECONE_NAMESPACE || 'ghost')
+ * Purge stale entries. Delegates to the memory pruning system.
  */
-async function purge({ namespace: nsOverride } = {}) {
-  const namespace = nsOverride || process.env.PINECONE_NAMESPACE || 'ghost';
-  const cutoff    = new Date().toISOString();
+async function purge() {
+  const memory  = require('./skills/memory');
+  const results = await memory.pruneMemory();
 
-  await _pineconeRequest('POST', '/vectors/delete', {
-    filter:    { expires_at: { $lt: cutoff } },
-    namespace,
-  });
-
-  appendLog('INFO', 'purge', 'system', 'success', `namespace=${namespace} cutoff=${cutoff}`);
+  _appendLog('INFO', 'purge', 'system', 'success',
+    `pruned=${results.facts?.total || 0} threads=${results.archivedThreads || 0}`);
 
   return {
-    action:    'purge',
-    namespace,
-    cutoff,
-    logged:    true,
+    action:  'purge',
+    results,
+    logged:  true,
   };
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
 
-/**
- * Dispatch an Archivist action.
- *
- * @param {object} input - see store / retrieve / purge for params
- */
 async function run(input = {}) {
   const { action = 'retrieve' } = input;
-
   switch (action) {
     case 'store':    return store(input);
     case 'retrieve': return retrieve(input);
@@ -349,19 +281,20 @@ async function run(input = {}) {
 
 // ── Logging ───────────────────────────────────────────────────────────────────
 
-function appendLog(level, action, userRole, outcome, note) {
+function _appendLog(level, action, userRole, outcome, note) {
   const entry = [
     `[${level}]`,
     new Date().toISOString(),
     '| agent=Archivist',
     `| action=${action}`,
     `| user_role=${userRole}`,
-    '| model=qwen2.5:14b',
+    '| model=nomic-embed-text',
     `| outcome=${outcome}`,
     '| escalated=false',
     `| note="${note}"`,
   ].join(' ') + '\n';
   try { fs.appendFileSync(LOG_FILE, entry); } catch { /* non-fatal */ }
+  db.logEntry({ level, agent: 'Archivist', action, outcome, note }).catch(() => {});
 }
 
 module.exports = { run, store, retrieve, purge, detectModel };

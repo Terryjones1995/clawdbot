@@ -3,10 +3,10 @@
 /**
  * Archivist API routes
  *
- * POST /api/archivist/store    — embed and store content to Pinecone
+ * POST /api/archivist/store    — embed and store content to ghost_memory (pgvector)
  * POST /api/archivist/retrieve — semantic search + optional synthesis
- * POST /api/archivist/purge    — delete expired entries (OWNER only)
- * POST /api/archivist/triage   — dry-run: model detection, no Pinecone calls
+ * POST /api/archivist/purge    — prune stale memory entries
+ * POST /api/archivist/triage   — dry-run: model detection, no DB calls
  */
 
 const express   = require('express');

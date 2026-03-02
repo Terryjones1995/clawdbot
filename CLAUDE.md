@@ -46,7 +46,7 @@ Never auto-commit. Never auto-push to remote.
 | Forge       | `src/forge.js`                | Dev / auto-fix                |
 | Lens        | `src/lens.js`                 | Analytics (PostHog)           |
 | Courier     | `src/courier.js`              | Email (Resend)                |
-| Archivist   | `src/archivist.js`            | Long-term memory (Pinecone)   |
+| Archivist   | `src/archivist.js`            | Long-term memory (pgvector)   |
 | Helm        | `src/helm.js`                 | SRE / deploy                  |
 | Keeper      | `src/keeper.js`               | Persistent conversation + memory |
 
@@ -188,10 +188,7 @@ PORTAL_SECRET=
 OPENCLAW_PORT=18789
 IDLE_SHUTDOWN_MINUTES=120
 
-# Optional
-PINECONE_API_KEY=
-PINECONE_INDEX_HOST=
-PINECONE_NAMESPACE=
+# Optional (legacy — Pinecone removed, all memory uses pgvector now)
 RUNPOD_API_KEY=
 RUNPOD_ENDPOINT=
 RUNPOD_MODEL=

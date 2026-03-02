@@ -3,8 +3,8 @@
 /**
  * League API — Live data fetching from HOF ecosystem league sites.
  *
- * Fetches real-time data (events, standings, teams, stats, leaderboard, news)
- * from the 4 league websites that run on the Squad Finder SaaS platform.
+ * Local-first: checks ghost_memory cache before making external API calls.
+ * Caches results for 24h so Ghost can answer from local knowledge.
  *
  * Usage:
  *   const leagueApi = require('./skills/league-api');
@@ -43,16 +43,36 @@ const ENDPOINTS = {
   branding:     '/api/public/branding',
 };
 
+// Lazy-load memory module to avoid circular deps
+let _memory = null;
+function _getMemory() {
+  if (!_memory) _memory = require('./memory');
+  return _memory;
+}
+
 /**
  * Fetch a specific endpoint from a league's website.
+ * Local-first: checks cached data before making external API calls.
+ *
  * @param {string} leagueKey - 'hof', 'sf', 'urg', or 'bhl'
  * @param {string} endpoint  - one of ENDPOINTS keys or a custom path
- * @param {object} [opts]    - { limit, timeout }
- * @returns {object} { league, endpoint, data, error }
+ * @param {object} [opts]    - { limit, timeout, skipCache }
+ * @returns {object} { league, endpoint, data, error, cached }
  */
 async function query(leagueKey, endpoint, opts = {}) {
   const league = LEAGUES[leagueKey];
   if (!league) return { league: leagueKey, endpoint, data: null, error: `Unknown league: ${leagueKey}` };
+
+  // Local-first: check cache unless explicitly skipped
+  if (!opts.skipCache) {
+    try {
+      const mem = _getMemory();
+      const cached = await mem.getCachedLeagueData(leagueKey, endpoint);
+      if (cached) {
+        return { league: league.name, endpoint, data: cached.data, formatted: cached.formatted, error: null, cached: true };
+      }
+    } catch { /* cache miss — proceed to API */ }
+  }
 
   const path    = ENDPOINTS[endpoint] || endpoint;
   const url     = `https://${league.domain}${path}`;
@@ -74,7 +94,14 @@ async function query(leagueKey, endpoint, opts = {}) {
     }
 
     const data = await res.json();
-    return { league: league.name, endpoint, data, error: null };
+
+    // Cache the result locally for next time (non-blocking)
+    try {
+      const formatted = formatResults(endpoint, [{ league: league.name, endpoint, data, error: null }]);
+      _getMemory().cacheLeagueData(leagueKey, endpoint, data, formatted).catch(() => {});
+    } catch { /* non-fatal */ }
+
+    return { league: league.name, endpoint, data, error: null, cached: false };
   } catch (err) {
     return { league: league.name, endpoint, data: null, error: err.message };
   }
@@ -185,14 +212,26 @@ function detectLeagueQuery(message) {
 
   // Patterns to detect league-related queries
   const patterns = [
+    // Events / seasons — broad matching
     { re: /(?:what|which|any|show|list|current|active|open|upcoming).*(?:events?|seasons?|tournaments?|register|registration|sign ?up)/i, type: 'events' },
+    { re: /\b(?:new|next|another|start|begin|when)\b.*\bseasons?\b/i, type: 'events' },
+    { re: /\bseasons?\b.*\b(?:new|next|start|begin|coming|drop|launch|open|when)\b/i, type: 'events' },
+    { re: /\b(?:is there|are there|will there be|gonna be|going to be)\b.*\b(?:season|event|tournament)/i, type: 'events' },
+    { re: /\b(?:sign ?up|register|join|enter|how (?:to|do i) (?:register|sign|join|enter))/i, type: 'events' },
+    // Standings / rankings
     { re: /(?:standings|rankings?|leaderboard|table|bracket)/i, type: 'standings' },
+    // Teams / players
     { re: /(?:top|best|leading|#1|number one).*(?:teams?|squads?)/i, type: 'top-teams' },
     { re: /(?:top|best|leading|mvp|#1).*(?:players?|gamers?)/i, type: 'top-players' },
+    // Games / scores
     { re: /(?:recent|latest|last).*(?:games?|matches?|results?|scores?)/i, type: 'recent-games' },
+    { re: /\b(?:schedule|when.*play|next.*game|game.*time)/i, type: 'recent-games' },
+    // Stats
     { re: /(?:stats|statistics|leaders|ppg|rpg|apg)/i, type: 'stats' },
+    // News
     { re: /(?:news|announcements?|updates?|reports?).*(?:league|match|game)/i, type: 'news' },
     { re: /(?:league|match|game).*(?:news|announcements?|updates?|reports?)/i, type: 'news' },
+    // Rules
     { re: /(?:rules|regulations|policies|code of conduct)/i, type: 'rules' },
   ];
 
