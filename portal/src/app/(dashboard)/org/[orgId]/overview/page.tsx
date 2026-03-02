@@ -743,7 +743,8 @@ export default function OverviewPage() {
       { label: 'Discord',   icon: Bot,          status: (sh.discord?.status as any) || (onlineCount > 0 ? 'up' : 'down'), detail: 'Ghost#6982' },
       { label: 'Database',  icon: Database,     status: (sh.database?.status as any) || 'checking',                       detail: 'Neon · pgvector', ping: sh.database?.ping },
       { label: 'Redis',     icon: MemoryStick,  status: (sh.redis?.status as any) || 'checking',                          detail: 'cache / queues', ping: sh.redis?.ping },
-      { label: 'Ollama',    icon: Cpu,          status: (sh.ollama?.status as any) || 'checking',                          detail: 'qwen2.5:14b',    ping: sh.ollama?.ping },
+      { label: 'Ollama',    icon: Cpu,          status: (sh.ollama?.status as any) || 'checking',                          detail: 'qwen2.5:14b + R1',    ping: sh.ollama?.ping },
+      { label: 'DeepSeek',  icon: Zap,          status: 'up',                                                                  detail: 'V3.2 + R1 API' },
     ];
     if (tailscale) {
       items.push({

@@ -20,6 +20,7 @@ const https   = require('https');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const mini      = require('./skills/openai-mini');
+const deepseek  = require('./skills/deepseek');
 const { trackUsage } = require('./skills/usage-tracker');
 const archivist = require('./archivist');
 const db        = require('./db');
@@ -69,8 +70,8 @@ function detectModel(type, depth, query = '') {
     return { model: 'gpt-4o-mini-search-preview', grok: false, openai: true, reason: 'real-time data query — OpenAI search with current date' };
   }
 
-  // Factual / competitive quick → gpt-4o-mini (fast, cheap)
-  return { model: 'gpt-4o-mini', grok: false, reason: 'factual/quick uses gpt-4o-mini' };
+  // Factual / competitive quick → DeepSeek V3.2 (fast, cheap, agent-optimized)
+  return { model: 'deepseek-chat', grok: false, deepseek: true, reason: 'factual/quick uses DeepSeek V3.2' };
 }
 
 // ── LLM callers ───────────────────────────────────────────────────────────────
@@ -303,8 +304,8 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
     };
   }
 
-  const { model, grok, openai, reason } = detectModel(type, depth, query);
-  const escalated = !grok && !openai && model !== 'gpt-4o-mini';
+  const { model, grok, openai, deepseek: isDeepseek, reason } = detectModel(type, depth, query);
+  const escalated = !grok && !openai && !isDeepseek && model !== 'gpt-4o-mini';
 
   const userMessage = [
     `Research query: ${query}`,
@@ -362,7 +363,28 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
     rawText     = await _claudeChat(userMessage, depth);
     actualModel = 'claude-sonnet-4-6';
 
-  // ── Path 4: gpt-4o-mini (fast default)
+  // ── Path 4: DeepSeek V3.2 (fast, cheap default) → gpt-4o-mini → Claude
+  } else if (isDeepseek) {
+    const dsRes = await deepseek.tryChat([
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user',   content: userMessage },
+    ], { agent: 'scout', action: 'research' });
+
+    if (!dsRes.escalate && dsRes.result?.message?.content) {
+      rawText     = dsRes.result.message.content;
+      actualModel = deepseek.MODEL;
+    } else {
+      appendLog('WARN', 'research', 'system', 'deepseek-failed',
+        `query="${query.slice(0, 50)}" err=${dsRes.reason} — falling back to gpt-4o-mini`);
+      const miniRes = await _miniChat([
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user',   content: userMessage },
+      ]);
+      rawText     = miniRes.escalate ? await _claudeChat(userMessage, depth) : miniRes.text;
+      actualModel = miniRes.escalate ? 'claude-sonnet-4-6' : mini.MODEL;
+    }
+
+  // ── Path 5: gpt-4o-mini (legacy fallback)
   } else {
     const miniRes = await _miniChat([
       { role: 'system', content: SYSTEM_PROMPT },

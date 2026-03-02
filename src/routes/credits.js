@@ -19,6 +19,7 @@ router.get('/status', async (req, res) => {
 
   const status = {
     ollama:    { active: false, error: null },
+    deepseek:  { active: false, error: null },
     openai:    { active: false, error: null },
     anthropic: { active: false, error: null },
     xai:       { active: false, error: null },
@@ -30,6 +31,22 @@ router.get('/status', async (req, res) => {
     status.ollama.active = r.ok;
     if (!r.ok) status.ollama.error = `HTTP ${r.status}`;
   } catch (e) { status.ollama.error = 'Offline'; }
+
+  // Check DeepSeek
+  if (process.env.DEEPSEEK_API_KEY) {
+    try {
+      const r = await fetch('https://api.deepseek.com/models', {
+        headers: { Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (r.ok) {
+        status.deepseek.active = true;
+      } else {
+        const body = await r.json().catch(() => ({}));
+        status.deepseek.error = body?.error?.message || `HTTP ${r.status}`;
+      }
+    } catch (e) { status.deepseek.error = e.message; }
+  } else { status.deepseek.error = 'No API key'; }
 
   // Check OpenAI
   if (process.env.OPENAI_API_KEY) {

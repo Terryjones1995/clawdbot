@@ -50,7 +50,12 @@ const PROVIDER_META: Record<string, {
   ollama: {
     name: 'Ollama', color: '#27AE60', gradient: 'from-emerald-500/20 to-emerald-900/5',
     icon: '~', tier: 'LOCAL',
-    models: ['qwen2.5:14b', 'nomic-embed-text'],
+    models: ['qwen2.5:14b', 'deepseek-r1:14b', 'nomic-embed-text'],
+  },
+  deepseek: {
+    name: 'DeepSeek', color: '#6366F1', gradient: 'from-indigo-500/20 to-indigo-900/5',
+    icon: 'D', tier: 'PAID',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
   },
   openai: {
     name: 'OpenAI', color: '#10B981', gradient: 'from-teal-500/20 to-teal-900/5',
@@ -69,7 +74,7 @@ const PROVIDER_META: Record<string, {
   },
 };
 
-const ALL_PROVIDERS = ['ollama', 'openai', 'anthropic', 'xai'];
+const ALL_PROVIDERS = ['ollama', 'deepseek', 'openai', 'anthropic', 'xai'];
 
 // ── Components ───────────────────────────────────────────────────────────────
 

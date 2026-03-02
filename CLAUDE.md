@@ -22,6 +22,8 @@ Never auto-commit. Never auto-push to remote.
 - **Discord**: discord.js, multi-guild aware (primary guild = DISCORD_GUILD_ID)
 - **Default AI**: Ollama + qwen2.5:14b (free, local — always try first)
 - **Real-time / web queries**: OpenAI gpt-4o-mini-search-preview
+- **Mid-tier (agent tasks / reasoning)**: DeepSeek V3.2 (deepseek-chat) + R1 (deepseek-reasoner) via API
+- **Local reasoning fallback**: deepseek-r1:14b via Ollama (free)
 - **Web / trend research**: Grok grok-4-1-fast-reasoning
 - **Deep synthesis / escalation**: Claude claude-sonnet-4-6
 - **Code repair (Forge)**: OpenAI gpt-5.3-codex via Responses API, fallback o4-mini
@@ -78,14 +80,16 @@ portal/                          — Next.js management portal
 ## Model Routing Rules (free-first, non-negotiable)
 
 1. **Default**: qwen2.5:14b via Ollama (free, local)
-2. **Real-time data** (weather, prices, news, scores): gpt-4o-mini-search-preview + today's date
-3. **Web / trend queries**: Grok grok-4-1-fast-reasoning
-4. **Deep synthesis / competitive analysis**: Claude claude-sonnet-4-6
-5. **ESCALATE flag**: Claude claude-sonnet-4-6
-6. **Code repair** (Forge only): gpt-5.3-codex → o4-mini fallback
-7. **Ollama unavailable**: fall back up the chain
+2. **Ollama unavailable / fallback**: DeepSeek V3.2 (deepseek-chat) — cheap, agent-optimized
+3. **Factual / competitive research**: DeepSeek V3.2 (deepseek-chat) — fast, cheap
+4. **Real-time data** (weather, prices, news, scores): gpt-4o-mini-search-preview + today's date
+5. **Web / trend queries**: Grok grok-4-1-fast-reasoning
+6. **Deep synthesis / competitive analysis**: Claude claude-sonnet-4-6
+7. **ESCALATE flag**: Claude claude-sonnet-4-6
+8. **Code repair** (Forge only): gpt-5.3-codex → o4-mini fallback
+9. **DeepSeek unavailable**: fall back to gpt-4o-mini → Claude
 
-Never route to a paid model if Ollama can handle it.
+Never route to a paid model if Ollama can handle it. DeepSeek is the preferred fallback before OpenAI/Claude.
 
 ## Permissions Model
 
@@ -149,6 +153,10 @@ JWT_SECRET=
 OLLAMA_HOST=http://localhost:11434
 OLLAMA_MODEL=qwen2.5:14b
 OLLAMA_EMBED_MODEL=nomic-embed-text
+OLLAMA_REASONING_MODEL=deepseek-r1:14b
+
+# DeepSeek
+DEEPSEEK_API_KEY=
 
 # Discord
 DISCORD_BOT_TOKEN=

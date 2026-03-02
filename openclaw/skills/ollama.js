@@ -30,9 +30,10 @@ const LOG_FILE = path.join(__dirname, '../../memory/run_log.md');
 
 class OllamaConnector {
   constructor() {
-    this.host       = process.env.OLLAMA_HOST       || 'http://localhost:11434';
-    this.model      = process.env.OLLAMA_MODEL      || 'qwen3:8b';
-    this.embedModel = process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
+    this.host           = process.env.OLLAMA_HOST           || 'http://localhost:11434';
+    this.model          = process.env.OLLAMA_MODEL          || 'qwen3:8b';
+    this.embedModel     = process.env.OLLAMA_EMBED_MODEL    || 'nomic-embed-text';
+    this.reasoningModel = process.env.OLLAMA_REASONING_MODEL || 'deepseek-r1:14b';
   }
 
   // ── Health ────────────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ class OllamaConnector {
     const normalize = (n) => n.includes(':') ? n : `${n}:latest`;
     const have = new Set(installed.map(normalize));
 
-    const required = [this.model, this.embedModel];
+    const required = [this.model, this.embedModel, this.reasoningModel];
     const missing  = required.filter(m => !have.has(normalize(m)));
 
     if (!missing.length) {

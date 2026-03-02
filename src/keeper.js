@@ -18,6 +18,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const ollama    = require('../openclaw/skills/ollama');
+const deepseek  = require('./skills/deepseek');
 const mini      = require('./skills/openai-mini');
 const memory    = require('./skills/memory');
 const learning  = require('./skills/learning');
@@ -234,7 +235,7 @@ async function chat(threadId, userMessage) {
     userMessage,
   );
 
-  // Primary: Ollama (free, local/Tailscale) → gpt-4o-mini fallback
+  // Routing: Ollama (free) → DeepSeek V3.2 (cheap) → gpt-4o-mini fallback
   const allMsgs = [{ role: 'system', content: systemPrompt }, ...messages];
   const { result: ollamaResult, escalate: ollamaEscalate, reason: ollamaReason } =
     await ollama.tryChat(allMsgs, { params: { num_ctx: 8192 } });
@@ -243,11 +244,18 @@ async function chat(threadId, userMessage) {
   if (!ollamaEscalate && ollamaResult?.message?.content) {
     reply = ollamaResult.message.content.trim();
   } else {
-    console.warn('[Keeper] Ollama failed, falling back to mini:', ollamaReason);
-    const { result: miniResult, escalate: miniEscalate } = await mini.tryChat(allMsgs);
-    reply = (!miniEscalate && miniResult?.message?.content)
-      ? miniResult.message.content.trim()
-      : "I'm having trouble connecting to my AI models right now. Please check the API keys.";
+    console.warn('[Keeper] Ollama failed, trying DeepSeek:', ollamaReason);
+    const { result: dsResult, escalate: dsEscalate, reason: dsReason } =
+      await deepseek.tryChat(allMsgs, { agent: 'keeper', action: 'chat' });
+    if (!dsEscalate && dsResult?.message?.content) {
+      reply = dsResult.message.content.trim();
+    } else {
+      console.warn('[Keeper] DeepSeek failed, falling back to mini:', dsReason);
+      const { result: miniResult, escalate: miniEscalate } = await mini.tryChat(allMsgs);
+      reply = (!miniEscalate && miniResult?.message?.content)
+        ? miniResult.message.content.trim()
+        : "I'm having trouble connecting to my AI models right now. Please check the API keys.";
+    }
   }
 
   thread.messages.push({

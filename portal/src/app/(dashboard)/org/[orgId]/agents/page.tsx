@@ -53,10 +53,10 @@ const AGENT_META: Record<string, {
   ghost: {
     name: 'Ghost', role: 'Terminal AI / CEO',
     desc: 'The primary AI interface. Ghost routes through Ollama (free, local) by default and escalates to paid models when needed. Persistent memory across sessions via Keeper + Archivist.',
-    model: 'Ollama qwen2.5:14b → Claude', reportsTo: null,
+    model: 'Ollama → DeepSeek → Claude', reportsTo: null,
     manages: ['switchboard', 'warden', 'scribe', 'archivist'],
     tags: ['CEO', 'Memory', 'Free-first', 'Terminal'],
-    details: ['Primary user-facing AI (portal terminal)', 'Default: Ollama qwen2.5:14b (free, local)', 'Escalation: Claude claude-sonnet-4-6 (paid)', 'Full conversation memory via Keeper threads', 'Long-term recall via Archivist (pgvector)'],
+    details: ['Primary user-facing AI (portal terminal)', 'Default: Ollama qwen2.5:14b (free, local)', 'Mid-tier: DeepSeek V3.2 (cheap, agent-optimized)', 'Escalation: Claude claude-sonnet-4-6 (paid)', 'Full conversation memory via Keeper threads'],
   },
   switchboard: {
     name: 'Switchboard', role: 'Router / Classifier',
@@ -89,9 +89,9 @@ const AGENT_META: Record<string, {
   scout: {
     name: 'Scout', role: 'Intelligence / Research',
     desc: 'Intelligence agent. Scout handles real-time web research, trend analysis, and competitive intelligence. Multi-model routing: Grok for trends, OpenAI for live data, Claude for deep synthesis.',
-    model: 'Grok / OpenAI Search / Claude', reportsTo: 'ghost',
+    model: 'DeepSeek / Grok / OpenAI / Claude', reportsTo: 'ghost',
     tags: ['Research', 'Web', 'Multi-model'],
-    details: ['Trend and competitive analysis via Grok grok-4-1-fast-reasoning', 'Live news and scores via gpt-4o-mini-search-preview', 'Deep synthesis escalation to Claude claude-sonnet-4-6', 'Stores research facts to Archivist (pgvector)'],
+    details: ['Factual/competitive queries via DeepSeek V3.2 (cheap)', 'Trend and competitive analysis via Grok grok-4-1-fast-reasoning', 'Live news and scores via gpt-4o-mini-search-preview', 'Deep synthesis escalation to Claude claude-sonnet-4-6', 'Stores research facts to Archivist (pgvector)'],
   },
   forge: {
     name: 'Forge', role: 'Dev / Auto-fix',
@@ -117,9 +117,9 @@ const AGENT_META: Record<string, {
   keeper: {
     name: 'Keeper', role: 'Conversation Memory',
     desc: 'Conversation persistence agent. Keeper manages per-thread conversation history in Neon DB with Redis write-through caching.',
-    model: 'Ollama qwen2.5:14b (summaries)', reportsTo: 'ghost',
+    model: 'Ollama → DeepSeek (fallback)', reportsTo: 'ghost',
     tags: ['Threads', 'Memory', 'Neon DB'],
-    details: ['Persists conversations to Neon PostgreSQL', 'Redis write-through cache (24h TTL)', 'System prompt builder with user profiles', 'Per-thread isolation (portal, discord, global)'],
+    details: ['Persists conversations to Neon PostgreSQL', 'Redis write-through cache (24h TTL)', 'Ollama → DeepSeek V3.2 → gpt-4o-mini fallback chain', 'Per-thread isolation (portal, discord, global)'],
   },
   sentinel: {
     name: 'Sentinel', role: 'Discord Connector',

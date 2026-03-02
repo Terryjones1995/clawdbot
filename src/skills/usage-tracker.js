@@ -26,7 +26,11 @@ const COST_MAP = {
   // xAI
   'grok-4-1-fast-reasoning':     [0.003,   0.015],
   'grok-3-fast-beta':            [0.003,   0.015],
+  // DeepSeek
+  'deepseek-chat':               [0.00028, 0.00042],
+  'deepseek-reasoner':           [0.00028, 0.00042],
   // Free
+  'deepseek-r1:14b':             [0, 0],
   'qwen2.5:14b':                 [0, 0],
   'qwen3:8b':                    [0, 0],
   'nomic-embed-text':            [0, 0],
