@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ScrollText, RefreshCw, Loader2, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { ScrollText, RefreshCw, Loader2, ChevronDown, ChevronUp, Search, User } from 'lucide-react';
 import { formatRelative } from '@/lib/utils';
+import Image from 'next/image';
 
 interface LogEntry {
   id:        string;
@@ -15,6 +16,12 @@ interface LogEntry {
   model?:    string;
   user_role?: string;
   note?:     string;
+}
+
+interface DiscordUser {
+  id:       string;
+  username: string | null;
+  avatar:   string | null;
 }
 
 const LEVEL_COLORS: Record<string, { color: string; bg: string }> = {
@@ -36,6 +43,40 @@ function LevelBadge({ level }: { level: string }) {
   );
 }
 
+/** Extract Discord user IDs from log notes */
+function extractUserIds(logs: LogEntry[]): string[] {
+  const ids = new Set<string>();
+  for (const log of logs) {
+    if (!log.note) continue;
+    const match = log.note.match(/user=(\d{17,20})/);
+    if (match) ids.add(match[1]);
+  }
+  return Array.from(ids);
+}
+
+/** Format note with resolved usernames */
+function formatNote(note: string, users: Record<string, DiscordUser>): { text: string; userId?: string } {
+  if (!note) return { text: '' };
+  const userMatch = note.match(/user=(\d{17,20})/);
+  const userId = userMatch?.[1];
+  const resolved = userId ? users[userId] : undefined;
+
+  let text = note;
+  // Replace raw user ID with username in display
+  if (resolved?.username && userId) {
+    text = text.replace(`user=${userId}`, `user=${resolved.username}`);
+  }
+  // Replace name=Tag#0000 with cleaner format
+  const nameMatch = text.match(/name=(\S+)/);
+  if (nameMatch && resolved?.username) {
+    text = text.replace(`name=${nameMatch[1]}`, '');
+  }
+  // Clean up double spaces
+  text = text.replace(/\s+/g, ' ').trim();
+
+  return { text, userId };
+}
+
 const AGENTS = ['All', 'Sentinel', 'Switchboard', 'Warden', 'Scout', 'Scribe', 'Forge', 'Lens', 'Courier', 'Archivist', 'Keeper'];
 const LEVELS = ['All', 'INFO', 'WARN', 'ERROR', 'BLOCK', 'APPROVE', 'DENY'];
 
@@ -46,6 +87,22 @@ export default function LogsPage() {
   const [search,   setSearch]   = useState('');
   const [agent,    setAgent]    = useState('All');
   const [level,    setLevel]    = useState('All');
+  const [users,    setUsers]    = useState<Record<string, DiscordUser>>({});
+  const resolvedIdsRef = useRef<Set<string>>(new Set());
+
+  const resolveUsers = useCallback(async (logList: LogEntry[]) => {
+    const ids = extractUserIds(logList).filter(id => !resolvedIdsRef.current.has(id));
+    if (!ids.length) return;
+
+    try {
+      const res = await fetch(`/api/discord/users?ids=${ids.join(',')}`);
+      const data = await res.json();
+      if (data.users) {
+        setUsers(prev => ({ ...prev, ...data.users }));
+        ids.forEach(id => resolvedIdsRef.current.add(id));
+      }
+    } catch { /* non-fatal */ }
+  }, []);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
@@ -55,10 +112,13 @@ export default function LogsPage() {
       if (agent !== 'All') params.set('agent', agent);
       const res  = await fetch(`/api/logs?${params}`);
       const data = await res.json();
-      if (data.logs) setLogs(data.logs);
+      if (data.logs) {
+        setLogs(data.logs);
+        resolveUsers(data.logs);
+      }
     } catch { /* Ghost offline */ }
     finally { setLoading(false); }
-  }, [level, agent]);
+  }, [level, agent, resolveUsers]);
 
   useEffect(() => {
     fetchLogs();
@@ -159,59 +219,95 @@ export default function LogsPage() {
       ) : (
         <div className="space-y-1.5">
           <AnimatePresence>
-            {filtered.map((log, i) => (
-              <motion.div key={log.id}
-                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(i * 0.02, 0.3) }}
-                className="glass rounded-xl overflow-hidden row-strip"
-                style={{ border: '1px solid rgba(255,255,255,0.05)', '--strip-color': (LEVEL_COLORS[log.level] ?? LEVEL_COLORS.INFO).color } as React.CSSProperties}>
+            {filtered.map((log, i) => {
+              const { text: formattedNote, userId } = formatNote(log.note || '', users);
+              const resolvedUser = userId ? users[userId] : undefined;
 
-                <div className="flex items-center gap-2 sm:gap-3 px-2.5 sm:px-4 py-2.5 sm:py-3 cursor-pointer"
-                     onClick={() => setExpanded(expanded === log.id ? null : log.id)}>
-                  <LevelBadge level={log.level} />
-                  <span className="text-[9px] sm:text-[10px] font-mono text-ghost-accent/70 shrink-0 w-12 sm:w-20 truncate">{log.agent}</span>
-                  <p className="flex-1 text-[10px] sm:text-xs text-white/80 truncate font-mono">
-                    {log.action}
-                    {log.outcome ? <span className="text-ghost-muted hidden sm:inline"> → {log.outcome}</span> : ''}
-                  </p>
-                  <span className="text-[9px] sm:text-[10px] text-ghost-muted font-mono shrink-0 hidden sm:inline">{formatRelative(log.ts)}</span>
-                  {expanded === log.id
-                    ? <ChevronUp size={12} className="text-ghost-muted shrink-0" />
-                    : <ChevronDown size={12} className="text-ghost-muted shrink-0" />}
-                </div>
+              return (
+                <motion.div key={log.id}
+                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(i * 0.02, 0.3) }}
+                  className="glass rounded-xl overflow-hidden row-strip"
+                  style={{ border: '1px solid rgba(255,255,255,0.05)', '--strip-color': (LEVEL_COLORS[log.level] ?? LEVEL_COLORS.INFO).color } as React.CSSProperties}>
 
-                <AnimatePresence>
-                  {expanded === log.id && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }} className="overflow-hidden"
-                      style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                      <div className="px-3 sm:px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-                        <div>
-                          <p className="text-[9px] text-ghost-muted uppercase mb-1">Model</p>
-                          <p className="text-xs font-mono text-white">{log.model || 'n/a'}</p>
-                        </div>
-                        <div>
-                          <p className="text-[9px] text-ghost-muted uppercase mb-1">Role</p>
-                          <p className="text-xs font-mono text-white">{log.user_role || 'n/a'}</p>
-                        </div>
-                        <div>
-                          <p className="text-[9px] text-ghost-muted uppercase mb-1">Timestamp</p>
-                          <p className="text-xs font-mono text-white">{new Date(log.ts).toLocaleString()}</p>
-                        </div>
-                        {log.note && (
-                          <div className="col-span-3">
-                            <p className="text-[9px] text-ghost-muted uppercase mb-1">Note</p>
-                            <pre className="text-[10px] text-ghost-muted/70 font-mono whitespace-pre-wrap bg-black/30 p-3 rounded-lg">
-                              {log.note}
-                            </pre>
+                  <div className="flex items-center gap-2 sm:gap-3 px-2.5 sm:px-4 py-2.5 sm:py-3 cursor-pointer"
+                       onClick={() => setExpanded(expanded === log.id ? null : log.id)}>
+                    <LevelBadge level={log.level} />
+
+                    {/* User avatar inline */}
+                    {resolvedUser?.avatar && (
+                      <Image src={resolvedUser.avatar} alt="" width={18} height={18}
+                             className="rounded-full shrink-0" unoptimized />
+                    )}
+
+                    <span className="text-[9px] sm:text-[10px] font-mono text-ghost-accent/70 shrink-0 w-12 sm:w-20 truncate">{log.agent}</span>
+                    <p className="flex-1 text-[10px] sm:text-xs text-white/80 truncate font-mono">
+                      {log.action}
+                      {resolvedUser?.username && (
+                        <span className="text-ghost-accent/50 ml-1">({resolvedUser.username})</span>
+                      )}
+                      {log.outcome ? <span className="text-ghost-muted hidden sm:inline"> → {log.outcome}</span> : ''}
+                    </p>
+                    <span className="text-[9px] sm:text-[10px] text-ghost-muted font-mono shrink-0 hidden sm:inline">{formatRelative(log.ts)}</span>
+                    {expanded === log.id
+                      ? <ChevronUp size={12} className="text-ghost-muted shrink-0" />
+                      : <ChevronDown size={12} className="text-ghost-muted shrink-0" />}
+                  </div>
+
+                  <AnimatePresence>
+                    {expanded === log.id && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }} className="overflow-hidden"
+                        style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                        <div className="px-3 sm:px-4 py-3 space-y-3">
+                          {/* User card */}
+                          {resolvedUser?.username && (
+                            <div className="flex items-center gap-3 p-2.5 rounded-lg"
+                                 style={{ background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.1)' }}>
+                              {resolvedUser.avatar ? (
+                                <Image src={resolvedUser.avatar} alt="" width={28} height={28}
+                                       className="rounded-full" unoptimized />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-ghost-accent/20 flex items-center justify-center">
+                                  <User size={14} className="text-ghost-accent/60" />
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-xs font-medium text-white">{resolvedUser.username}</p>
+                                <p className="text-[9px] font-mono text-ghost-muted/40">ID: {resolvedUser.id}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                            <div>
+                              <p className="text-[9px] text-ghost-muted uppercase mb-1">Model</p>
+                              <p className="text-xs font-mono text-white">{log.model || 'n/a'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-ghost-muted uppercase mb-1">Role</p>
+                              <p className="text-xs font-mono text-white">{log.user_role || 'n/a'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-ghost-muted uppercase mb-1">Timestamp</p>
+                              <p className="text-xs font-mono text-white">{new Date(log.ts).toLocaleString()}</p>
+                            </div>
+                            {formattedNote && (
+                              <div className="col-span-1 sm:col-span-3">
+                                <p className="text-[9px] text-ghost-muted uppercase mb-1">Note</p>
+                                <pre className="text-[10px] text-ghost-muted/70 font-mono whitespace-pre-wrap bg-black/30 p-3 rounded-lg">
+                                  {formattedNote}
+                                </pre>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         </div>
       )}

@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Briefcase, Clock, CheckCircle2, XCircle, Loader2,
   ChevronDown, ChevronUp, RefreshCw, ChevronLeft, ChevronRight,
-  AlertTriangle, Bot, Hash, FileText, Cpu, User,
+  Bot, Hash, FileText, Cpu, User,
 } from 'lucide-react';
 import { agentColor, agentEmoji, formatRelative } from '@/lib/utils';
+import Image from 'next/image';
 
 interface Job {
   id:      string;
@@ -19,6 +20,12 @@ interface Job {
   model:   string | null;
   ts:      string;
   note:    string;
+}
+
+interface DiscordUser {
+  id:       string;
+  username: string | null;
+  avatar:   string | null;
 }
 
 const PAGE_SIZE = 10;
@@ -33,7 +40,9 @@ const STATUS_CONFIG: Record<Job['status'], { color: string; icon: any; label: st
 const ACTION_LABELS: Record<string, string> = {
   'mention':         'Discord mention received',
   'mention-chat':    'Discord chat response',
+  'mention-admin':   'Discord admin command',
   'chat':            'Chat conversation',
+  'memory-hit':      'Memory recall',
   'answer':          'Knowledge answer',
   'research':        'Web research',
   'autofix-claude':  'Auto-fix (Claude CLI)',
@@ -46,6 +55,8 @@ const ACTION_LABELS: Record<string, string> = {
   'daily_summary':   'Daily summary',
   'health-check':    'Health check',
   'restart':         'Service restart',
+  'discord-admin':   'Discord admin action',
+  'reception':       'Reception routing',
 };
 
 const OUTCOME_LABELS: Record<string, string> = {
@@ -72,36 +83,61 @@ function formatOutcome(outcome: string): string {
   return OUTCOME_LABELS[outcome] || outcome.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+/** Extract all Discord user IDs from a list of job notes */
+function extractUserIds(jobs: Job[]): string[] {
+  const ids = new Set<string>();
+  for (const job of jobs) {
+    if (!job.note) continue;
+    const match = job.note.match(/user=(\d{17,20})/);
+    if (match) ids.add(match[1]);
+  }
+  return Array.from(ids);
+}
+
 /** Parse the raw note string into structured human-readable pieces */
-function parseNote(note: string, action: string): { summary: string; details: { label: string; value: string }[] } {
+function parseNote(
+  note: string,
+  action: string,
+  users: Record<string, DiscordUser>,
+): { summary: string; details: { label: string; value: string; avatar?: string }[]; userId?: string } {
   if (!note) return { summary: '', details: [] };
 
-  const details: { label: string; value: string }[] = [];
+  const details: { label: string; value: string; avatar?: string }[] = [];
 
   // Extract known key=value pairs
-  const userMatch = note.match(/user=(\d+)/);
+  const userMatch = note.match(/user=(\d{17,20})/);
+  const nameMatch = note.match(/name=(\S+)/);
   const channelMatch = note.match(/channel=(\d+)/);
   const textMatch = note.match(/text="([^"]*)"/);
   const fileMatch = note.match(/file=(\S+)/);
   const qMatch = note.match(/q="([^"]*)"/);
+  const cmdMatch = note.match(/cmd="([^"]*)"/);
+  const msgMatch = note.match(/msg="([^"]*)"/);
 
-  // Build a human summary
   let summary = '';
+  let userId: string | undefined;
 
-  if (action === 'mention' || action === 'mention-chat') {
+  if (action === 'mention' || action === 'mention-chat' || action === 'mention-admin') {
+    userId = userMatch?.[1];
+    const resolved = userId ? users[userId] : undefined;
+    const displayName = resolved?.username || nameMatch?.[1] || (userId ? `User ${userId.slice(-4)}` : undefined);
+
     if (textMatch) {
       summary = textMatch[1].length > 120 ? textMatch[1].slice(0, 120) + '...' : textMatch[1];
-    } else if (userMatch) {
-      summary = `Processed request from user`;
+    } else if (cmdMatch) {
+      summary = cmdMatch[1].length > 120 ? cmdMatch[1].slice(0, 120) + '...' : cmdMatch[1];
+    } else if (displayName) {
+      summary = `Processed request from ${displayName}`;
     }
-    if (userMatch) details.push({ label: 'User ID', value: userMatch[1] });
-    if (channelMatch) details.push({ label: 'Channel', value: channelMatch[1] });
+    if (displayName) {
+      details.push({ label: 'User', value: displayName, avatar: resolved?.avatar || undefined });
+    }
+    if (channelMatch) details.push({ label: 'Channel', value: `#${channelMatch[1]}` });
   } else if (action === 'autofix-claude' || action === 'autofix') {
     if (fileMatch) {
       summary = `Target: ${fileMatch[1]}`;
       details.push({ label: 'File', value: fileMatch[1] });
     }
-    // Extract timeout or error info after the pipe
     const pipeIdx = note.indexOf('|');
     if (pipeIdx > -1) {
       const afterPipe = note.slice(pipeIdx + 1).trim();
@@ -109,23 +145,53 @@ function parseNote(note: string, action: string): { summary: string; details: { 
         summary += afterPipe.length > 100 ? ` — ${afterPipe.slice(0, 100)}...` : ` — ${afterPipe}`;
       }
     }
+  } else if (action === 'chat' || action === 'memory-hit') {
+    if (msgMatch) {
+      summary = msgMatch[1].length > 120 ? msgMatch[1].slice(0, 120) + '...' : msgMatch[1];
+    } else if (qMatch) {
+      summary = qMatch[1];
+    } else {
+      summary = note.length > 160 ? note.slice(0, 160) + '...' : note;
+    }
   } else if (qMatch) {
     summary = qMatch[1];
   } else {
-    // Generic: just show the note cleaned up
     summary = note.length > 160 ? note.slice(0, 160) + '...' : note;
   }
 
-  return { summary, details };
+  return { summary, details, userId };
 }
 
 
-function JobRow({ job }: { job: Job }) {
+function UserAvatar({ user, size = 20 }: { user?: DiscordUser; size?: number }) {
+  if (!user?.avatar) {
+    return (
+      <div className="rounded-full bg-ghost-accent/20 flex items-center justify-center shrink-0"
+           style={{ width: size, height: size }}>
+        <User size={size * 0.55} className="text-ghost-accent/60" />
+      </div>
+    );
+  }
+  return (
+    <Image
+      src={user.avatar}
+      alt={user.username || 'Discord user'}
+      width={size}
+      height={size}
+      className="rounded-full shrink-0"
+      unoptimized
+    />
+  );
+}
+
+
+function JobRow({ job, users }: { job: Job; users: Record<string, DiscordUser> }) {
   const [expanded, setExpanded] = useState(false);
   const cfg  = STATUS_CONFIG[job.status] ?? STATUS_CONFIG.completed;
   const Icon = cfg.icon;
   const color = agentColor(job.agent);
-  const { summary, details } = parseNote(job.note, job.action);
+  const { summary, details, userId } = parseNote(job.note, job.action, users);
+  const resolvedUser = userId ? users[userId] : undefined;
 
   return (
     <motion.div
@@ -138,6 +204,11 @@ function JobRow({ job }: { job: Job }) {
            onClick={() => setExpanded(!expanded)}>
         <Icon size={14} style={{ color: cfg.color }} className={job.status === 'running' ? 'animate-spin' : ''} />
 
+        {/* User avatar (for mention actions) */}
+        {resolvedUser && (
+          <UserAvatar user={resolvedUser} size={22} />
+        )}
+
         {/* Agent badge */}
         <span className="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 hidden sm:flex items-center gap-1"
               style={{ color, background: `${color}12`, border: `1px solid ${color}20` }}>
@@ -149,6 +220,11 @@ function JobRow({ job }: { job: Job }) {
           <p className="text-[11px] sm:text-xs font-medium text-white truncate">
             <span className="sm:hidden text-ghost-muted/60">{job.agent} &middot; </span>
             {formatAction(job.action)}
+            {resolvedUser?.username && (
+              <span className="text-ghost-accent/70 ml-1.5 font-normal">
+                {resolvedUser.username}
+              </span>
+            )}
           </p>
           {summary && (
             <p className="text-[10px] text-ghost-muted/50 truncate mt-0.5">{summary}</p>
@@ -180,6 +256,18 @@ function JobRow({ job }: { job: Job }) {
             className="overflow-hidden"
           >
             <div className="p-3 sm:p-4 space-y-3">
+              {/* User card (if resolved) */}
+              {resolvedUser?.username && (
+                <div className="flex items-center gap-3 p-2.5 rounded-lg"
+                     style={{ background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.1)' }}>
+                  <UserAvatar user={resolvedUser} size={32} />
+                  <div>
+                    <p className="text-xs font-medium text-white">{resolvedUser.username}</p>
+                    <p className="text-[9px] font-mono text-ghost-muted/40">ID: {resolvedUser.id}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Detail grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <DetailCell icon={Hash} label="Job ID" value={`#${job.id}`} />
@@ -211,9 +299,12 @@ function JobRow({ job }: { job: Job }) {
 
               {/* Parsed note details */}
               {details.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-3">
                   {details.map(d => (
                     <div key={d.label} className="flex items-center gap-1.5">
+                      {d.avatar && (
+                        <Image src={d.avatar} alt="" width={14} height={14} className="rounded-full" unoptimized />
+                      )}
                       <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">{d.label}:</span>
                       <span className="text-[10px] font-mono text-ghost-muted/70">{d.value}</span>
                     </div>
@@ -262,6 +353,23 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [page,    setPage]    = useState(0);
   const [tab,     setTab]     = useState<Job['status'] | 'all'>('all');
+  const [users,   setUsers]   = useState<Record<string, DiscordUser>>({});
+  const resolvedIdsRef = useRef<Set<string>>(new Set());
+
+  // Resolve Discord user IDs → usernames + avatars
+  const resolveUsers = useCallback(async (jobList: Job[]) => {
+    const ids = extractUserIds(jobList).filter(id => !resolvedIdsRef.current.has(id));
+    if (!ids.length) return;
+
+    try {
+      const res = await fetch(`/api/discord/users?ids=${ids.join(',')}`);
+      const data = await res.json();
+      if (data.users) {
+        setUsers(prev => ({ ...prev, ...data.users }));
+        ids.forEach(id => resolvedIdsRef.current.add(id));
+      }
+    } catch { /* non-fatal */ }
+  }, []);
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -274,11 +382,14 @@ export default function JobsPage() {
 
       const res  = await fetch(`/api/jobs?${params.toString()}`);
       const data = await res.json();
-      if (data.jobs) setJobs(data.jobs);
+      if (data.jobs) {
+        setJobs(data.jobs);
+        resolveUsers(data.jobs);
+      }
       if (data.total != null) setTotal(data.total);
     } catch { /* Ghost offline */ }
     finally { setLoading(false); }
-  }, [page, tab]);
+  }, [page, tab, resolveUsers]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
@@ -348,7 +459,7 @@ export default function JobsPage() {
             <p className="text-xs text-ghost-muted/40">No jobs found</p>
           </div>
         ) : (
-          jobs.map(job => <JobRow key={job.id} job={job} />)
+          jobs.map(job => <JobRow key={job.id} job={job} users={users} />)
         )}
       </div>
 

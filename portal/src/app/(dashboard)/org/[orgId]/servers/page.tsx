@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Server, Users, Hash, Shield, RefreshCw, Crown, Mic, MessageSquare, UserPlus, Trash2, ShieldCheck } from 'lucide-react';
 import { formatRelative } from '@/lib/utils';
+import Image from 'next/image';
 
 interface DiscordChannel {
   id:   string;
@@ -33,6 +34,7 @@ interface BotAdmin {
   user_id:     string;
   username:    string | null;
   discord_tag: string | null;
+  avatar:      string | null;
   added_by:    string;
   added_at:    string;
 }
@@ -200,12 +202,17 @@ function BotAdminsPanel() {
                 key={admin.user_id}
                 className="flex items-center gap-3 py-2 px-3 rounded-lg group hover:bg-white/5 transition-all"
               >
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-purple-300"
-                  style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.25)' }}
-                >
-                  {(admin.discord_tag ?? admin.username ?? admin.user_id).charAt(0).toUpperCase()}
-                </div>
+                {admin.avatar ? (
+                  <Image src={admin.avatar} alt={admin.discord_tag || ''} width={28} height={28}
+                         className="rounded-full shrink-0" unoptimized />
+                ) : (
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-purple-300"
+                    style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.25)' }}
+                  >
+                    {(admin.discord_tag ?? admin.username ?? admin.user_id).charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-white font-medium truncate">
                     {admin.discord_tag ?? admin.username ?? admin.user_id}

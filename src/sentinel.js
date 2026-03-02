@@ -821,7 +821,7 @@ async function handleMentionMessage(event) {
   const text = stripped || 'hello';
 
   appendLog('INFO', 'mention', user_role, 'received',
-    `user=${user_id} channel=${channel_id} text="${text.slice(0, 60)}"`);
+    `user=${user_id} name=${event.user} channel=${channel_id} text="${text.slice(0, 60)}"`);
 
   // Instant reply check (greetings, acks)
   const quick = instantReply(text);
@@ -849,7 +849,7 @@ async function handleMentionMessage(event) {
     const reply = await _ollamaChatReply(text, channel_id, user_id);
     try { await thinkingMsg.delete(); } catch { /* non-fatal */ }
     await discord.sendMessage(channel_id, reply.slice(0, 2000));
-    appendLog('INFO', 'mention-chat', user_role, 'success', `user=${user_id}`);
+    appendLog('INFO', 'mention-chat', user_role, 'success', `user=${user_id} name=${event.user}`);
   } catch (err) {
     await discord.sendMessage(channel_id, `Something went wrong: ${err.message}`);
     appendLog('ERROR', 'mention-chat', user_role, 'failed', err.message, err);
@@ -889,8 +889,9 @@ async function start() {
       return;
     }
 
-    // @mention in any other channel — respond to everyone
-    const botMentioned = discord.client?.user && event.raw?.mentions?.has(discord.client.user);
+    // @mention in any other channel — only respond to direct @Ghost mentions
+    // (NOT @everyone, @here, or @role — only when the bot user is explicitly mentioned)
+    const botMentioned = discord.client?.user && event.raw?.mentions?.users?.has(discord.client.user.id);
     if (botMentioned && !inReception && !agentName && !inCommands && !isOwnerDM) {
       handleMentionMessage(event).catch(err => {
         console.error('[Sentinel] Mention error:', err.message);
