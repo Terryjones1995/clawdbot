@@ -10,6 +10,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   const category = req.query.category || null;
   const source   = req.query.source   || null;
+  const curated  = req.query.curated === 'true';
   const limit    = Math.min(parseInt(req.query.limit) || 200, 500);
 
   try {
@@ -24,6 +25,9 @@ router.get('/', async (req, res) => {
     if (source) {
       params.push(source);
       conditions.push(`source = $${params.length}`);
+    } else if (curated) {
+      // Only show manually added training + seeded knowledge (not auto-extracted noise)
+      conditions.push(`source IN ('training', 'seed-hof-knowledge', 'manual')`);
     }
 
     if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');

@@ -42,6 +42,7 @@ export default function TrainingPage() {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterSource, setFilterSource]     = useState('');
   const [searchText, setSearchText]         = useState('');
+  const [showAll, setShowAll]               = useState(false);
   const [showAdd, setShowAdd]               = useState(false);
   const [showBulk, setShowBulk]             = useState(false);
   const [expandedId, setExpandedId]         = useState<number | null>(null);
@@ -65,6 +66,7 @@ export default function TrainingPage() {
       const params = new URLSearchParams();
       if (filterCategory) params.set('category', filterCategory);
       if (filterSource)   params.set('source', filterSource);
+      if (!showAll && !filterSource) params.set('curated', 'true');
       const res = await fetch(`/api/training?${params.toString()}`);
       const data = await res.json();
       setEntries(data.entries || []);
@@ -72,7 +74,7 @@ export default function TrainingPage() {
       setSources(data.sources || []);
     } catch { /* offline */ }
     setLoading(false);
-  }, [filterCategory, filterSource]);
+  }, [filterCategory, filterSource, showAll]);
 
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
 
@@ -310,6 +312,11 @@ export default function TrainingPage() {
           <option value="">All Sources</option>
           {sources.map(s => <option key={s} value={s}>{SOURCE_ICONS[s] || s} ({sourceCount[s] || 0})</option>)}
         </select>
+        <button onClick={() => setShowAll(!showAll)}
+          className={`px-3 py-1.5 rounded-lg text-[10px] font-medium transition-all ${showAll ? 'text-amber-400 bg-amber-500/10' : 'text-ghost-muted bg-white/5 hover:text-white'}`}
+          style={{ border: showAll ? '1px solid rgba(245,158,11,0.2)' : '1px solid rgba(255,255,255,0.1)' }}>
+          {showAll ? 'Showing All (incl. auto-extracted)' : 'Curated Only'}
+        </button>
       </div>
 
       {/* Knowledge entries */}
