@@ -23,16 +23,24 @@ const { trackUsage } = require('./usage-tracker');
 
 const MODEL          = 'deepseek-chat';      // V3.2 — fast, agent-optimized
 const REASONER_MODEL = 'deepseek-reasoner';  // R1 — hard reasoning
-const client = new OpenAI({
-  apiKey:  process.env.DEEPSEEK_API_KEY,
-  baseURL: 'https://api.deepseek.com',
-});
+
+// Lazy client — avoid crashing at module load if env var isn't set yet
+let _client;
+function getClient() {
+  if (!_client) {
+    _client = new OpenAI({
+      apiKey:  process.env.DEEPSEEK_API_KEY || 'missing',
+      baseURL: 'https://api.deepseek.com',
+    });
+  }
+  return _client;
+}
 
 /**
  * Simple chat — returns reply string.
  */
 async function chat(systemPrompt, userMessage, maxTokens = 4096) {
-  const res = await client.chat.completions.create({
+  const res = await getClient().chat.completions.create({
     model:      MODEL,
     max_tokens: maxTokens,
     messages: [
@@ -61,7 +69,7 @@ async function tryChat(messages, options = {}) {
   try {
     // R1 (reasoner) doesn't support system role — merge into user message
     const finalMessages = isReasoner ? _mergeSystemRole(messages) : messages;
-    const res = await client.chat.completions.create({
+    const res = await getClient().chat.completions.create({
       model:      usedModel,
       max_tokens: options.maxTokens || 4096,
       messages:   finalMessages,
