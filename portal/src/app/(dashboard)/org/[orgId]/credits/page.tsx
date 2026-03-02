@@ -7,6 +7,7 @@ import {
   CheckCircle2, XCircle, AlertTriangle, Clock, Cpu,
   ChevronDown, ChevronUp, Bot, Hash, ArrowUpRight,
   Server, DollarSign, Gauge, BarChart3,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { formatCost, formatRelative, agentColor, agentEmoji } from '@/lib/utils';
 
@@ -205,60 +206,80 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-function UsageRow({ u }: { u: UsageEntry }) {
+function UsageRow({ u, index }: { u: UsageEntry; index: number }) {
   const [expanded, setExpanded] = useState(false);
   const meta = PROVIDER_META[u.provider] ?? { name: u.provider, color: '#64748B', icon: '?', tier: '?' };
   const aColor = agentColor(u.agent || 'ghost');
   const totalTokens = (u.input_tokens || 0) + (u.output_tokens || 0);
 
+  const ACTION_LABELS: Record<string, string> = {
+    chat: 'Chat Completion', embed: 'Embedding', 'api-call': 'API Call',
+    search: 'Web Search', vision: 'Vision', code: 'Code Generation',
+  };
+
   return (
-    <div className="glass rounded-xl overflow-hidden"
-         style={{ border: `1px solid ${meta.color}10`, borderLeft: `3px solid ${meta.color}50` }}>
-      <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer hover:bg-white/[0.015] transition-colors"
+    <motion.div
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.03 }}
+      className="group rounded-xl overflow-hidden transition-all"
+      style={{
+        background: expanded ? 'rgba(255,255,255,0.02)' : 'transparent',
+        borderLeft: `3px solid ${meta.color}50`,
+      }}
+    >
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
            onClick={() => setExpanded(!expanded)}>
         {/* Provider icon */}
-        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black shrink-0"
-             style={{ background: `${meta.color}12`, color: meta.color }}>
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0"
+             style={{ background: `${meta.color}12`, color: meta.color, border: `1px solid ${meta.color}20` }}>
           {meta.icon}
         </div>
 
-        {/* Agent badge */}
-        {u.agent && (
-          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded shrink-0 hidden sm:flex items-center gap-1"
-                style={{ color: aColor, background: `${aColor}12`, border: `1px solid ${aColor}20` }}>
-            {agentEmoji(u.agent)} {u.agent}
+        {/* Model + action */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] sm:text-xs font-semibold text-white truncate">{u.model}</p>
+            {u.agent && (
+              <span className="text-[8px] font-mono px-1.5 py-0.5 rounded shrink-0 hidden sm:inline-flex items-center gap-1"
+                    style={{ color: aColor, background: `${aColor}10`, border: `1px solid ${aColor}15` }}>
+                {agentEmoji(u.agent)} {u.agent}
+              </span>
+            )}
+          </div>
+          <p className="text-[9px] text-ghost-muted/40 font-mono flex items-center gap-1.5">
+            <span className="sm:hidden">{u.agent || 'system'} · </span>
+            {ACTION_LABELS[u.action] || u.action || 'api-call'}
+            <span className="text-ghost-muted/20">·</span>
+            <span>{formatRelative(u.ts)}</span>
+          </p>
+        </div>
+
+        {/* Tokens pill */}
+        <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md shrink-0"
+             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <ArrowUpRight size={8} className="text-ghost-muted/30" />
+          <span className="text-[9px] font-mono text-ghost-muted/50">{formatTokens(totalTokens)}</span>
+        </div>
+
+        {/* Latency */}
+        {u.latency_ms > 0 && (
+          <span className="text-[9px] font-mono text-ghost-muted/30 hidden lg:inline shrink-0">
+            {u.latency_ms < 1000 ? `${u.latency_ms}ms` : `${(u.latency_ms / 1000).toFixed(1)}s`}
           </span>
         )}
 
-        {/* Model + action */}
-        <div className="flex-1 min-w-0">
-          <p className="text-[11px] sm:text-xs font-medium text-white truncate">
-            <span className="sm:hidden text-ghost-muted/60">{u.agent || 'system'} &middot; </span>
-            {u.model}
-          </p>
-          <p className="text-[9px] text-ghost-muted/40 font-mono truncate">{u.action || 'api-call'}</p>
-        </div>
-
-        {/* Tokens */}
-        <span className="text-[9px] font-mono text-ghost-muted/50 hidden sm:inline shrink-0">
-          {totalTokens.toLocaleString()} tok
+        {/* Cost badge */}
+        <span className={`text-[10px] font-mono font-bold shrink-0 min-w-14 text-right px-2 py-0.5 rounded-md ${
+          u.cost === 0
+            ? 'text-emerald-400 bg-emerald-400/8'
+            : 'text-white'
+        }`}
+              style={u.cost > 0 ? { color: meta.color, background: `${meta.color}10` } : undefined}>
+          {u.cost === 0 ? 'FREE' : formatCost(u.cost)}
         </span>
 
-        {/* Cost */}
-        <span className="text-[10px] font-mono font-bold shrink-0 min-w-12 text-right"
-              style={{ color: u.cost === 0 ? '#10B981' : meta.color }}>
-          {u.cost === 0 ? 'free' : formatCost(u.cost)}
-        </span>
-
-        {/* Time */}
-        <span className="text-[9px] font-mono text-ghost-muted/30 hidden sm:inline shrink-0 min-w-14 text-right">
-          {formatRelative(u.ts)}
-        </span>
-
-        {expanded
-          ? <ChevronUp size={12} className="text-ghost-muted/30 shrink-0" />
-          : <ChevronDown size={12} className="text-ghost-muted/30 shrink-0" />
-        }
+        <ChevronDown size={12} className={`text-ghost-muted/20 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
       </div>
 
       <AnimatePresence>
@@ -267,35 +288,36 @@ function UsageRow({ u }: { u: UsageEntry }) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
             className="overflow-hidden"
           >
-            <div className="p-3 sm:p-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <DetailCell icon={Hash} label="Call ID" value={`#${u.id}`} />
-                <DetailCell icon={Cpu} label="Model" value={u.model} valueColor={meta.color} />
-                <DetailCell icon={Bot} label="Agent" value={u.agent || 'system'} valueColor={aColor} />
-                <DetailCell icon={Clock} label="Latency" value={u.latency_ms ? `${u.latency_ms}ms` : 'n/a'} />
-              </div>
-              <div className="flex items-center gap-3 flex-wrap mt-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Input:</span>
-                  <span className="text-[10px] font-mono text-ghost-muted/70">{(u.input_tokens || 0).toLocaleString()} tokens</span>
+            <div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1">
+              <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                  <DetailCell icon={Hash} label="Call ID" value={`#${u.id}`} />
+                  <DetailCell icon={Cpu} label="Model" value={u.model} valueColor={meta.color} />
+                  <DetailCell icon={Bot} label="Agent" value={u.agent || 'system'} valueColor={aColor} />
+                  <DetailCell icon={Clock} label="Latency" value={u.latency_ms ? `${u.latency_ms}ms` : 'n/a'} />
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Output:</span>
-                  <span className="text-[10px] font-mono text-ghost-muted/70">{(u.output_tokens || 0).toLocaleString()} tokens</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Provider:</span>
-                  <span className="text-[10px] font-mono" style={{ color: meta.color }}>{meta.name}</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <p className="text-[8px] text-ghost-muted/30 uppercase tracking-wider mb-0.5">Input</p>
+                    <p className="text-[10px] sm:text-xs font-mono text-ghost-muted/70">{(u.input_tokens || 0).toLocaleString()} <span className="text-ghost-muted/30">tok</span></p>
+                  </div>
+                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <p className="text-[8px] text-ghost-muted/30 uppercase tracking-wider mb-0.5">Output</p>
+                    <p className="text-[10px] sm:text-xs font-mono text-ghost-muted/70">{(u.output_tokens || 0).toLocaleString()} <span className="text-ghost-muted/30">tok</span></p>
+                  </div>
+                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    <p className="text-[8px] text-ghost-muted/30 uppercase tracking-wider mb-0.5">Provider</p>
+                    <p className="text-[10px] sm:text-xs font-mono" style={{ color: meta.color }}>{meta.name}</p>
+                  </div>
                 </div>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
 
@@ -323,6 +345,8 @@ export default function CreditsPage() {
   const [keyStatus, setKeyStatus] = useState<Record<string, KeyStatus>>({});
   const [loading, setLoading]     = useState(true);
   const [statusLoading, setStatusLoading] = useState(true);
+  const [callsPage, setCallsPage] = useState(1);
+  const CALLS_PER_PAGE = 10;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -349,7 +373,7 @@ export default function CreditsPage() {
     setStatusLoading(false);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(); setCallsPage(1); }, [fetchData]);
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const totalSpent = providers.reduce((s, p) => s + (parseFloat(p.total_cost) || 0), 0);
@@ -498,32 +522,134 @@ export default function CreditsPage() {
       )}
 
       {/* Recent API calls */}
-      <div className="mb-2">
-        <div className="flex items-center gap-2 mb-3">
-          <Activity size={14} className="text-ghost-accent" />
-          <h3 className="text-sm font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Recent API Calls</h3>
-          <span className="text-[9px] font-mono text-ghost-muted/40 px-1.5 py-0.5 rounded-full"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-            {calls.length}
-          </span>
-        </div>
+      {(() => {
+        const totalPages = Math.max(1, Math.ceil(calls.length / CALLS_PER_PAGE));
+        const pagedCalls = calls.slice((callsPage - 1) * CALLS_PER_PAGE, callsPage * CALLS_PER_PAGE);
+        const startIdx = (callsPage - 1) * CALLS_PER_PAGE + 1;
+        const endIdx = Math.min(callsPage * CALLS_PER_PAGE, calls.length);
 
-        <div className="space-y-1.5">
-          {loading ? (
-            <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-              <RefreshCw size={18} className="text-ghost-accent animate-spin mx-auto mb-2" />
-              <p className="text-xs text-ghost-muted">Loading usage data...</p>
+        return (
+          <div className="mb-2">
+            {/* Section header */}
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Activity size={14} className="text-ghost-accent" />
+                <h3 className="text-sm font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Recent API Calls</h3>
+                <span className="text-[9px] font-mono text-ghost-muted/40 px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  {calls.length} total
+                </span>
+              </div>
+              {calls.length > CALLS_PER_PAGE && (
+                <p className="text-[9px] font-mono text-ghost-muted/30">
+                  {startIdx}–{endIdx} of {calls.length}
+                </p>
+              )}
             </div>
-          ) : calls.length === 0 ? (
-            <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-              <Activity size={24} className="text-ghost-muted/20 mx-auto mb-2" />
-              <p className="text-xs text-ghost-muted/40">No API calls recorded for this period</p>
+
+            {/* Table header row */}
+            {!loading && calls.length > 0 && (
+              <div className="hidden sm:flex items-center gap-2 sm:gap-3 px-4 py-2 mb-1 text-[8px] uppercase tracking-wider font-mono text-ghost-muted/25">
+                <span className="w-7 shrink-0" />
+                <span className="flex-1">Model / Action</span>
+                <span className="w-20 text-center">Tokens</span>
+                <span className="w-14 hidden lg:inline">Speed</span>
+                <span className="w-14 text-right">Cost</span>
+                <span className="w-3 shrink-0" />
+              </div>
+            )}
+
+            {/* Calls list */}
+            <div className="glass rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              {loading ? (
+                <div className="p-12 text-center">
+                  <RefreshCw size={18} className="text-ghost-accent animate-spin mx-auto mb-2" />
+                  <p className="text-xs text-ghost-muted">Loading usage data...</p>
+                </div>
+              ) : calls.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Activity size={24} className="text-ghost-muted/20 mx-auto mb-2" />
+                  <p className="text-xs text-ghost-muted/40">No API calls recorded for this period</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/[0.03]">
+                  {pagedCalls.map((u, i) => <UsageRow key={u.id} u={u} index={i} />)}
+                </div>
+              )}
             </div>
-          ) : (
-            calls.map(u => <UsageRow key={u.id} u={u} />)
-          )}
-        </div>
-      </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-3 gap-2">
+                <p className="text-[9px] font-mono text-ghost-muted/25">
+                  Page {callsPage} of {totalPages}
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCallsPage(1)}
+                    disabled={callsPage === 1}
+                    className="px-2 py-1 rounded-md text-[9px] font-mono text-ghost-muted/40 hover:text-white hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                    style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                  >
+                    First
+                  </button>
+                  <button
+                    onClick={() => setCallsPage(p => Math.max(1, p - 1))}
+                    disabled={callsPage === 1}
+                    className="w-7 h-7 flex items-center justify-center rounded-md text-ghost-muted/40 hover:text-white hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                    style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                  >
+                    <ChevronLeft size={12} />
+                  </button>
+                  {/* Page number pills */}
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let page: number;
+                    if (totalPages <= 5) {
+                      page = i + 1;
+                    } else if (callsPage <= 3) {
+                      page = i + 1;
+                    } else if (callsPage >= totalPages - 2) {
+                      page = totalPages - 4 + i;
+                    } else {
+                      page = callsPage - 2 + i;
+                    }
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCallsPage(page)}
+                        className={`w-7 h-7 flex items-center justify-center rounded-md text-[10px] font-mono transition-all ${
+                          callsPage === page
+                            ? 'text-ghost-accent bg-ghost-accent/15 font-bold'
+                            : 'text-ghost-muted/40 hover:text-white hover:bg-white/5'
+                        }`}
+                        style={{ border: callsPage === page ? '1px solid rgba(0,212,255,0.2)' : '1px solid rgba(255,255,255,0.06)' }}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCallsPage(p => Math.min(totalPages, p + 1))}
+                    disabled={callsPage === totalPages}
+                    className="w-7 h-7 flex items-center justify-center rounded-md text-ghost-muted/40 hover:text-white hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                    style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                  >
+                    <ChevronRight size={12} />
+                  </button>
+                  <button
+                    onClick={() => setCallsPage(totalPages)}
+                    disabled={callsPage === totalPages}
+                    className="px-2 py-1 rounded-md text-[9px] font-mono text-ghost-muted/40 hover:text-white hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                    style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                  >
+                    Last
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Free-first footer */}
       <div className="mt-4 glass rounded-xl p-3 flex items-start sm:items-center gap-2 sm:gap-3"
