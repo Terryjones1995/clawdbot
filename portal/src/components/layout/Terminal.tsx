@@ -127,7 +127,7 @@ export function Terminal() {
       const working = Object.values(agents).filter(a => a.status === 'working').length;
       pushTerminalLine({
         type:    'output',
-        content: `SYSTEM STATUS:\n  WS: ${wsConnected ? '✓ connected' : '✗ disconnected'}\n  Agents online: ${online}/12\n  Agents working: ${working}\n  Gateway: ${process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:18789'}`,
+        content: `SYSTEM STATUS:\n  WS: ${wsConnected ? '✓ connected' : '✗ disconnected'}\n  Agents online: ${online}/12\n  Agents working: ${working}\n  Gateway: ${process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:18790'}`,
       });
       return;
     }

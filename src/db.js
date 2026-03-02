@@ -273,6 +273,30 @@ async function initSchema() {
   await query(`CREATE INDEX IF NOT EXISTS tickets_status_idx ON tickets (status)`);
   await query(`CREATE INDEX IF NOT EXISTS tickets_guild_idx  ON tickets (guild_id)`);
 
+  // ── Admin Directives ──
+  await query(`
+    CREATE TABLE IF NOT EXISTS admin_directives (
+      id            BIGSERIAL PRIMARY KEY,
+      guild_id      TEXT NOT NULL,
+      admin_id      TEXT NOT NULL,
+      admin_name    TEXT,
+      type          TEXT NOT NULL DEFAULT 'auto-action',
+      trigger_type  TEXT,
+      trigger_value TEXT,
+      action        TEXT,
+      action_params JSONB DEFAULT '{}',
+      description   TEXT NOT NULL,
+      active        BOOLEAN NOT NULL DEFAULT true,
+      priority      INT NOT NULL DEFAULT 0,
+      hit_count     INT NOT NULL DEFAULT 0,
+      last_hit_at   TIMESTAMPTZ,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS admin_directives_guild_idx ON admin_directives (guild_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS admin_directives_active_idx ON admin_directives (active) WHERE active = true`);
+
   console.log('[DB] Schema ready');
 }
 
@@ -907,6 +931,62 @@ async function getOpenTickets() {
   return rows;
 }
 
+// ── Admin Directive helpers ──────────────────────────────────────────────────
+
+async function getDirectives(guildId, { active = true } = {}) {
+  const { rows } = await query(
+    `SELECT * FROM admin_directives WHERE guild_id = $1 AND active = $2 ORDER BY priority DESC, created_at DESC`,
+    [guildId, active],
+  );
+  return rows;
+}
+
+async function getDirectivesByAdmin(guildId, adminId) {
+  const { rows } = await query(
+    `SELECT * FROM admin_directives WHERE guild_id = $1 AND admin_id = $2 ORDER BY created_at DESC`,
+    [guildId, adminId],
+  );
+  return rows;
+}
+
+async function createDirective({ guildId, adminId, adminName, type = 'auto-action', triggerType, triggerValue, action, actionParams = {}, description, priority = 0 }) {
+  const { rows } = await query(
+    `INSERT INTO admin_directives (guild_id, admin_id, admin_name, type, trigger_type, trigger_value, action, action_params, description, priority)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [guildId, adminId, adminName, type, triggerType, triggerValue, action, JSON.stringify(actionParams), description, priority],
+  );
+  return rows[0];
+}
+
+async function updateDirective(id, updates) {
+  const sets = [];
+  const params = [id];
+  for (const [key, val] of Object.entries(updates)) {
+    if (['active', 'trigger_value', 'action', 'action_params', 'description', 'priority'].includes(key)) {
+      params.push(key === 'action_params' ? JSON.stringify(val) : val);
+      sets.push(`${key} = $${params.length}`);
+    }
+  }
+  if (!sets.length) return null;
+  sets.push('updated_at = NOW()');
+  const { rows } = await query(
+    `UPDATE admin_directives SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, params,
+  );
+  return rows[0] ?? null;
+}
+
+async function deleteDirective(id) {
+  const { rowCount } = await query('DELETE FROM admin_directives WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+async function bumpDirectiveHit(id) {
+  await query(
+    'UPDATE admin_directives SET hit_count = hit_count + 1, last_hit_at = NOW() WHERE id = $1',
+    [id],
+  ).catch(() => {});
+}
+
 module.exports = {
   pool, query, initSchema, logEntry, events,
   getThread, upsertThread, listThreads,
@@ -921,4 +1001,5 @@ module.exports = {
   getAgentStats,
   touchFacts, pruneStaleMemory, archiveOldThreads, pruneOldLogs, getMemoryStats,
   upsertTicket, getTicket, closeTicket, getUnanalyzedTickets, markTicketAnalyzed, getOpenTickets,
+  getDirectives, getDirectivesByAdmin, createDirective, updateDirective, deleteDirective, bumpDirectiveHit,
 };

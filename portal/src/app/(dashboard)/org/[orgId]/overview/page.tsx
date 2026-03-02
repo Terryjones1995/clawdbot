@@ -738,7 +738,7 @@ export default function OverviewPage() {
     const items: Array<{
       label: string; icon: any; status: 'up' | 'down' | 'checking'; detail: string; ping?: number;
     }> = [
-      { label: 'Gateway',   icon: Server,      status: gatewayStatus,                                                    detail: 'port 18789',     ping: gatewayPing },
+      { label: 'Gateway',   icon: Server,      status: gatewayStatus,                                                    detail: 'port 18790',     ping: gatewayPing },
       { label: 'WebSocket', icon: Wifi,         status: wsConnected ? 'up' : 'down',                                     detail: 'live feed' },
       { label: 'Discord',   icon: Bot,          status: (sh.discord?.status as any) || (onlineCount > 0 ? 'up' : 'down'), detail: 'Ghost#6982' },
       { label: 'Database',  icon: Database,     status: (sh.database?.status as any) || 'checking',                       detail: 'Neon · pgvector', ping: sh.database?.ping },

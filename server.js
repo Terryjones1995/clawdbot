@@ -27,11 +27,16 @@ const trainingRoutes  = require('./src/routes/training');
 const receptionRoutes = require('./src/routes/reception');
 const feedbackRoutes  = require('./src/routes/feedback');
 const discordRoutes   = require('./src/routes/discord');
-const helmRoutes      = require('./src/routes/helm');
-const forgeAgent      = require('./src/forge');
-const requireAuth     = require('./src/middleware/requireAuth');
-const sentinel        = require('./src/sentinel');
-const scribe          = require('./src/scribe');
+const helmRoutes        = require('./src/routes/helm');
+const directivesApi     = require('./src/routes/directives-api');
+const ticketsApi        = require('./src/routes/tickets-api');
+const leagueDataApi     = require('./src/routes/league-data-api');
+const visionApi         = require('./src/routes/vision-api');
+const memorySearchApi   = require('./src/routes/memory-search');
+const adminActionsApi   = require('./src/routes/admin-actions');
+const forgeAgent        = require('./src/forge');
+const requireAuth       = require('./src/middleware/requireAuth');
+const scribe            = require('./src/scribe');
 const heartbeat       = require('./src/heartbeat');
 const registry        = require('./src/agentRegistry');
 const db              = require('./src/db');
@@ -41,7 +46,7 @@ const ollama          = require('./openclaw/skills/ollama');
 
 const app    = express();
 const server = http.createServer(app);
-const PORT   = process.env.OPENCLAW_PORT || 18789;
+const PORT   = process.env.GHOST_API_PORT || 18790;
 
 // Ensure logs/ dir exists for PM2 log files
 fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
@@ -82,9 +87,12 @@ app.get('/api/health', async (req, res) => {
     const olr = await fetch(`${process.env.OLLAMA_HOST || 'http://localhost:11434'}/api/tags`);
     checks.ollama = { status: olr.ok ? 'up' : 'down', ping: Date.now() - t0 };
   } catch { checks.ollama = { status: 'down' }; }
-  // Discord
-  const sent = registry.get('sentinel');
-  checks.discord = { status: sent?.status === 'online' || sent?.status === 'working' ? 'up' : 'down' };
+  // Discord (via OpenClaw gateway on port 18789)
+  try {
+    const t0 = Date.now();
+    const ocr = await fetch('http://localhost:18789/health');
+    checks.discord = { status: ocr.ok ? 'up' : 'down', ping: Date.now() - t0, via: 'openclaw' };
+  } catch { checks.discord = { status: 'down', via: 'openclaw' }; }
 
   res.json(checks);
 });
@@ -143,21 +151,13 @@ app.use('/api/settings',      PORTAL_BYPASS, settingsRoutes);
 app.use('/api/lessons',       PORTAL_BYPASS, lessonsRoutes);
 app.use('/api/training',      PORTAL_BYPASS, trainingRoutes);
 
-// ── Memory management routes ──
-app.get('/api/memory/stats', PORTAL_BYPASS, async (req, res) => {
-  try {
-    const memory = require('./src/skills/memory');
-    const stats = await memory.getMemoryStats();
-    res.json({ ok: true, stats });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.post('/api/memory/prune', PORTAL_BYPASS, async (req, res) => {
-  try {
-    const memory = require('./src/skills/memory');
-    const results = await memory.pruneMemory();
-    res.json({ ok: true, results });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
+// ── OpenClaw skill API routes (called by OpenClaw skills via HTTP) ──────────
+app.use('/api/directives',    PORTAL_BYPASS, directivesApi);
+app.use('/api/tickets',       PORTAL_BYPASS, ticketsApi);
+app.use('/api/league',        PORTAL_BYPASS, leagueDataApi);
+app.use('/api/vision',        PORTAL_BYPASS, visionApi);
+app.use('/api/memory',        PORTAL_BYPASS, memorySearchApi);
+app.use('/api/admin',         PORTAL_BYPASS, adminActionsApi);
 
 app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
   try {
@@ -306,7 +306,7 @@ db.events.on('forge:progress', (msg) => _broadcast(msg));
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
-  console.log(`OpenClaw gateway running on http://localhost:${PORT}`);
+  console.log(`Ghost API running on http://localhost:${PORT}`);
   db.initSchema()
     .then(() => botAdmins.load())
     .then(() => registry.loadRecentEvents())
@@ -316,6 +316,7 @@ server.listen(PORT, () => {
   );
   ollama.ensureModels().catch(err => console.error('[Ollama] Model check failed:', err.message));
   heartbeat.start();
-  sentinel.start().catch(err => console.error('[Sentinel] Failed to start:', err.message));
+  // Discord connection now handled by OpenClaw gateway (port 18789)
+  // sentinel.start() removed — OpenClaw owns the Discord bot token
   scribe.start();
 });

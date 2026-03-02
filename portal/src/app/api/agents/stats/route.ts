@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
-const OPENCLAW_API = process.env.OPENCLAW_API_URL ?? 'http://localhost:18789';
+const OPENCLAW_API = process.env.OPENCLAW_API_URL ?? 'http://localhost:18790';
 
 export async function GET() {
   const session = await getServerSession(authOptions);

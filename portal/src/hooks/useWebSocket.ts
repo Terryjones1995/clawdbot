@@ -8,7 +8,7 @@ export function useGhostWebSocket() {
   const { upsertAgent, setAgentStatus, pushAgentEvent, pushMessage, setWsConnected, setForgeProgress, setTerminalOpen, pushTerminalLine } = useGhostStore();
 
   useEffect(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:18789';
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:18790';
 
     function connect() {
       try {

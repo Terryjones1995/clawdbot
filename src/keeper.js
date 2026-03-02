@@ -1,32 +1,30 @@
 'use strict';
 
 /**
- * Keeper — Persistent conversation memory agent
+ * Keeper — Persistent conversation memory agent (portal-only)
  *
  * Stores conversation threads in Neon PostgreSQL (conversations table).
- * Auto-migrates existing local JSON files on first access.
- * Uses gpt-4o-mini for rolling summarisation (cheap).
- * Augments context with Pinecone long-term memories via Archivist.
+ * Used by /api/reception (portal terminal) and /api/chat endpoints.
+ * Discord conversations now handled by OpenClaw gateway (port 18789).
  *
  * Thread ID conventions:
  *   portal-{userId}               — Portal terminal conversation
- *   discord:{channelId}:{userId}  — Discord channel conversation
+ *   discord:{channelId}:{userId}  — Legacy Discord threads (read-only)
  *   global:{topic}                — Global topic thread
  */
 
 const fs   = require('fs');
 const path = require('path');
 
-const ollama    = require('../openclaw/skills/ollama');
-const deepseek  = require('./skills/deepseek');
-const mini      = require('./skills/openai-mini');
-const memory    = require('./skills/memory');
-const learning  = require('./skills/learning');
-const leagueApi = require('./skills/league-api');
-const registry  = require('./agentRegistry');
-const archivist = require('./archivist');
-const db        = require('./db');
-const redis     = require('./redis');
+const ollama     = require('../openclaw/skills/ollama');
+const memory     = require('./skills/memory');
+const learning   = require('./skills/learning');
+const leagueApi  = require('./skills/league-api');
+const directives = require('./skills/directives');
+const registry   = require('./agentRegistry');
+const archivist  = require('./archivist');
+const db         = require('./db');
+const redis      = require('./redis');
 
 // Legacy JSON path — only used for one-time migration of existing threads
 const CONVERSATIONS_DIR = path.join(__dirname, '../memory/conversations');
@@ -47,6 +45,7 @@ function _ghostSystem() {
   return `You are Ghost, an elite AI operations assistant. You remember everything — use your conversation history.
 You manage a multi-agent Discord system and operations platform.
 Sharp, direct, 1-3 sentences unless detail is genuinely needed.
+ALWAYS respond in English. Never respond in any other language.
 Current date: ${today}.
 
 ## Ticket handling:
@@ -136,7 +135,7 @@ async function _maybeSummarise(thread) {
 
   const summarisePrompt = `Summarise the following conversation fragment into a compact paragraph. Preserve key facts, decisions made, topics discussed, and any personal details shared. Plain text only, no bullet points.\n\n${text}`;
 
-  const { result } = await mini.tryChat([
+  const { result } = await ollama.tryChat([
     { role: 'system', content: 'You are a concise summariser. Output plain text only.' },
     { role: 'user',   content: summarisePrompt },
   ]);
@@ -155,14 +154,15 @@ async function _maybeSummarise(thread) {
 
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function _buildSystemPrompt(thread, archiveContext = null, factsContext = null, profileContext = null, lessonsContext = null, leagueContext = null) {
+function _buildSystemPrompt(thread, archiveContext = null, factsContext = null, profileContext = null, lessonsContext = null, leagueContext = null, directivesContext = null) {
   let sys = _ghostSystem();
-  if (leagueContext)   sys += `\n\n## Current league context:\n${leagueContext}`;
-  if (lessonsContext)  sys += `\n\n## Lessons learned (avoid repeating these mistakes):\n${lessonsContext}`;
-  if (profileContext)  sys += `\n\n## User profile:\n${profileContext}`;
-  if (factsContext)    sys += `\n\n## What Ghost knows (persistent memory):\n${factsContext}`;
-  if (archiveContext)  sys += `\n\n## Relevant long-term memories:\n${archiveContext}`;
-  if (thread.summary)  sys += `\n\n## Conversation summary so far:\n${thread.summary}`;
+  if (leagueContext)      sys += `\n\n## Current league context:\n${leagueContext}`;
+  if (directivesContext)  sys += `\n\n## Admin-defined behaviors (follow these):\n${directivesContext}`;
+  if (lessonsContext)     sys += `\n\n## Lessons learned (avoid repeating these mistakes):\n${lessonsContext}`;
+  if (profileContext)     sys += `\n\n## User profile:\n${profileContext}`;
+  if (factsContext)       sys += `\n\n## What Ghost knows (persistent memory):\n${factsContext}`;
+  if (archiveContext)     sys += `\n\n## Relevant long-term memories:\n${archiveContext}`;
+  if (thread.summary)     sys += `\n\n## Conversation summary so far:\n${thread.summary}`;
   return sys;
 }
 
@@ -283,33 +283,26 @@ async function chat(threadId, userMessage, { guildId = null } = {}) {
     } catch { /* non-fatal — proceed without live data */ }
   }
 
-  const systemPrompt = _buildSystemPrompt(thread, archiveContext, factsContext, profileContext, lessonsContext, leagueContext);
+  // Fetch admin-defined behavioral directives for this guild
+  const directivesContext = await directives.getBehavioralDirectives(guildId).catch(() => null);
+
+  const systemPrompt = _buildSystemPrompt(thread, archiveContext, factsContext, profileContext, lessonsContext, leagueContext, directivesContext);
   const messages     = _buildMessages(
     { ...thread, messages: thread.messages.slice(0, -1) },
     userMessage,
   );
 
-  // Routing: Ollama (free) → DeepSeek V3.2 (cheap) → gpt-4o-mini fallback
+  // Chat via Ollama (OpenClaw handles Discord model routing; Keeper is portal-only)
   const allMsgs = [{ role: 'system', content: systemPrompt }, ...messages];
-  const { result: ollamaResult, escalate: ollamaEscalate, reason: ollamaReason } =
+  const { result: ollamaResult, escalate, reason } =
     await ollama.tryChat(allMsgs, { params: { num_ctx: 8192 } });
 
   let reply;
-  if (!ollamaEscalate && ollamaResult?.message?.content) {
+  if (!escalate && ollamaResult?.message?.content) {
     reply = ollamaResult.message.content.trim();
   } else {
-    console.warn('[Keeper] Ollama failed, trying DeepSeek:', ollamaReason);
-    const { result: dsResult, escalate: dsEscalate, reason: dsReason } =
-      await deepseek.tryChat(allMsgs, { agent: 'keeper', action: 'chat' });
-    if (!dsEscalate && dsResult?.message?.content) {
-      reply = dsResult.message.content.trim();
-    } else {
-      console.warn('[Keeper] DeepSeek failed, falling back to mini:', dsReason);
-      const { result: miniResult, escalate: miniEscalate } = await mini.tryChat(allMsgs);
-      reply = (!miniEscalate && miniResult?.message?.content)
-        ? miniResult.message.content.trim()
-        : "I'm having trouble connecting to my AI models right now. Please check the API keys.";
-    }
+    console.warn('[Keeper] Ollama unavailable:', reason);
+    reply = "I'm having trouble connecting to my AI models right now. Please try again in a moment.";
   }
 
   thread.messages.push({

@@ -35,6 +35,7 @@ const registry        = require('./agentRegistry');
 const helm            = require('./helm');
 const leagueApi       = require('./skills/league-api');
 const memory          = require('./skills/memory');
+const directives      = require('./skills/directives');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -93,55 +94,158 @@ const CLOSE_TICKET_RE = /\b(close\s*(this\s*)?ticket|close\s*this|close\s*it|mar
 // Detect ticket bot close messages (content or embeds)
 const TICKET_BOT_CLOSE_RE = /ticket.*(?:has been |was )?closed|closing this ticket|channel will be deleted/i;
 
-/**
- * Handle bot messages in ticket channels — detect when a ticket bot closes a ticket
- * so Ghost can save the transcript before the channel is deleted.
- */
-async function _handleTicketBotClose(event) {
-  if (!event.guild_id) return;
-  // Only process if this is a known ticket channel
-  if (!_knownTicketChannels.has(event.channel_id)) return;
+// Track channels where Ghost has already auto-greeted (prevents double-greet)
+const _ticketGreeted = new Set();
 
-  // Check message content and embeds for close patterns
+/**
+ * Handle ALL bot messages in ticket channels:
+ * 1. Detect ticket CREATION (new channel, bot's first embed) → Ghost auto-greets
+ * 2. Detect ticket CLOSE (ticket bot says "closed") → save transcript
+ */
+async function _handleTicketBotMessage(event) {
+  const isTicket = await _detectAndTrackTicket(event.channel_id, event.guild_id);
+  if (!isTicket) return;
+
+  // ── Close detection ──
   const content   = event.content || '';
   const embedText = (event.raw?.embeds || [])
     .map(e => `${e.title || ''} ${e.description || ''}`)
     .join(' ');
   const allText = `${content} ${embedText}`;
-  if (!TICKET_BOT_CLOSE_RE.test(allText)) return;
 
-  // Ticket bot is closing this ticket — save transcript immediately
-  console.log(`[Sentinel] Ticket bot closing channel ${event.channel_id} — saving transcript`);
-  try {
-    const history = await discord.fetchChannelHistory(event.channel_id, 100);
-    const info    = await discord.getChannelInfo(event.channel_id);
-    const opener  = history.find(m => !m.isBot);
+  if (TICKET_BOT_CLOSE_RE.test(allText)) {
+    console.log(`[Sentinel] Ticket bot closing channel ${event.channel_id} — saving transcript`);
+    try {
+      const history = await discord.fetchChannelHistory(event.channel_id, 100);
+      const info    = await discord.getChannelInfo(event.channel_id);
+      const opener  = history.find(m => !m.isBot);
 
-    const summaryLines = history.map(m => {
-      const parts = [];
-      for (const embed of (m.embeds || [])) {
-        if (embed.title || embed.description) {
-          parts.push(`[EMBED] ${embed.title || ''}: ${(embed.description || '').slice(0, 200)}`);
+      const summaryLines = history.map(m => {
+        const parts = [];
+        for (const embed of (m.embeds || [])) {
+          if (embed.title || embed.description) {
+            parts.push(`[EMBED] ${embed.title || ''}: ${(embed.description || '').slice(0, 200)}`);
+          }
         }
+        if (m.content) parts.push(`${m.author}: ${m.content}`);
+        return parts.join('\n');
+      }).filter(Boolean);
+      const summaryText = summaryLines.join('\n').slice(0, 3000);
+
+      await db.upsertTicket({
+        channelId:    event.channel_id,
+        guildId:      event.guild_id,
+        openerId:     opener?.authorId,
+        openerName:   opener?.author,
+        categoryName: info?.parentName,
+        transcript:   history,
+      });
+      await db.closeTicket(event.channel_id, history, summaryText);
+
+      appendLog('INFO', 'ticket-bot-closed', 'BOT', 'success',
+        `channel=${event.channel_id} guild=${event.guild_id} messages=${history.length}`);
+    } catch { /* channel may already be gone — non-fatal */ }
+    return;
+  }
+
+  // ── New ticket detection — auto-greet ──
+  // If we haven't greeted this channel yet and the bot just posted an embed (ticket creation),
+  // Ghost reads the context and responds automatically.
+  if (_ticketGreeted.has(event.channel_id)) return;
+  const hasEmbed = (event.raw?.embeds || []).length > 0;
+  if (!hasEmbed && !content) return;
+
+  _ticketGreeted.add(event.channel_id);
+  console.log(`[Sentinel] New ticket detected in ${event.channel_id} — auto-responding`);
+
+  // Small delay to let the ticket bot finish posting all its embeds/messages
+  await new Promise(r => setTimeout(r, 2000));
+
+  try {
+    const ticketContext = await _buildTicketContext(event.channel_id);
+    if (!ticketContext) return;
+
+    let liveLeagueData = '';
+    const leagueKey = event.guild_id ? leagueApi.leagueFromGuild(event.guild_id) : null;
+    if (leagueKey) {
+      try {
+        const [eventsResult, statsResult] = await Promise.all([
+          leagueApi.query(leagueKey, 'events'),
+          leagueApi.query(leagueKey, 'home-stats'),
+        ]);
+        if (eventsResult.data || eventsResult.formatted) {
+          const eventsFormatted = eventsResult.formatted || leagueApi.formatResults('events', [eventsResult]);
+          const label = eventsResult.cached ? 'CACHED LEAGUE DATA' : 'LIVE LEAGUE DATA';
+          liveLeagueData += `\n\n[${label} — Events]:\n` + eventsFormatted;
+        }
+        if (statsResult.data || statsResult.formatted) {
+          if (statsResult.formatted) liveLeagueData += `\n\n[LEAGUE STATS]: ${statsResult.formatted}`;
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    // Direct LLM call for auto-greet (bypass Keeper memory to avoid injecting irrelevant facts)
+    const ollamaSkill = require('../openclaw/skills/ollama');
+    const deepseekSkill = require('./skills/deepseek');
+    const leagueInfo = leagueKey ? leagueApi.LEAGUES[leagueKey] : null;
+    const leagueLine = leagueInfo
+      ? `You are responding in the **${leagueInfo.name}** Discord. Website: https://${leagueInfo.domain}. Key pages: /events (registration), /standings, /stats.`
+      : '';
+
+    const greetSystem = `You are Ghost, an AI assistant in a Discord support ticket channel. A user just opened a new ticket. Read the ticket context carefully and respond helpfully.
+ALWAYS respond in English. Be professional and helpful. 1-3 sentences.
+${leagueLine}
+
+CRITICAL RULES:
+- Address the user by the name shown in "Created by" in the ticket embed. Do NOT use names from other embeds or player intel.
+- ONLY state facts that appear in the ticket context or live league data below. NEVER guess or make up information.
+- If live league data shows current events/seasons, mention them specifically with details (names, dates, fees).
+- If there are NO events listed, say there are no current events and suggest checking the website for updates.
+- Include the website URL when relevant.`;
+
+    const greetMessages = [
+      { role: 'system', content: greetSystem },
+      { role: 'user', content: `[TICKET CONTEXT]\n${ticketContext}${liveLeagueData}\n\n[Greet the user and help with their issue]` },
+    ];
+
+    let reply;
+    const { result: oRes, escalate: oEsc } = await ollamaSkill.tryChat(greetMessages, { params: { num_ctx: 8192 } });
+    if (!oEsc && oRes?.message?.content) {
+      reply = oRes.message.content.trim();
+    } else {
+      const { result: dRes, escalate: dEsc } = await deepseekSkill.tryChat(greetMessages, { agent: 'sentinel', action: 'ticket-greet' });
+      if (!dEsc && dRes?.message?.content) {
+        reply = dRes.message.content.trim();
+      } else {
+        const { result: mRes } = await mini.tryChat(greetMessages);
+        reply = mRes?.message?.content?.trim() || "Hi! I'm Ghost — I'll take a look at your ticket. An admin will follow up if needed.";
       }
-      if (m.content) parts.push(`${m.author}: ${m.content}`);
-      return parts.join('\n');
-    }).filter(Boolean);
-    const summaryText = summaryLines.join('\n').slice(0, 3000);
+    }
+    await discord.sendMessage(event.channel_id, reply.slice(0, 2000));
 
-    await db.upsertTicket({
-      channelId:    event.channel_id,
-      guildId:      event.guild_id,
-      openerId:     opener?.authorId,
-      openerName:   opener?.author,
-      categoryName: info?.parentName,
-      transcript:   history,
-    });
-    await db.closeTicket(event.channel_id, history, summaryText);
+    // Register in DB
+    db.upsertTicket({ channelId: event.channel_id, guildId: event.guild_id }).catch(() => {});
+    appendLog('INFO', 'ticket-auto-greet', 'BOT', 'success',
+      `channel=${event.channel_id} guild=${event.guild_id}`);
+  } catch (err) {
+    console.error('[Sentinel] Ticket auto-greet failed:', err.message);
+    appendLog('ERROR', 'ticket-auto-greet', 'BOT', 'failed', err.message, err);
+  }
+}
 
-    appendLog('INFO', 'ticket-bot-closed', 'BOT', 'success',
-      `channel=${event.channel_id} guild=${event.guild_id} messages=${history.length}`);
-  } catch { /* channel may already be gone — non-fatal */ }
+/**
+ * Auto-respond to user messages in ticket channels (no @mention required).
+ * Ghost is always active in tickets.
+ */
+async function _handleTicketAutoResponse(event) {
+  const isTicket = await _detectAndTrackTicket(event.channel_id, event.guild_id);
+  if (!isTicket) return;
+
+  // Treat like a mention — route through the full ticket handling path
+  handleMentionMessage(event).catch(err => {
+    console.error('[Sentinel] Ticket auto-response error:', err.message);
+    appendLog('ERROR', 'ticket-auto-response', event.user_role, 'failed', err.message, err);
+  });
 }
 
 // ── Logging ───────────────────────────────────────────────────────────────────
@@ -715,7 +819,7 @@ async function _ollamaChatReply(message, channelId, userId, guildId = null) {
     console.error('[Sentinel] Keeper error, falling back:', err.message);
     // Emergency fallback: gpt-4o-mini stateless
     const { result, escalate } = await mini.tryChat([
-      { role: 'system', content: 'You are Ghost, a chill AI assistant in Discord. Be brief and natural.' },
+      { role: 'system', content: 'You are Ghost, a chill AI assistant in Discord. Be brief and natural. ALWAYS respond in English.' },
       { role: 'user',   content: message },
     ]);
     return (escalate || !result?.message?.content) ? 'hey. what\'s up?' : result.message.content.trim();
@@ -930,6 +1034,32 @@ async function _buildTicketContext(channelId) {
   const history = await discord.fetchChannelHistory(channelId, 50);
   if (!history.length) return null;
 
+  // Collect image URLs from history for vision analysis
+  const imageUrls = [];
+  for (const msg of history) {
+    const images = (msg.attachments || []).filter(a => a.contentType?.startsWith('image/'));
+    for (const img of images) {
+      imageUrls.push({ url: img.url, author: msg.author });
+    }
+  }
+
+  // Run vision on ALL images from the ticket history
+  let visionContext = '';
+  if (imageUrls.length > 0) {
+    try {
+      const userContent = [
+        { type: 'text', text: 'Describe each image in detail. Include all text, numbers, scores, stats, team names, player names, and any other relevant information you can read. Be thorough — this is evidence in a support ticket.' },
+        ...imageUrls.map(img => ({ type: 'image_url', image_url: { url: img.url, detail: 'high' } })),
+      ];
+      const desc = await _openaiVisionRequest([{ role: 'user', content: userContent }]);
+      if (desc) {
+        visionContext = `\n\n[IMAGE ANALYSIS — ${imageUrls.length} screenshot(s) from ticket]:\n${desc}`;
+      }
+    } catch (err) {
+      console.warn('[Sentinel] Ticket history vision failed:', err.message);
+    }
+  }
+
   const lines = [];
   for (const msg of history) {
     // Include embeds (ticket bots put the issue description in embeds)
@@ -942,13 +1072,18 @@ async function _buildTicketContext(channelId) {
         }
       }
     }
+    // Note image attachments in text context
+    const images = (msg.attachments || []).filter(a => a.contentType?.startsWith('image/'));
+    if (images.length > 0) {
+      lines.push(`[${msg.author} posted ${images.length} image(s)]`);
+    }
     // Include text messages
     if (msg.content) {
       lines.push(`${msg.isBot ? '[BOT] ' : ''}${msg.author}: ${msg.content}`);
     }
   }
 
-  return lines.join('\n').slice(0, 4000); // cap context size
+  return lines.join('\n').slice(0, 4000) + visionContext; // append vision after text context
 }
 
 async function handleMentionMessage(event) {
@@ -993,6 +1128,47 @@ async function handleMentionMessage(event) {
     } catch (err) {
       await discord.sendMessage(channel_id, `❌ Command failed: ${err.message}`);
       appendLog('ERROR', 'mention-admin', user_role, 'failed', err.message, err);
+    }
+    return;
+  }
+
+  // ── Admin directive management — "list my rules", "remove rule #5" ──
+  if ((user_role === 'OWNER' || user_role === 'ADMIN') && directives.isManageMessage(text)) {
+    try {
+      const reply = await directives.handleManageCommand(text, user_id, user_role, event.guild_id);
+      await discord.sendMessage(channel_id, reply);
+      appendLog('INFO', 'directive-manage', user_role, 'success', `user=${user_id}`);
+    } catch (err) {
+      await discord.sendMessage(channel_id, `Failed to manage rules: ${err.message}`);
+      appendLog('ERROR', 'directive-manage', user_role, 'failed', err.message, err);
+    }
+    return;
+  }
+
+  // ── Admin teaching — "when someone says X, do Y" ──
+  if ((user_role === 'OWNER' || user_role === 'ADMIN') && directives.isTeachingMessage(text)) {
+    try {
+      await discord.sendMessage(channel_id, '*Learning new rule…*');
+      const extracted = await directives.extractDirective(text);
+      if (extracted) {
+        const rule = await directives.storeDirective({
+          guildId:   event.guild_id,
+          adminId:   user_id,
+          adminName: event.user,
+          extracted,
+        });
+        await discord.sendMessage(channel_id,
+          `Got it. Rule **#${rule.id}** saved:\n> ${extracted.description}\n` +
+          `Trigger: \`${extracted.trigger_type}\` → \`${extracted.trigger_value || 'behavioral'}\`\n` +
+          `Action: **${extracted.action || 'behavioral'}**`);
+        appendLog('INFO', 'directive-teach', user_role, 'success',
+          `rule=${rule.id} action=${extracted.action} trigger=${extracted.trigger_value}`);
+      } else {
+        await discord.sendMessage(channel_id, "I couldn't parse that into a clear rule. Try something like: *when someone says X, warn them*");
+      }
+    } catch (err) {
+      await discord.sendMessage(channel_id, `Failed to learn rule: ${err.message}`);
+      appendLog('ERROR', 'directive-teach', user_role, 'failed', err.message, err);
     }
     return;
   }
@@ -1062,6 +1238,27 @@ async function handleMentionMessage(event) {
       isTicket ? '*Ghost is reading the ticket…*' : '*Thinking…*');
 
     let messageForKeeper = text;
+
+    // Vision support — analyze image attachments via gpt-4o
+    if (isTicket) {
+      const imageAttachments = [...(raw?.attachments?.values() || [])]
+        .filter(a => a.contentType?.startsWith('image/'));
+      if (imageAttachments.length > 0) {
+        try {
+          const userContent = [
+            { type: 'text', text: text || 'Describe this image in detail. What issue or context does it show?' },
+            ...imageAttachments.map(a => ({ type: 'image_url', image_url: { url: a.url, detail: 'auto' } })),
+          ];
+          const visionDesc = await _openaiVisionRequest([{ role: 'user', content: userContent }]);
+          if (visionDesc) {
+            messageForKeeper = `[IMAGE ANALYSIS]: ${visionDesc}\n\n${text || '(user sent an image)'}`;
+          }
+        } catch (err) {
+          console.warn('[Sentinel] Ticket vision failed:', err.message);
+        }
+      }
+    }
+
     if (isTicket) {
       const ticketContext = await _buildTicketContext(channel_id);
       let liveLeagueData = '';
@@ -1094,7 +1291,7 @@ async function handleMentionMessage(event) {
       }
 
       if (ticketContext) {
-        messageForKeeper = `[TICKET CHANNEL — Full conversation below]\n\n${ticketContext}${liveLeagueData}\n\n[User just asked Ghost]: ${text || 'Help with this ticket'}`;
+        messageForKeeper = `[TICKET CHANNEL — Full conversation below. IMPORTANT: Only use names and facts from this ticket context. Do not mix in information about other users from your memory.]\n\n${ticketContext}${liveLeagueData}\n\n[User just asked Ghost]: ${text || 'Help with this ticket'}`;
       }
       appendLog('INFO', 'mention-ticket', user_role, 'received',
         `channel=${channel_id} league=${leagueKey || 'none'} contextLen=${ticketContext?.length || 0}`);
@@ -1140,9 +1337,11 @@ async function start() {
   discord.onMessage((event) => {
     heartbeat.pulse();
 
-    // ── Bot messages — only handle ticket bot close detection ──
+    // ── Bot messages — ticket bot detection (close + new ticket) ──
     if (event.is_bot) {
-      _handleTicketBotClose(event).catch(() => {});
+      if (event.guild_id) {
+        _handleTicketBotMessage(event).catch(() => {});
+      }
       return;
     }
 
@@ -1156,9 +1355,14 @@ async function start() {
       );
     }
 
-    // ── Passive ticket channel tracking — detect and register in DB ──
-    if (event.guild_id) {
-      _detectAndTrackTicket(event.channel_id, event.guild_id).catch(() => {});
+    // ── Admin directive auto-actions — fast regex check on MEMBER messages ──
+    if (event.user_role === 'MEMBER' && event.guild_id) {
+      const hasAttachments = event.raw?.attachments?.size > 0;
+      directives.checkMessage(event.guild_id, event.channel_id, null, event.content, hasAttachments)
+        .then(matched => {
+          if (matched) directives.executeAction(matched, event).catch(() => {});
+        })
+        .catch(() => {});
     }
 
     const agentMap      = getAgentChannelMap();
@@ -1195,6 +1399,23 @@ async function start() {
         appendLog('ERROR', 'mention-handler', event.user_role, 'failed', err.message, err);
       });
       return;
+    }
+
+    // ── Ticket channel auto-response — Ghost handles all messages without @mention ──
+    // Check synchronously first (known channels), then async for newly seen channels
+    if (!inReception && !agentName && !inCommands && !isOwnerDM && !botMentioned && event.guild_id) {
+      if (_knownTicketChannels.has(event.channel_id)) {
+        // Definitely a ticket — handle and stop
+        handleMentionMessage(event).catch(err => {
+          console.error('[Sentinel] Ticket auto-response error:', err.message);
+        });
+        return;
+      }
+      // Not yet checked — async detect, handle if ticket
+      if (!_ticketChannelChecked.has(event.channel_id)) {
+        _handleTicketAutoResponse(event).catch(() => {});
+        // Fall through — if it turns out to be a ticket, _handleTicketAutoResponse handles it
+      }
     }
 
     // Active conversation follow-up — user replied to Ghost without @mentioning again

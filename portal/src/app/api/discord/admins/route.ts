@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
-const OPENCLAW_API = process.env.OPENCLAW_API_URL ?? 'http://localhost:18789';
+const OPENCLAW_API = process.env.OPENCLAW_API_URL ?? 'http://localhost:18790';
 
 function headers(): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };

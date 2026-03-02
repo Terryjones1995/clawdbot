@@ -26,8 +26,8 @@ router.get('/', async (req, res) => {
       params.push(source);
       conditions.push(`source = $${params.length}`);
     } else if (curated) {
-      // Only show manually added training + seeded knowledge (not auto-extracted noise)
-      conditions.push(`source IN ('training', 'seed-hof-knowledge', 'manual')`);
+      // Show manually added + conversation-taught + admin-observed knowledge
+      conditions.push(`source IN ('training', 'seed-hof-knowledge', 'manual', 'conversation', 'correction', 'admin-observation')`);
     }
 
     if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');

@@ -78,5 +78,34 @@ module.exports = {
         IDLE_SHUTDOWN_MINUTES: '120',
       },
     },
+    {
+      name:   'openclaw',
+      script: './openclaw-start.sh',
+      interpreter: '/bin/bash',
+
+      // ── Restart behaviour ───────────────────────────────────────────────────
+      autorestart:              true,
+      restart_delay:            5000,
+      exp_backoff_restart_delay: 100,
+      max_restarts:             10,
+
+      // ── Memory guard ────────────────────────────────────────────────────────
+      max_memory_restart: '512M',
+
+      // ── Scheduled daily restart ─────────────────────────────────────────────
+      cron_restart: '0 4 * * *',
+
+      // ── Logs ────────────────────────────────────────────────────────────────
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      error_file:      './logs/openclaw-error.log',
+      out_file:        './logs/openclaw-out.log',
+      merge_logs:      true,
+
+      // ── Environment ─────────────────────────────────────────────────────────
+      env: {
+        NODE_ENV:       'production',
+        OPENCLAW_HOME:  '/root',
+      },
+    },
   ],
 };

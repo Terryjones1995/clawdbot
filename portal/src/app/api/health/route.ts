@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const OPENCLAW_API = process.env.OPENCLAW_API_URL ?? 'http://localhost:18789';
+const OPENCLAW_API = process.env.OPENCLAW_API_URL ?? 'http://localhost:18790';
 const SECRET       = process.env.PORTAL_SECRET ?? '';
 
 export async function GET() {

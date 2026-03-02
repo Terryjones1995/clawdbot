@@ -211,7 +211,7 @@ export default function SettingsPage() {
                   <span className="text-[10px] font-mono text-ghost-muted/60">v2.1.0</span>
                 </SettingRow>
                 <SettingRow label="Ghost System" desc="Backend agent system version">
-                  <span className="text-[10px] font-mono text-ghost-accent/80">ghost@2.1 &middot; port 18789</span>
+                  <span className="text-[10px] font-mono text-ghost-accent/80">ghost@2.2 &middot; port 18790 &middot; OpenClaw</span>
                 </SettingRow>
               </div>
             )}

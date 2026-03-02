@@ -12,84 +12,105 @@ Never auto-commit. Never auto-push to remote.
 
 ## Project Overview
 
-**Ghost** is a Discord-first AI agent system running on Node.js/Express (port 18789) with a Next.js portal on port 3001. The bot account is **Ghost#6982**. PM2 app names: `ghost` (backend) and `ghost-portal` (Next.js).
+**Ghost** is a Discord-first AI agent system with two backend processes:
 
-**Mission Control** (public portal): **https://2kdiscord.com** — nginx reverse proxy → port 3001. SSL via Let's Encrypt (acme.sh, auto-renews). WebSocket path `/ws` proxies to port 18789. Nginx vhost: `/www/server/panel/vhost/nginx/2kdiscord.com.conf`.
+1. **OpenClaw Gateway** (port 18789) — Discord bot connection, model routing, skill system, session management. PM2 app: `openclaw`.
+2. **Ghost API** (port 18790) — Express headless backend for custom business logic (tickets, directives, league data, memory, vision, admin actions, forge auto-fix, scribe cron jobs). PM2 app: `ghost`.
+
+**Portal** (Next.js, port 3001) — management UI at **https://2kdiscord.com**. PM2 app: `ghost-portal`. Nginx reverse proxy → port 3001. WebSocket `/ws` → port 18790.
+
+The bot account is **Ghost#6982**. OpenClaw owns the Discord gateway connection and routes messages through its agent runtime, calling Ghost API via HTTP skills.
+
+## Architecture
+
+```
+Discord (4 guilds)  →  OpenClaw Gateway (:18789)  →  SKILL.md HTTP calls  →  Ghost API (:18790)
+                       Model routing (config)                                 Neon PostgreSQL
+                       SOUL.md personality                                    Redis cache
+                       AGENTS.md instructions                                 Ollama local
+                       Session management                                     Portal (:3001)
+```
 
 ## Tech Stack
 
-- **Runtime**: Node.js, Express, PM2 (AlmaLinux 9 / systemd)
-- **Discord**: discord.js, multi-guild aware (primary guild = DISCORD_GUILD_ID)
-- **Default AI**: Ollama + qwen2.5:14b (free, local — always try first)
-- **Real-time / web queries**: OpenAI gpt-4o-mini-search-preview
-- **Mid-tier (agent tasks / reasoning)**: DeepSeek V3.2 (deepseek-chat) + R1 (deepseek-reasoner) via API
-- **Local reasoning fallback**: deepseek-r1:14b via Ollama (free)
-- **Web / trend research**: Grok grok-4-1-fast-reasoning
-- **Deep synthesis / escalation**: Claude claude-sonnet-4-6
+- **Runtime**: Node.js 22, Express, PM2 (AlmaLinux 9 / systemd)
+- **Discord**: OpenClaw gateway (discord.js internal, config-driven)
+- **AI Gateway**: OpenClaw v2026.3.1 (`~/.openclaw/openclaw.json`)
+- **Primary model**: Ollama qwen2.5:14b (free, local — at 100.66.178.118:11434 via Tailscale)
+- **Fallbacks**: DeepSeek V3.2 → gpt-4o-mini → Claude claude-sonnet-4-6 (configured in openclaw.json)
 - **Code repair (Forge)**: OpenAI gpt-5.3-codex via Responses API, fallback o4-mini
-- **Vision (images in reception)**: OpenAI gpt-4o
+- **Vision**: OpenAI gpt-4o
 - **Embed model**: nomic-embed-text via Ollama (768-dim)
 - **Database**: Neon PostgreSQL (pgvector enabled)
-- **Cache / queues**: Redis via ioredis (graceful degradation — never crashes if Redis down)
+- **Cache / queues**: Redis via ioredis (graceful degradation)
 - **Portal**: Next.js 14 App Router, Tailwind, Zustand
 
-## Agent Names (locked in — do not rename)
+## OpenClaw Workspace
 
-| Name        | File                          | Role                          |
-|-------------|-------------------------------|-------------------------------|
-| Switchboard | `src/switchboard.js`          | Router / classifier           |
-| Warden      | `src/warden.js`               | Command & control / approvals |
-| Scribe      | `src/scribe.js`               | Ops / summaries / reminders   |
-| Scout       | `src/scout.js`                | Research (multi-model)        |
-| Sentinel    | `src/sentinel.js`             | Discord connector             |
-| Crow        | —                             | X / social media              |
-| Forge       | `src/forge.js`                | Dev / auto-fix                |
-| Lens        | `src/lens.js`                 | Analytics (PostHog)           |
-| Courier     | `src/courier.js`              | Email (Resend)                |
-| Archivist   | `src/archivist.js`            | Long-term memory (pgvector)   |
-| Helm        | `src/helm.js`                 | SRE / deploy                  |
-| Keeper      | `src/keeper.js`               | Persistent conversation + memory |
+```
+~/.openclaw/
+├── openclaw.json              — Gateway config (ports, models, Discord, skills)
+└── workspace/
+    ├── SOUL.md                — Ghost personality
+    ├── AGENTS.md              — Routing rules + behavior instructions
+    ├── MEMORY.md              — Seed knowledge (leagues, platform facts)
+    └── skills/
+        ├── ghost-directives/  — Admin auto-moderation rules
+        ├── ghost-tickets/     — Ticket detection, context, close
+        ├── ghost-league/      — League data queries
+        ├── ghost-memory/      — Semantic memory search/store
+        ├── ghost-vision/      — GPT-4o image analysis
+        ├── ghost-admin/       — Discord admin commands
+        ├── ghost-scout/       — Research agent
+        └── ghost-forge/       — Auto-fix trigger
+```
+
+## Ghost API Routes (Express :18790)
+
+All OpenClaw skills call these via `PORTAL_BYPASS` auth (`x-portal-secret` header):
+
+| Route | File | Purpose |
+|-------|------|---------|
+| `/api/directives/*` | `src/routes/directives-api.js` | Directive check/execute/teach/manage |
+| `/api/tickets/*` | `src/routes/tickets-api.js` | Ticket detect/context/close/transcript |
+| `/api/league/*` | `src/routes/league-data-api.js` | League data queries |
+| `/api/memory/*` | `src/routes/memory-search.js` | Semantic search/store/extract |
+| `/api/vision/*` | `src/routes/vision-api.js` | GPT-4o image analysis |
+| `/api/admin/*` | `src/routes/admin-actions.js` | Discord admin commands |
+| `/api/reception` | `src/routes/reception.js` | Portal terminal chat |
+| `/api/training` | `src/routes/training.js` | Knowledge management |
+| `/api/feedback` | `src/routes/feedback.js` | Message rating |
+| `/api/forge/*` | `src/routes/forge.js` | Auto-fix triggers |
 
 ## Key Files
 
 ```
-server.js                        — Express gateway, route registration, auto-fix event listener
-src/sentinel.js                  — Discord bot (onMessage, rate limiting, multi-guild)
-src/switchboard.js               — Intent classifier
-src/keeper.js                    — Thread persistence (Redis cache → Neon), system prompt builder
+server.js                        — Express gateway (:18790), route registration, auto-fix listener
+openclaw-start.sh                — Bash wrapper to start OpenClaw gateway under PM2
+src/keeper.js                    — Thread persistence (portal-only), Ollama chat
 src/warden.js                    — Approval queue (Redis hash warden:approvals)
-src/scout.js                     — Research agent (Grok/OpenAI/Claude routing + fact storage)
+src/scout.js                     — Research agent (Grok/OpenAI/Claude routing)
 src/forge.js                     — Auto-fix: error → gpt-5.3-codex → write file → pm2 restart
-src/db.js                        — All Neon DB helpers + schema init + EventEmitter (error-logged)
-src/redis.js                     — ioredis singleton with no-op fallbacks when Redis is down
-src/botAdmins.js                 — Portal admin IDs (Redis Set + local Set cache + Neon)
-src/agentRegistry.js             — In-process agent status (WebSocket broadcast to portal)
-src/heartbeat.js                 — Idle auto-shutdown tracker
-src/skills/memory.js             — Fact extraction, pgvector semantic search, user profile updates
-src/skills/openai-codex.js       — gpt-5.3-codex via Responses API (instructions/input params)
-src/skills/openai-mini.js        — gpt-4o-mini-search-preview wrapper
-src/skills/instant.js            — Fast canned replies (greetings, etc.)
-openclaw/skills/discord.js       — Low-level discord.js wrapper
-openclaw/agents/                 — Agent soul/personality files (*.md)
-memory/run_log.md                — Append-only action audit log
-logs/out.log, logs/error.log     — PM2 output logs
-ecosystem.config.js              — PM2 process config
-portal/                          — Next.js management portal
+src/scribe.js                    — Ops cron jobs (briefings, reminders, memory pruning)
+src/db.js                        — All Neon DB helpers + schema init + EventEmitter
+src/redis.js                     — ioredis singleton with no-op fallbacks
+src/skills/memory.js             — Fact extraction, pgvector semantic search
+src/skills/directives.js         — Admin auto-moderation rules
+src/skills/league-api.js         — League data fetching + caching
+openclaw/skills/discord.js       — Stub (OpenClaw owns Discord; ready=false)
+openclaw/skills/ollama.js        — Ollama API wrapper
+ecosystem.config.js              — PM2 process config (ghost, ghost-portal, openclaw)
 ```
 
-## Model Routing Rules (free-first, non-negotiable)
+## Model Routing
 
-1. **Default**: qwen2.5:14b via Ollama (free, local)
-2. **Ollama unavailable / fallback**: DeepSeek V3.2 (deepseek-chat) — cheap, agent-optimized
-3. **Factual / competitive research**: DeepSeek V3.2 (deepseek-chat) — fast, cheap
-4. **Real-time data** (weather, prices, news, scores): gpt-4o-mini-search-preview + today's date
-5. **Web / trend queries**: Grok grok-4-1-fast-reasoning
-6. **Deep synthesis / competitive analysis**: Claude claude-sonnet-4-6
-7. **ESCALATE flag**: Claude claude-sonnet-4-6
-8. **Code repair** (Forge only): gpt-5.3-codex → o4-mini fallback
-9. **DeepSeek unavailable**: fall back to gpt-4o-mini → Claude
+OpenClaw handles Discord model routing via `openclaw.json`:
+- **Primary**: ollama/qwen2.5:14b (free, local)
+- **Fallback 1**: deepseek/deepseek-chat (cheap)
+- **Fallback 2**: openai/gpt-4o-mini
+- **Fallback 3**: anthropic/claude-sonnet-4-6
 
-Never route to a paid model if Ollama can handle it. DeepSeek is the preferred fallback before OpenAI/Claude.
+Ghost API (Keeper) uses Ollama directly for portal terminal chat. Forge uses gpt-5.3-codex for code repair.
 
 ## Permissions Model
 
@@ -98,24 +119,15 @@ Never route to a paid model if Ollama can handle it. DeepSeek is the preferred f
 - **AGENT** — Discord role "agent"
 - **MEMBER** — everyone else
 
-Dangerous actions (mass DM, deletes, bans, payments) require OWNER/ADMIN approval via Warden.
-
-## Reception Channel (#🎙️・reception)
-
-- Any message → Switchboard classifies → routes to correct agent
-- Images → handled by gpt-4o vision before text routing
-- Greetings → friendly reply, no agent routing
-- Immediate "⏳ Please wait…" embed sent before classification begins
-- DMs from OWNER route the same as reception
+Dangerous actions require OWNER/ADMIN approval via Warden.
 
 ## Auto-Fix System
 
 `db.logEntry()` emits `db.events.emit('error-logged', entry)` on ERROR level.
-`server.js` listens and calls `forge.autoFix({ errorNote, agentName, restart: true })`.
+`server.js` listens and calls `forge.autoFixWithClaude()`.
 - 10-minute cooldown per unique (agentName, errorNote) pair
-- Forge uses `AGENT_FILE_MAP` when stack trace has no file path
-- gpt-5.3-codex via Responses API reads file, generates fix, validates JS, writes + restarts
-- Results logged to `agent_logs` (INFO=fixed, WARN=no fix found)
+- Claude CLI spawned as `forge` OS user
+- Results logged to `agent_logs`
 
 ## Database Schema (Neon)
 
@@ -127,16 +139,8 @@ Dangerous actions (mass DM, deletes, bans, payments) require OWNER/ADMIN approva
 | `agent_logs` | level, agent, action, outcome, note |
 | `message_feedback` | thread_id, content_hash, rating (1/-1), note |
 | `portal_admins` | user_id PK, username, added_by, added_at |
-
-## Redis Keys
-
-| Key | Type | TTL | Purpose |
-|-----|------|-----|---------|
-| `thread:{threadId}` | string | 24h | Cached conversation thread |
-| `facts:{sha256}` | string | 60s | Cached memory query results |
-| `warden:approvals` | hash | — | Approval queue (survives restarts) |
-| `botadmins` | set | — | Portal admin user IDs |
-| `ratelimit:{userId}` | string | 5s | @mention rate limit counter |
+| `admin_directives` | guild_id, type, trigger_type/value, action, action_params JSONB |
+| `tickets` | channel_id (unique), guild_id, transcript JSONB, summary |
 
 ## Environment Variables (all in .env, never commit)
 
@@ -145,35 +149,21 @@ Dangerous actions (mass DM, deletes, bans, payments) require OWNER/ADMIN approva
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 GROK_API_KEY=
+DEEPSEEK_API_KEY=
 
 # Auth
 JWT_SECRET=
 
 # Ollama
-OLLAMA_HOST=http://localhost:11434
+OLLAMA_HOST=http://100.66.178.118:11434
 OLLAMA_MODEL=qwen2.5:14b
 OLLAMA_EMBED_MODEL=nomic-embed-text
-OLLAMA_REASONING_MODEL=deepseek-r1:14b
-
-# DeepSeek
-DEEPSEEK_API_KEY=
 
 # Discord
 DISCORD_BOT_TOKEN=
 DISCORD_GUILD_ID=
 DISCORD_OWNER_USER_ID=
-DISCORD_COMMANDS_CHANNEL_ID=
-DISCORD_ALERTS_CHANNEL_ID=
-DISCORD_CH_RECEPTION=
-DISCORD_CH_SWITCHBOARD=
-DISCORD_CH_WARDEN=
-DISCORD_CH_SCRIBE=
-DISCORD_CH_SCOUT=
-DISCORD_CH_FORGE=
-DISCORD_CH_LENS=
-DISCORD_CH_COURIER=
-DISCORD_CH_ARCHIVIST=
-DISCORD_CH_AUDIT=
+DISCORD_CH_* (various channel IDs)
 
 # Database
 NEON_DATABASE_URL=
@@ -181,83 +171,45 @@ NEON_DATABASE_URL=
 # Redis
 REDIS_URL=redis://localhost:6379
 
+# Ports
+GHOST_API_PORT=18790
+OPENCLAW_GATEWAY_TOKEN=
+
 # Portal
 PORTAL_SECRET=
-
-# Server
-OPENCLAW_PORT=18789
-IDLE_SHUTDOWN_MINUTES=120
-
-# Optional (legacy — Pinecone removed, all memory uses pgvector now)
-RUNPOD_API_KEY=
-RUNPOD_ENDPOINT=
-RUNPOD_MODEL=
-```
-
-## Linux Deployment (AlmaLinux 9)
-
-```bash
-# 1. Install dependencies
-npm install -g pm2
-npm install
-cd portal && npm install && npm run build && cd ..
-
-# 2. Install and start Redis
-dnf install -y redis && systemctl enable redis && systemctl start redis
-
-# 3. Install Ollama models
-ollama pull qwen2.5:14b && ollama pull nomic-embed-text
-
-# 4. Configure
-cp .env.example .env  # fill in values
-
-# 5. Start
-npm run pm2:start
-
-# 6. Persist across reboots (once)
-pm2 startup systemd  # run the printed command
-pm2 save
-
-# 7. Verify
-npm run pm2:status
-curl http://localhost:18789/api/heartbeat
-redis-cli ping
 ```
 
 ## Common Commands
 
 ```bash
-npm run pm2:status      # check if ghost is running
-npm run pm2:restart     # apply code changes (ghost only)
-npm run pm2:logs        # tail live logs
-npm run pm2:stop        # stop the bot
-npm run portal:restart  # restart portal only
-pm2 restart all         # restart both apps
-redis-cli ping          # verify Redis
+pm2 status                  # check all 3 processes
+pm2 restart ghost           # apply Ghost API code changes
+pm2 restart openclaw        # apply OpenClaw config/skill changes
+pm2 restart ghost-portal    # rebuild portal
+pm2 restart all             # restart everything
+pm2 logs ghost --lines 20   # tail Ghost API logs
+pm2 logs openclaw --lines 20 # tail OpenClaw logs
+redis-cli ping              # verify Redis
+openclaw skills list --eligible  # list available OpenClaw skills
 ```
 
-## Safe Restart Workflow
+## Verification
 
 ```bash
-# After any code change to server.js or src/:
-npm run pm2:restart
-
-# After portal changes:
-npm run portal:restart
-
-# Full reset:
-pm2 delete all && npm run pm2:start
+curl http://localhost:18790/api/heartbeat     # Ghost API health
+curl http://localhost:18790/api/health         # Full system health check
+pm2 logs openclaw --lines 5 --nostream        # OpenClaw Discord status
 ```
 
 ## Notes
 
-- Ollama runs at localhost:11434; models: qwen2.5:14b, nomic-embed-text
-- PM2 auto-restarts on crash; daily cron restart at 4am UTC; max 450MB RAM
-- Heartbeat idle-shutdown after 120min inactivity
-- Platform: AlmaLinux 9 / systemd
-- gpt-5.3-codex uses `client.responses.create({ instructions, input, max_output_tokens })` — NOT Chat Completions
+- OpenClaw config: `~/.openclaw/openclaw.json` — edit then `pm2 restart openclaw`
+- OpenClaw skills: `~/.openclaw/workspace/skills/*/SKILL.md` — edit, no restart needed
+- Ollama at 100.66.178.118:11434 (Tailscale); models: qwen2.5:14b, nomic-embed-text
+- PM2 daily restart at 4am UTC for both ghost and openclaw
 - Redis is gracefully optional — all helpers silently no-op if Redis is down
-- `PORTAL_BYPASS` middleware in server.js allows portal calls via `x-portal-secret` header without a JWT session
+- `PORTAL_BYPASS` middleware allows OpenClaw skill calls and portal calls via `x-portal-secret`
+- `openclaw/skills/discord.js` is a no-op stub — OpenClaw owns the Discord connection
 
 ---
 
@@ -268,12 +220,9 @@ pm2 delete all && npm run pm2:start
 - Fix bugs by reading logs, identifying root cause, patching, and restarting
 - When blocked or something seems genuinely destructive — pause and ask once
 
-### Self-Improvement
-- After any correction from the user: update `tasks/lessons.md` with the pattern
-- Review lessons at session start for relevant context
-
 ### Verification
 - After code changes: restart and check `pm2 logs ghost --lines 20 --nostream` for errors
+- After OpenClaw changes: `pm2 restart openclaw && pm2 logs openclaw --lines 20 --nostream`
 - After DB changes: verify schema with a quick query
 - Never declare something done without confirming it works
 
