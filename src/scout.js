@@ -24,6 +24,7 @@ const deepseek  = require('./skills/deepseek');
 const { trackUsage } = require('./skills/usage-tracker');
 const archivist = require('./archivist');
 const db        = require('./db');
+const leagueApi = require('./skills/league-api');
 
 const LOG_FILE = path.join(__dirname, '../memory/run_log.md');
 
@@ -302,6 +303,36 @@ async function run({ query, type = 'factual', depth = 'quick', store_result = fa
       cache_hit:         true,
       logged:            true,
     };
+  }
+
+  // Check if this is a league data query we can answer with live API calls
+  const leagueDetect = leagueApi.detectLeagueQuery(query);
+  if (leagueDetect?.shouldQuery) {
+    try {
+      const results = leagueDetect.leagueKey
+        ? [await leagueApi.query(leagueDetect.leagueKey, leagueDetect.queryType)]
+        : await leagueApi.queryAll(leagueDetect.queryType);
+
+      const hasData = results.some(r => !r.error && r.data);
+      if (hasData) {
+        const formatted = leagueApi.formatResults(leagueDetect.queryType, results);
+        appendLog('INFO', 'research', 'system', 'league-api',
+          `query="${query.slice(0, 50)}" type=${leagueDetect.queryType} league=${leagueDetect.leagueKey || 'all'}`);
+        return {
+          query, type, depth,
+          summary:           `Live data from league sites:\n\n${formatted}`,
+          sources:           results.filter(r => !r.error).map(r => `https://${leagueApi.LEAGUES[leagueDetect.leagueKey || 'hof']?.domain || r.league}`),
+          model_used:        'league-api',
+          escalated:         false,
+          escalation_reason: null,
+          stored:            false,
+          cache_hit:         false,
+          logged:            true,
+        };
+      }
+    } catch (err) {
+      console.warn('[Scout] League API query failed, falling through:', err.message);
+    }
   }
 
   const { model, grok, openai, deepseek: isDeepseek, reason } = detectModel(type, depth, query);

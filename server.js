@@ -23,6 +23,7 @@ const creditsRoutes   = require('./src/routes/credits');
 const tasksRoutes     = require('./src/routes/tasks');
 const settingsRoutes  = require('./src/routes/settings');
 const lessonsRoutes   = require('./src/routes/lessons');
+const trainingRoutes  = require('./src/routes/training');
 const receptionRoutes = require('./src/routes/reception');
 const feedbackRoutes  = require('./src/routes/feedback');
 const discordRoutes   = require('./src/routes/discord');
@@ -140,6 +141,7 @@ app.use('/api/credits',       PORTAL_BYPASS, creditsRoutes);
 app.use('/api/tasks',         PORTAL_BYPASS, tasksRoutes);
 app.use('/api/settings',      PORTAL_BYPASS, settingsRoutes);
 app.use('/api/lessons',       PORTAL_BYPASS, lessonsRoutes);
+app.use('/api/training',      PORTAL_BYPASS, trainingRoutes);
 app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
   try {
     // Build brief from agent_logs DB (the real data source), not the flat file

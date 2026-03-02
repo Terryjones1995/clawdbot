@@ -22,6 +22,7 @@ const deepseek  = require('./skills/deepseek');
 const mini      = require('./skills/openai-mini');
 const memory    = require('./skills/memory');
 const learning  = require('./skills/learning');
+const leagueApi = require('./skills/league-api');
 const registry  = require('./agentRegistry');
 const archivist = require('./archivist');
 const db        = require('./db');
@@ -247,6 +248,24 @@ async function chat(threadId, userMessage, { guildId = null } = {}) {
       + `When giving URLs, ALWAYS use https://${league.domain} as the base domain.\n`
       + `Key pages: /events (registration), /standings, /stats, /leaderboard, /teams, /rules, /news, /my-teams, /wallet\n`
       + `Example: "Register at https://${league.domain}/events"`;
+  }
+
+  // If user is asking about league data and we're in a league server, fetch live data
+  const leagueDetect = leagueApi.detectLeagueQuery(userMessage);
+  if (leagueDetect?.shouldQuery) {
+    try {
+      const leagueKey = leagueDetect.leagueKey || (guildId ? leagueApi.leagueFromGuild(guildId) : null);
+      const results = leagueKey
+        ? [await leagueApi.query(leagueKey, leagueDetect.queryType)]
+        : await leagueApi.queryAll(leagueDetect.queryType);
+
+      const hasData = results.some(r => !r.error && r.data);
+      if (hasData) {
+        const formatted = leagueApi.formatResults(leagueDetect.queryType, results);
+        const liveSection = `\n\n## Live league data (just fetched):\n${formatted}`;
+        leagueContext = (leagueContext || '') + liveSection;
+      }
+    } catch { /* non-fatal — proceed without live data */ }
   }
 
   const systemPrompt = _buildSystemPrompt(thread, pineconeContext, factsContext, profileContext, lessonsContext, leagueContext);

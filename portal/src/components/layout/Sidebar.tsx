@@ -9,7 +9,7 @@ import { useGhostStore } from '@/store';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Users, Briefcase, CheckSquare, ScrollText,
-  Settings, CreditCard, Server, Twitter, GraduationCap,
+  Settings, CreditCard, Server, Twitter, GraduationCap, Brain,
   AlertTriangle, ChevronLeft, ChevronRight, Activity,
 } from 'lucide-react';
 
@@ -19,6 +19,7 @@ const NAV = [
   { href: 'jobs',      label: 'Jobs',          icon: Briefcase,       section: 'main' },
   { href: 'tasks',     label: 'Tasks',         icon: CheckSquare,     section: 'main' },
   { href: 'lessons',   label: 'Lessons',       icon: GraduationCap,   section: 'main' },
+  { href: 'training',  label: 'Training',      icon: Brain,           section: 'main' },
   { href: 'logs',      label: 'Logs',          icon: ScrollText,      section: 'main' },
   { href: 'errors',    label: 'Error Logs',    icon: AlertTriangle,   section: 'monitor', badge: 'live' },
   { href: 'credits',   label: 'API Credits',   icon: CreditCard,      section: 'monitor' },
