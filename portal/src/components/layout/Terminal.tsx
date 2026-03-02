@@ -227,7 +227,9 @@ export function Terminal() {
     }
   }
 
-  const terminalHeight = maximized ? 'calc(100vh - 56px)' : `${height}px`;
+  // Mobile: always maximize to full screen; Desktop: resizable or maximized
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const terminalHeight = (maximized || isMobile) ? 'calc(100dvh - 56px)' : `${height}px`;
 
   return (
     <AnimatePresence>
@@ -239,56 +241,60 @@ export function Terminal() {
           transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
           className="fixed bottom-0 left-0 right-0 z-50 flex flex-col"
           style={{
-            height:      terminalHeight,
-            background:  'rgba(4, 8, 18, 0.97)',
+            height:         terminalHeight,
+            paddingBottom:  'env(safe-area-inset-bottom, 0px)',
+            background:     'rgba(4, 8, 18, 0.98)',
             backdropFilter: 'blur(20px)',
-            borderTop:   '1px solid rgba(0,212,255,0.2)',
-            boxShadow:   '0 -20px 60px rgba(0,0,0,0.6), 0 -4px 20px rgba(0,212,255,0.05)',
+            borderTop:      '1px solid rgba(0,212,255,0.2)',
+            boxShadow:      '0 -20px 60px rgba(0,0,0,0.6), 0 -4px 20px rgba(0,212,255,0.05)',
           }}
         >
           {/* Title bar */}
-          <div className="flex items-center gap-3 px-4 h-9 shrink-0"
+          <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 h-11 sm:h-9 shrink-0"
                style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-            <TerminalIcon size={12} className="text-ghost-accent" />
+            <TerminalIcon size={14} className="text-ghost-accent sm:w-3 sm:h-3" />
             <span className="text-xs font-mono font-medium text-ghost-accent/80 tracking-wider">
               GHOST TERMINAL
             </span>
-            <span className={`ml-1 text-[10px] font-mono ${wsConnected ? 'text-green-400' : 'text-red-400'}`}>
+            <span className={`ml-1 text-[10px] font-mono hidden sm:inline ${wsConnected ? 'text-green-400' : 'text-red-400'}`}>
               ● {wsConnected ? 'live' : 'offline'}
             </span>
             <div className="flex-1" />
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5 sm:gap-1">
               <button onClick={copyAll}
-                      className="px-2 py-0.5 text-[10px] text-ghost-muted hover:text-white transition-colors font-mono">
+                      className="px-2 py-1 text-[10px] text-ghost-muted hover:text-white transition-colors font-mono hidden sm:block">
                 COPY ALL
               </button>
               <button onClick={clearTerminal}
-                      className="px-2 py-0.5 text-[10px] text-ghost-muted hover:text-white transition-colors font-mono">
+                      className="px-2 py-1 text-[10px] text-ghost-muted hover:text-white transition-colors font-mono">
                 CLEAR
               </button>
               <button onClick={() => setMaximized(!maximized)}
-                      className="w-6 h-6 flex items-center justify-center text-ghost-muted hover:text-white transition-colors">
-                <Maximize2 size={11} />
+                      className="w-8 h-8 sm:w-6 sm:h-6 flex items-center justify-center text-ghost-muted hover:text-white transition-colors hidden sm:flex">
+                <Maximize2 size={13} />
               </button>
               <button onClick={() => setTerminalOpen(false)}
-                      className="w-6 h-6 flex items-center justify-center text-ghost-muted hover:text-red-400 transition-colors">
-                <X size={11} />
+                      className="w-8 h-8 sm:w-6 sm:h-6 flex items-center justify-center text-ghost-muted hover:text-red-400 transition-colors">
+                <X size={14} className="sm:w-3 sm:h-3" />
               </button>
             </div>
           </div>
 
-          {/* Output — click empty space to refocus input, but don't steal focus while selecting text */}
+          {/* Output — click/tap empty space to refocus input */}
           <div
-            className="flex-1 overflow-y-auto p-4 terminal-text space-y-0.5"
+            className="flex-1 overflow-y-auto p-3 sm:p-4 terminal-text space-y-1 sm:space-y-0.5"
             onMouseUp={(e) => {
-              if (window.getSelection()?.toString()) return; // don't steal focus during text selection
+              if (window.getSelection()?.toString()) return;
+              if (e.target === e.currentTarget) inputRef.current?.focus();
+            }}
+            onClick={(e) => {
               if (e.target === e.currentTarget) inputRef.current?.focus();
             }}
           >
             {terminalLines.map((line) => (
-              <div key={line.id} className="flex gap-2 group items-start">
-                <span className="text-ghost-muted/30 text-[10px] shrink-0 pt-px font-mono select-none">
+              <div key={line.id} className="flex gap-1.5 sm:gap-2 group items-start">
+                <span className="text-ghost-muted/30 text-[9px] sm:text-[10px] shrink-0 pt-px font-mono select-none hidden sm:inline">
                   {new Date(line.ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
                 <pre
@@ -361,7 +367,7 @@ export function Terminal() {
           </AnimatePresence>
 
           {/* Input bar */}
-          <div className="flex items-center gap-3 px-4 py-3"
+          <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3"
                style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             <ChevronRight size={14} className="text-ghost-accent shrink-0" />
             <input
@@ -370,10 +376,13 @@ export function Terminal() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Type a command or message to Ghost... (/help for commands)"
+              placeholder="Message Ghost... (/help)"
               disabled={loading}
-              className="flex-1 bg-transparent text-xs text-white placeholder-ghost-muted/30 outline-none terminal-text disabled:opacity-50"
-              style={{ fontFamily: 'JetBrains Mono, monospace' }}
+              className="flex-1 bg-transparent text-sm sm:text-xs text-white placeholder-ghost-muted/30 outline-none terminal-text disabled:opacity-50"
+              style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '16px' }}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
             />
             {loading && <Loader2 size={13} className="text-ghost-accent animate-spin shrink-0" />}
           </div>

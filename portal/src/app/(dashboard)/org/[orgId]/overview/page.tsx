@@ -765,7 +765,7 @@ export default function OverviewPage() {
      ═══════════════════════════════════════════════════════════════════════ */
 
   return (
-    <div className="p-3 sm:p-6 pb-12 max-w-[1600px] mx-auto space-y-4 sm:space-y-6">
+    <div className="p-3 sm:p-6 pb-24 max-w-[1600px] mx-auto space-y-4 sm:space-y-6">
 
       {/* ── HEADER ── */}
       <motion.div

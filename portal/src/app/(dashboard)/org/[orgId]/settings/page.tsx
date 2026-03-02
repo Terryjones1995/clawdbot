@@ -159,7 +159,7 @@ export default function SettingsPage() {
   const ACCENT_COLORS = ['#00D4FF','#7C3AED','#10B981','#F59E0B','#EF4444','#E91E63','#1DA1F2'];
 
   return (
-    <div className="p-3 sm:p-6 max-w-screen-xl mx-auto">
+    <div className="p-3 sm:p-6 pb-24 max-w-screen-xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
