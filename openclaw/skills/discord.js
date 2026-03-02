@@ -439,6 +439,57 @@ class DiscordConnector {
     }
   }
 
+  // ── Channel History ─────────────────────────────────────────────────────
+
+  /**
+   * Fetch recent messages from a channel.
+   * Returns newest-first array of { author, content, embeds, timestamp }.
+   * @param {string} channelId
+   * @param {number} limit — max messages to fetch (1-100)
+   */
+  async fetchChannelHistory(channelId, limit = 50) {
+    this._assertReady();
+    try {
+      const channel  = await this.client.channels.fetch(channelId);
+      const messages = await channel.messages.fetch({ limit: Math.min(limit, 100) });
+      return [...messages.values()].map(m => ({
+        author:    m.author?.tag || 'Unknown',
+        authorId:  m.author?.id || '',
+        isBot:     m.author?.bot || false,
+        content:   m.content || '',
+        embeds:    (m.embeds || []).map(e => ({
+          title:       e.title || '',
+          description: e.description || '',
+          fields:      (e.fields || []).map(f => ({ name: f.name, value: f.value })),
+        })),
+        timestamp: m.createdAt?.toISOString() || '',
+      })).reverse(); // oldest-first for context building
+    } catch (err) {
+      this._log('ERROR', 'fetch-history', 'system', 'failed', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get channel info (name, parent category, topic).
+   */
+  async getChannelInfo(channelId) {
+    this._assertReady();
+    try {
+      const channel = await this.client.channels.fetch(channelId);
+      return {
+        id:           channel.id,
+        name:         channel.name || '',
+        topic:        channel.topic || '',
+        parentId:     channel.parentId || null,
+        parentName:   channel.parent?.name || '',
+        type:         channel.type,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
 
   _assertReady() {

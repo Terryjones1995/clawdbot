@@ -801,6 +801,42 @@ async function handleReceptionMessage(event) {
 
 const ADMIN_INTENT_RE = /\b(kick|ban|timeout|mute|dm\s+<@|assign\s+role|remove\s+role|give\s+role|create\s+role|delete\s+role|create\s+channel|delete\s+channel|list\s+roles|list\s+members|find\s+user|look\s+up)\b/i;
 
+// Detect ticket channels by name or parent category
+const TICKET_RE = /^(ticket|support|help|report|issue|open-a-ticket)/i;
+
+async function _isTicketChannel(channelId) {
+  try {
+    const info = await discord.getChannelInfo(channelId);
+    if (!info) return false;
+    return TICKET_RE.test(info.name) || TICKET_RE.test(info.parentName);
+  } catch { return false; }
+}
+
+async function _buildTicketContext(channelId) {
+  const history = await discord.fetchChannelHistory(channelId, 50);
+  if (!history.length) return null;
+
+  const lines = [];
+  for (const msg of history) {
+    // Include embeds (ticket bots put the issue description in embeds)
+    for (const embed of msg.embeds) {
+      if (embed.title || embed.description) {
+        lines.push(`[EMBED from ${msg.author}]${embed.title ? ' ' + embed.title : ''}`);
+        if (embed.description) lines.push(embed.description);
+        for (const field of embed.fields) {
+          lines.push(`${field.name}: ${field.value}`);
+        }
+      }
+    }
+    // Include text messages
+    if (msg.content) {
+      lines.push(`${msg.isBot ? '[BOT] ' : ''}${msg.author}: ${msg.content}`);
+    }
+  }
+
+  return lines.join('\n').slice(0, 4000); // cap context size
+}
+
 async function handleMentionMessage(event) {
   const { channel_id, content, user_id, user_role, raw } = event;
 
@@ -823,11 +859,15 @@ async function handleMentionMessage(event) {
   appendLog('INFO', 'mention', user_role, 'received',
     `user=${user_id} name=${event.user} channel=${channel_id} text="${text.slice(0, 60)}"`);
 
-  // Instant reply check (greetings, acks)
-  const quick = instantReply(text);
-  if (quick) {
-    await discord.sendMessage(channel_id, quick);
-    return;
+  // Instant reply check (greetings, acks) — skip for ticket channels
+  const isTicket = await _isTicketChannel(channel_id);
+
+  if (!isTicket) {
+    const quick = instantReply(text);
+    if (quick) {
+      await discord.sendMessage(channel_id, quick);
+      return;
+    }
   }
 
   // Admin command path — ADMIN/OWNER with admin intent keywords
@@ -843,13 +883,25 @@ async function handleMentionMessage(event) {
     return;
   }
 
-  // Conversational reply for everyone via Keeper (Ollama free-first)
+  // Ticket channel — read full channel history for context
   try {
-    const thinkingMsg = await discord.sendMessage(channel_id, '*Ghost is thinking…*');
-    const reply = await _ollamaChatReply(text, channel_id, user_id, event.guild_id);
+    const thinkingMsg = await discord.sendMessage(channel_id, '*Ghost is reading the ticket…*');
+
+    let messageForKeeper = text;
+    if (isTicket) {
+      const ticketContext = await _buildTicketContext(channel_id);
+      if (ticketContext) {
+        messageForKeeper = `[TICKET CHANNEL — Full conversation below]\n\n${ticketContext}\n\n[User just asked Ghost]: ${text || 'Help with this ticket'}`;
+      }
+      appendLog('INFO', 'mention-ticket', user_role, 'received',
+        `channel=${channel_id} contextLen=${ticketContext?.length || 0}`);
+    }
+
+    const reply = await _ollamaChatReply(messageForKeeper, channel_id, user_id, event.guild_id);
     try { await thinkingMsg.delete(); } catch { /* non-fatal */ }
     await discord.sendMessage(channel_id, reply.slice(0, 2000));
-    appendLog('INFO', 'mention-chat', user_role, 'success', `user=${user_id} name=${event.user}`);
+    appendLog('INFO', isTicket ? 'mention-ticket' : 'mention-chat', user_role, 'success',
+      `user=${user_id} name=${event.user}`);
   } catch (err) {
     await discord.sendMessage(channel_id, `Something went wrong: ${err.message}`);
     appendLog('ERROR', 'mention-chat', user_role, 'failed', err.message, err);
