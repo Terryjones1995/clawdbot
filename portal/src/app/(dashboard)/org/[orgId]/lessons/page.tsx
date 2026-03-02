@@ -152,15 +152,15 @@ export default function LessonsPage() {
                 <textarea value={newLesson} onChange={e => setNewLesson(e.target.value)} placeholder="What should the agent learn?"
                   className="sm:col-span-4 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-ghost-muted/40 outline-none focus:border-ghost-accent/40 transition-colors resize-none h-16" />
                 <select value={newAgent} onChange={e => setNewAgent(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
+                  className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
                   {AGENTS.map(a => <option key={a} value={a}>{agentEmoji(a)} {a}</option>)}
                 </select>
                 <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
+                  className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
                   {['general','correction','error-pattern','feedback'].map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <select value={newSeverity} onChange={e => setNewSeverity(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
+                  className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
                   {['low','medium','high','critical'].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <div className="flex gap-2">
@@ -182,17 +182,17 @@ export default function LessonsPage() {
       {/* Filters */}
       <div className="flex gap-1.5 sm:gap-2 mb-3 sm:mb-4 flex-wrap">
         <select value={filterAgent} onChange={e => setFilterAgent(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
+          className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
           <option value="">All Agents</option>
           {AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
         </select>
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
+          className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
           <option value="">All Categories</option>
           {['general','correction','error-pattern','feedback'].map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <select value={filterActive} onChange={e => setFilterActive(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
+          className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
           <option value="">All Status</option>
           <option value="true">Active</option>
           <option value="false">Inactive</option>

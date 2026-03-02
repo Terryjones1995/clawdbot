@@ -235,7 +235,7 @@ export default function TrainingPage() {
                   <input value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="Key (auto-generated if empty)"
                     className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-ghost-muted/40 outline-none focus:border-ghost-accent/40 transition-colors" />
                   <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
+                    className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
                     <option value="general">general</option>
                     <option value="org">org</option>
                     <option value="league">league</option>
@@ -274,7 +274,7 @@ export default function TrainingPage() {
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-ghost-muted/30 outline-none focus:border-purple-500/40 transition-colors resize-none h-40 font-mono" />
               <div className="flex items-center gap-2 mt-3">
                 <select value={bulkCategory} onChange={e => setBulkCategory(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
+                  className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none">
                   <option value="general">general</option>
                   <option value="org">org</option>
                   <option value="league">league</option>
@@ -303,12 +303,12 @@ export default function TrainingPage() {
             className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-[10px] text-white placeholder-ghost-muted/40 outline-none focus:border-ghost-accent/40 transition-colors" />
         </div>
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
+          className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
           <option value="">All Categories</option>
           {categories.map(c => <option key={c} value={c}>{c} ({categoryCount[c] || 0})</option>)}
         </select>
         <select value={filterSource} onChange={e => setFilterSource(e.target.value)}
-          className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
+          className="bg-[#0a1628] border border-white/10 rounded-lg px-3 py-1.5 text-[10px] text-white outline-none">
           <option value="">All Sources</option>
           {sources.map(s => <option key={s} value={s}>{SOURCE_ICONS[s] || s} ({sourceCount[s] || 0})</option>)}
         </select>
@@ -345,7 +345,7 @@ export default function TrainingPage() {
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[10px] text-white outline-none focus:border-ghost-accent/40 resize-none h-20" />
                       <div className="flex gap-2">
                         <select value={editCategory} onChange={e => setEditCategory(e.target.value)}
-                          className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none">
+                          className="bg-[#0a1628] border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none">
                           {['general', 'org', 'league', 'training', 'misc'].map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                         <button onClick={() => updateEntry(entry.id)}
