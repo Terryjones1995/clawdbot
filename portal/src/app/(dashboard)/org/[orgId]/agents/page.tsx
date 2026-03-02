@@ -52,88 +52,88 @@ const AGENT_META: Record<string, {
 }> = {
   ghost: {
     name: 'Ghost', role: 'Terminal AI / CEO',
-    desc: 'The primary AI interface. Ghost handles all terminal conversations with persistent memory across sessions. Backed by Claude Opus 4.6 for highest-capability reasoning and escalation authority over all agents.',
-    model: 'Claude Opus 4.6', reportsTo: null,
+    desc: 'The primary AI interface. Ghost routes through Ollama (free, local) by default and escalates to paid models when needed. Persistent memory across sessions via Keeper + Archivist.',
+    model: 'Ollama qwen3-coder → Claude', reportsTo: null,
     manages: ['switchboard', 'warden', 'scribe', 'archivist'],
-    tags: ['CEO', 'Memory', 'Opus', 'Terminal'],
-    details: ['Primary user-facing AI (portal terminal)', 'Full conversation memory via Keeper threads', 'Long-term recall via Pinecone (Archivist)', 'Escalation target for all agents', 'Powered by Claude Opus 4.6'],
+    tags: ['CEO', 'Memory', 'Free-first', 'Terminal'],
+    details: ['Primary user-facing AI (portal terminal)', 'Default: Ollama qwen3-coder (free, local)', 'Escalation: Claude claude-sonnet-4-6 (paid)', 'Full conversation memory via Keeper threads', 'Long-term recall via Archivist (pgvector)'],
   },
   switchboard: {
     name: 'Switchboard', role: 'Router / Classifier',
-    desc: 'Intent classifier and message router. Every portal message flows through Switchboard, which uses keyword matching to route to the correct agent instantly.',
-    model: 'Keyword → gpt-4o-mini', reportsTo: 'ghost',
+    desc: 'Intent classifier and message router. Every message flows through Switchboard, which uses keyword matching first, then Ollama for ambiguous intents.',
+    model: 'Keyword → Ollama qwen3-coder', reportsTo: 'ghost',
     tags: ['Router', 'Classifier', 'Instant'],
-    details: ['Keyword pattern matching — zero latency for common intents', 'Routes to: Codex, Scout, Courier, Ghost', 'gpt-4o-mini fallback for unmatched messages', 'Always-on, processes every message'],
+    details: ['Keyword pattern matching — zero latency for common intents', 'Routes to: Scout, Courier, Ghost', 'Ollama qwen3-coder fallback for unmatched messages', 'Always-on, processes every message'],
   },
   warden: {
     name: 'Warden', role: 'Command & Control',
-    desc: 'Manages approval workflows for dangerous operations. Nothing dangerous runs without Warden sign-off.',
-    model: 'gpt-4o-mini', reportsTo: 'ghost',
+    desc: 'Manages approval workflows for dangerous operations. Nothing dangerous runs without Warden sign-off. Redis-backed approval queue.',
+    model: 'None (logic only)', reportsTo: 'ghost',
     tags: ['Security', 'Approvals', 'Control'],
-    details: ['Approval gate for dangerous operations', 'Manages OWNER/ADMIN permission checks', 'Audit trail for all approved actions', 'Discord approval request routing'],
+    details: ['Approval gate for dangerous operations', 'OWNER/ADMIN permission checks', 'Redis hash queue (warden:approvals)', 'Discord approval request routing'],
   },
   scribe: {
     name: 'Scribe', role: 'Ops / Summaries',
-    desc: 'Operations agent. Scribe handles scheduled summaries, daily briefs, and reminders. The portal Daily Brief comes from Scribe.',
-    model: 'gpt-4o-mini', reportsTo: 'ghost',
+    desc: 'Operations agent. Scribe handles scheduled summaries, daily briefs, and reminders. Uses Ollama for text generation.',
+    model: 'Ollama qwen3-coder', reportsTo: 'ghost',
     tags: ['Reports', 'Reminders', 'Daily Brief'],
-    details: ['Generates daily operational brief for portal overview', 'Scheduled summary generation', 'Stores structured notes in memory', 'Handles reminder and scheduling requests'],
+    details: ['Generates daily operational brief for portal', 'Scheduled summary generation via Ollama', 'Stores structured notes in memory', 'Handles reminder and scheduling requests'],
   },
   archivist: {
     name: 'Archivist', role: 'Long-term Memory',
-    desc: 'Long-term memory agent. Archivist embeds and retrieves information from Pinecone for long-term recall across sessions.',
-    model: 'Pinecone + nomic-embed-text', reportsTo: 'ghost',
-    tags: ['Memory', 'Pinecone', 'Semantic Search'],
-    details: ['Semantic storage and retrieval via Pinecone', 'Embeds content with nomic-embed-text (768-dim)', 'TTL-managed entries (90-180 day default)', 'Recalls relevant context for Keeper threads'],
+    desc: 'Long-term memory agent. Archivist embeds and retrieves information using pgvector for semantic search across sessions.',
+    model: 'Ollama nomic-embed-text', reportsTo: 'ghost',
+    tags: ['Memory', 'pgvector', 'Semantic Search'],
+    details: ['Semantic storage and retrieval via pgvector (Neon)', 'Embeds content with nomic-embed-text (768-dim)', 'Conflict resolution for duplicate facts', 'User profile auto-merging from extracted facts'],
   },
   scout: {
     name: 'Scout', role: 'Intelligence / Research',
-    desc: 'Intelligence agent. Scout handles real-time web research, trend analysis, and competitive intelligence using Grok\'s live reasoning.',
-    model: 'Grok / gpt-4o-mini-search', reportsTo: 'ghost',
-    tags: ['Research', 'Web', 'Real-time'],
-    details: ['Real-time web search and fact-finding', 'Trend and competitive analysis via Grok', 'Live news and score queries via GPT-4o search', 'Stores research summaries to Archivist'],
+    desc: 'Intelligence agent. Scout handles real-time web research, trend analysis, and competitive intelligence. Multi-model routing: Grok for trends, OpenAI for live data, Claude for deep synthesis.',
+    model: 'Grok / OpenAI Search / Claude', reportsTo: 'ghost',
+    tags: ['Research', 'Web', 'Multi-model'],
+    details: ['Trend and competitive analysis via Grok grok-4-1-fast-reasoning', 'Live news and scores via gpt-4o-mini-search-preview', 'Deep synthesis escalation to Claude claude-sonnet-4-6', 'Stores research facts to Archivist (pgvector)'],
   },
   forge: {
-    name: 'Forge', role: 'Dev / Architect',
-    desc: 'Dev & architecture agent. Forge handles coding requests, system design, and debugging. Escalates to Claude Sonnet for complex work.',
-    model: 'gpt-4o-mini → Sonnet', reportsTo: 'ghost',
-    tags: ['Code', 'DevOps', 'Architect'],
-    details: ['Code generation and debugging', 'System architecture decisions', 'Escalates complex tasks to Claude Sonnet', 'Coordinates with Helm for deployments'],
+    name: 'Forge', role: 'Dev / Auto-fix',
+    desc: 'Code repair agent. Forge auto-fixes runtime errors using gpt-5.3-codex or Claude CLI. Reads error logs, generates patches, validates JS, and restarts services.',
+    model: 'gpt-5.3-codex / Claude CLI', reportsTo: 'ghost',
+    tags: ['Code', 'Auto-fix', 'Codex'],
+    details: ['Auto-fix via gpt-5.3-codex (Responses API)', 'Claude CLI fallback for complex fixes', 'File-change detection + JS validation', '10-min cooldown per unique error signature'],
   },
   courier: {
     name: 'Courier', role: 'Email / Comms',
-    desc: 'Email specialist. Courier drafts and sends all outbound emails via Resend. Requires approval for bulk sends.',
-    model: 'gpt-4o-mini + Resend', reportsTo: 'ghost',
+    desc: 'Email specialist. Courier drafts and sends all outbound emails via Resend. Uses Ollama for drafting, requires Warden approval for bulk sends.',
+    model: 'Ollama qwen3-coder + Resend', reportsTo: 'ghost',
     tags: ['Email', 'Resend', 'Comms'],
-    details: ['Drafts professional emails', 'Sends via Resend API', 'Requires Warden approval for mass sends', 'Handles follow-up scheduling'],
+    details: ['Drafts professional emails via Ollama', 'Sends via Resend API', 'Requires Warden approval for mass sends', 'Handles follow-up scheduling'],
   },
   lens: {
     name: 'Lens', role: 'Analytics',
-    desc: 'Analytics agent. Lens tracks and reports on PostHog analytics — page views, retention, funnel performance, and usage patterns.',
-    model: 'gpt-4o-mini', reportsTo: 'ghost',
+    desc: 'Analytics agent. Lens tracks PostHog analytics — page views, retention, funnel performance, and usage patterns. System alerts monitoring.',
+    model: 'None (PostHog API)', reportsTo: 'ghost',
     tags: ['PostHog', 'Analytics', 'Metrics'],
-    details: ['PostHog event and funnel analysis', 'Usage pattern reporting', 'Retention and engagement metrics', 'Custom analytics queries'],
+    details: ['PostHog event and funnel analysis', 'System alerts and health monitoring', 'Retention and engagement metrics', 'Custom analytics queries'],
   },
   keeper: {
     name: 'Keeper', role: 'Conversation Memory',
-    desc: 'Conversation memory agent. Keeper manages per-thread conversation history in JSON files, with rolling summaries pushed to Pinecone.',
-    model: 'gpt-4o-mini (summarization)', reportsTo: 'ghost',
-    tags: ['Threads', 'Memory', 'JSON'],
-    details: ['Persists conversation history to memory/conversations/', 'Rolling summarization at 80 messages', 'Pushes summaries to Archivist (Pinecone)', 'Per-thread isolation (portal, discord, global)'],
+    desc: 'Conversation persistence agent. Keeper manages per-thread conversation history in Neon DB with Redis write-through caching.',
+    model: 'Ollama qwen3-coder (summaries)', reportsTo: 'ghost',
+    tags: ['Threads', 'Memory', 'Neon DB'],
+    details: ['Persists conversations to Neon PostgreSQL', 'Redis write-through cache (24h TTL)', 'System prompt builder with user profiles', 'Per-thread isolation (portal, discord, global)'],
   },
   sentinel: {
     name: 'Sentinel', role: 'Discord Connector',
-    desc: 'Discord connector. Sentinel monitors the guild, handles slash commands, routes messages to the Ghost pipeline, and manages bot presence.',
-    model: '— (connector)', reportsTo: 'ghost',
-    tags: ['Discord', 'Bot', 'Connector'],
-    details: ['discord.js bot event handler', 'Routes #reception messages to Switchboard', 'Slash command registration and handling', 'Guild-isolated (DISCORD_GUILD_ID only)'],
+    desc: 'Discord connector. Sentinel monitors all guilds, handles @Ghost mentions, routes messages to the Ghost pipeline, and manages bot presence.',
+    model: 'None (connector)', reportsTo: 'ghost',
+    tags: ['Discord', 'Bot', 'Multi-guild'],
+    details: ['discord.js bot event handler', 'Routes #reception messages to Switchboard', 'Responds only to direct @Ghost mentions', 'Multi-guild aware, rate-limited (5 per 5s)'],
   },
   helm: {
     name: 'Helm', role: 'SRE / Deploy',
     desc: 'SRE / Deploy agent. Helm monitors system health, manages PM2 processes, handles deployments, and triggers alerts when things go wrong.',
-    model: 'gpt-4o-mini', reportsTo: 'ghost',
-    tags: ['Deploy', 'SRE', 'Monitor'],
-    details: ['PM2 process monitoring and restart', 'Deployment pipeline management', 'System health alerts', 'Coordinates with Forge on deployments'],
+    model: 'None (system tooling)', reportsTo: 'ghost',
+    tags: ['Deploy', 'SRE', 'PM2'],
+    details: ['PM2 process monitoring and restart', 'System health checks (Redis, DB, Ollama)', 'Deployment pipeline management', 'Coordinates with Forge on auto-fixes'],
   },
 };
 
@@ -177,7 +177,7 @@ function MiniStat({ icon: Icon, value, label, color }: {
     <div className="flex items-center gap-1.5">
       <Icon size={10} style={{ color }} className="shrink-0" />
       <span className="text-[10px] font-mono text-white/80">{value}</span>
-      <span className="text-[9px] text-ghost-muted/30 hidden sm:inline">{label}</span>
+      <span className="text-[9px] text-ghost-muted/50 hidden sm:inline">{label}</span>
     </div>
   );
 }
@@ -290,7 +290,7 @@ function CommanderCard({
               )}
               {successRate !== null && (
                 <div className="hidden sm:flex items-center gap-2 flex-1 max-w-48">
-                  <span className="text-[9px] text-ghost-muted/30">success</span>
+                  <span className="text-[9px] text-ghost-muted/50">success</span>
                   <SuccessBar rate={successRate} color={successRate >= 90 ? '#10B981' : successRate >= 70 ? '#F59E0B' : '#EF4444'} />
                 </div>
               )}
@@ -394,7 +394,7 @@ function DirectorCard({
                 <AlertTriangle size={9} /> {stats.errors_today}
               </span>
             )}
-            <span className="text-ghost-muted/30 ml-auto">
+            <span className="text-ghost-muted/50 ml-auto">
               {stats.total_calls.toLocaleString()}
             </span>
           </div>
@@ -561,7 +561,7 @@ function AgentDrawer({ agentId, stats, onClose }: {
         {(['info', 'stats', 'events'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
                   className={`flex-1 py-2.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all ${
-                    tab === t ? 'text-white' : 'text-ghost-muted/30 hover:text-ghost-muted/60'
+                    tab === t ? 'text-white' : 'text-ghost-muted/50 hover:text-ghost-muted/60'
                   }`}
                   style={{ borderBottom: `2px solid ${tab === t ? color : 'transparent'}` }}>
             {t === 'info' ? 'Role Info' : t === 'stats' ? 'Stats' : 'Events'}
@@ -579,7 +579,7 @@ function AgentDrawer({ agentId, stats, onClose }: {
 
             {/* Model */}
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/30 mb-2 flex items-center gap-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/50 mb-2 flex items-center gap-1.5">
                 <Cpu size={10} /> Model
               </p>
               <span className="text-[10px] sm:text-[11px] font-mono px-3 py-1.5 rounded-lg inline-block"
@@ -590,7 +590,7 @@ function AgentDrawer({ agentId, stats, onClose }: {
 
             {/* Hierarchy */}
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/30 mb-2 flex items-center gap-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/50 mb-2 flex items-center gap-1.5">
                 <GitBranch size={10} /> Hierarchy
               </p>
               <div className="space-y-1.5 text-xs">
@@ -615,7 +615,7 @@ function AgentDrawer({ agentId, stats, onClose }: {
 
             {/* Details */}
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/30 mb-2">Responsibilities</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/50 mb-2">Responsibilities</p>
               <div className="space-y-1.5">
                 {meta.details.map((d, i) => (
                   <div key={i} className="flex items-start gap-2.5 text-[11px] sm:text-xs text-ghost-muted/60">
@@ -628,7 +628,7 @@ function AgentDrawer({ agentId, stats, onClose }: {
 
             {/* Tags */}
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/30 mb-2 flex items-center gap-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/50 mb-2 flex items-center gap-1.5">
                 <Tag size={10} /> Tags
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -670,7 +670,7 @@ function AgentDrawer({ agentId, stats, onClose }: {
                 {successRate !== null && (
                   <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/30 flex items-center gap-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-ghost-muted/50 flex items-center gap-1.5">
                         <CheckCircle2 size={10} /> Success Rate
                       </p>
                       <span className="text-sm font-bold" style={{
@@ -689,7 +689,7 @@ function AgentDrawer({ agentId, stats, onClose }: {
                         transition={{ duration: 1, ease: 'easeOut' }}
                       />
                     </div>
-                    <p className="text-[9px] text-ghost-muted/30 mt-2">
+                    <p className="text-[9px] text-ghost-muted/50 mt-2">
                       {stats.successes.toLocaleString()} successful out of {stats.total_calls.toLocaleString()} total calls
                     </p>
                   </div>
@@ -697,18 +697,18 @@ function AgentDrawer({ agentId, stats, onClose }: {
 
                 {/* Last active */}
                 <div className="rounded-xl p-3 flex items-center gap-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <Clock size={14} className="text-ghost-muted/30 shrink-0" />
+                  <Clock size={14} className="text-ghost-muted/50 shrink-0" />
                   <div>
-                    <p className="text-[10px] text-ghost-muted/30 uppercase tracking-wider">Last Active</p>
+                    <p className="text-[10px] text-ghost-muted/50 uppercase tracking-wider">Last Active</p>
                     <p className="text-xs font-medium text-white">{stats.last_active ? formatRelative(stats.last_active) : 'Never'}</p>
                   </div>
                 </div>
 
                 {/* Live events count */}
                 <div className="rounded-xl p-3 flex items-center gap-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <Activity size={14} className="text-ghost-muted/30 shrink-0" />
+                  <Activity size={14} className="text-ghost-muted/50 shrink-0" />
                   <div>
-                    <p className="text-[10px] text-ghost-muted/30 uppercase tracking-wider">Live Events</p>
+                    <p className="text-[10px] text-ghost-muted/50 uppercase tracking-wider">Live Events</p>
                     <p className="text-xs font-medium text-white">{events.length} in session</p>
                   </div>
                 </div>
@@ -731,7 +731,7 @@ function AgentDrawer({ agentId, stats, onClose }: {
                     <div key={i} className="p-3 rounded-xl" style={{ background: `${evColor}05`, border: `1px solid ${evColor}10` }}>
                       <div className="flex items-center gap-2 mb-1">
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: evColor }} />
-                        <p className="text-[10px] text-ghost-muted/30 font-mono">{formatRelative(e.ts)}</p>
+                        <p className="text-[10px] text-ghost-muted/50 font-mono">{formatRelative(e.ts)}</p>
                       </div>
                       <p className="text-[11px] sm:text-xs text-ghost-muted/70 pl-3.5">{e.message}</p>
                     </div>
@@ -777,7 +777,7 @@ function TierDivider({ label, desc }: { label: string; desc: string }) {
            style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.10)', boxShadow: '0 0 16px rgba(0,212,255,0.04)' }}>
         <span className="text-[8px] sm:text-[9px] font-black tracking-[0.2em] sm:tracking-[0.25em] text-ghost-accent/70 uppercase">{label}</span>
         <span className="hidden sm:inline text-[9px] text-ghost-muted/25">&middot;</span>
-        <span className="hidden sm:inline text-[9px] text-ghost-muted/30 tracking-wide">{desc}</span>
+        <span className="hidden sm:inline text-[9px] text-ghost-muted/50 tracking-wide">{desc}</span>
       </div>
       <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(0,212,255,0.12), transparent)' }} />
     </div>
@@ -910,7 +910,7 @@ export default function AgentsPage() {
       {/* Search & filter bar */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ghost-muted/30" />
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ghost-muted/50" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -934,7 +934,7 @@ export default function AgentsPage() {
           ))}
         </div>
         {hasFilters && (
-          <span className="text-[10px] text-ghost-muted/30 font-mono">{totalFiltered} matched</span>
+          <span className="text-[10px] text-ghost-muted/50 font-mono">{totalFiltered} matched</span>
         )}
       </div>
 

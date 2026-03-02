@@ -17,7 +17,7 @@
   --color-ghost-amber:     #F59E0B;
   --color-ghost-red:       #EF4444;
   --color-ghost-text:      #E2E8F0;
-  --color-ghost-muted:     #64748B;
+  --color-ghost-muted:     #94A3B8;
   --color-ghost-dim:       #1E293B;
 
   /* Fonts */
@@ -145,10 +145,10 @@ body {
 
 /* ── Glassmorphism ────────────────────────────────────────────────────────── */
 .glass {
-  background: rgba(10, 22, 40, 0.6);
+  background: rgba(10, 22, 40, 0.65);
   backdrop-filter: blur(16px) saturate(1.5);
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
-  border: 1px solid rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.10);
 }
 
 .glass-strong {

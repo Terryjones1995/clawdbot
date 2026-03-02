@@ -176,8 +176,8 @@ function ProviderCard({
 
         {/* Last call */}
         {stats?.last_call && (
-          <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-            <p className="text-[9px] text-ghost-muted/30 font-mono flex items-center gap-1">
+          <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+            <p className="text-[9px] text-ghost-muted/50 font-mono flex items-center gap-1">
               <Clock size={8} /> Last call {formatRelative(stats.last_call)}
             </p>
           </div>
@@ -191,8 +191,8 @@ function StatMini({ icon: Icon, label, value, color }: {
   icon: any; label: string; value: string; color: string;
 }) {
   return (
-    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-      <p className="text-[7px] sm:text-[8px] text-ghost-muted/30 uppercase tracking-wider mb-0.5 flex items-center gap-0.5">
+    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <p className="text-[7px] sm:text-[8px] text-ghost-muted/50 uppercase tracking-wider mb-0.5 flex items-center gap-0.5">
         <Icon size={7} /> {label}
       </p>
       <p className="text-[10px] sm:text-xs font-bold text-white font-mono">{value}</p>
@@ -224,11 +224,11 @@ function UsageRow({ u, index }: { u: UsageEntry; index: number }) {
       transition={{ delay: index * 0.03 }}
       className="group rounded-xl overflow-hidden transition-all"
       style={{
-        background: expanded ? 'rgba(255,255,255,0.02)' : 'transparent',
+        background: expanded ? 'rgba(255,255,255,0.07)' : 'transparent',
         borderLeft: `3px solid ${meta.color}50`,
       }}
     >
-      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 cursor-pointer hover:bg-white/[0.05] transition-colors"
            onClick={() => setExpanded(!expanded)}>
         {/* Provider icon */}
         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0"
@@ -257,14 +257,14 @@ function UsageRow({ u, index }: { u: UsageEntry; index: number }) {
 
         {/* Tokens pill */}
         <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md shrink-0"
-             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <ArrowUpRight size={8} className="text-ghost-muted/30" />
+             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <ArrowUpRight size={8} className="text-ghost-muted/50" />
           <span className="text-[9px] font-mono text-ghost-muted/50">{formatTokens(totalTokens)}</span>
         </div>
 
         {/* Latency */}
         {u.latency_ms > 0 && (
-          <span className="text-[9px] font-mono text-ghost-muted/30 hidden lg:inline shrink-0">
+          <span className="text-[9px] font-mono text-ghost-muted/50 hidden lg:inline shrink-0">
             {u.latency_ms < 1000 ? `${u.latency_ms}ms` : `${(u.latency_ms / 1000).toFixed(1)}s`}
           </span>
         )}
@@ -291,7 +291,7 @@ function UsageRow({ u, index }: { u: UsageEntry; index: number }) {
             className="overflow-hidden"
           >
             <div className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1">
-              <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.07)' }}>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
                   <DetailCell icon={Hash} label="Call ID" value={`#${u.id}`} />
                   <DetailCell icon={Cpu} label="Model" value={u.model} valueColor={meta.color} />
@@ -299,16 +299,16 @@ function UsageRow({ u, index }: { u: UsageEntry; index: number }) {
                   <DetailCell icon={Clock} label="Latency" value={u.latency_ms ? `${u.latency_ms}ms` : 'n/a'} />
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                    <p className="text-[8px] text-ghost-muted/30 uppercase tracking-wider mb-0.5">Input</p>
-                    <p className="text-[10px] sm:text-xs font-mono text-ghost-muted/70">{(u.input_tokens || 0).toLocaleString()} <span className="text-ghost-muted/30">tok</span></p>
+                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <p className="text-[8px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Input</p>
+                    <p className="text-[10px] sm:text-xs font-mono text-ghost-muted/70">{(u.input_tokens || 0).toLocaleString()} <span className="text-ghost-muted/50">tok</span></p>
                   </div>
-                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                    <p className="text-[8px] text-ghost-muted/30 uppercase tracking-wider mb-0.5">Output</p>
-                    <p className="text-[10px] sm:text-xs font-mono text-ghost-muted/70">{(u.output_tokens || 0).toLocaleString()} <span className="text-ghost-muted/30">tok</span></p>
+                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <p className="text-[8px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Output</p>
+                    <p className="text-[10px] sm:text-xs font-mono text-ghost-muted/70">{(u.output_tokens || 0).toLocaleString()} <span className="text-ghost-muted/50">tok</span></p>
                   </div>
-                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                    <p className="text-[8px] text-ghost-muted/30 uppercase tracking-wider mb-0.5">Provider</p>
+                  <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <p className="text-[8px] text-ghost-muted/50 uppercase tracking-wider mb-0.5">Provider</p>
                     <p className="text-[10px] sm:text-xs font-mono" style={{ color: meta.color }}>{meta.name}</p>
                   </div>
                 </div>
@@ -325,8 +325,8 @@ function DetailCell({ icon: Icon, label, value, valueColor }: {
   icon: any; label: string; value: string; valueColor?: string;
 }) {
   return (
-    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-      <p className="text-[8px] sm:text-[9px] text-ghost-muted/30 uppercase tracking-wider mb-1 flex items-center gap-1">
+    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <p className="text-[8px] sm:text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-1 flex items-center gap-1">
         <Icon size={8} /> {label}
       </p>
       <p className="text-[10px] sm:text-xs font-mono text-white truncate" style={valueColor ? { color: valueColor } : undefined}>
@@ -399,7 +399,7 @@ export default function CreditsPage() {
         </div>
         <button onClick={() => { fetchData(); fetchStatus(); }}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
-                style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
@@ -434,7 +434,7 @@ export default function CreditsPage() {
             <p className="text-2xl sm:text-3xl font-black" style={{ fontFamily: 'Space Grotesk', color: '#10B981' }}>
               {freePercent}%
             </p>
-            <p className="text-[9px] text-ghost-muted/30 font-mono">{freeCalls.toLocaleString()} free / {paidCalls.toLocaleString()} paid</p>
+            <p className="text-[9px] text-ghost-muted/50 font-mono">{freeCalls.toLocaleString()} free / {paidCalls.toLocaleString()} paid</p>
           </div>
           <div>
             <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider mb-1 flex items-center gap-1">
@@ -459,7 +459,7 @@ export default function CreditsPage() {
         </div>
 
         {/* Free-first progress bar */}
-        <div className="relative mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+        <div className="relative mt-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-[9px] text-ghost-muted/40 font-mono flex items-center gap-1">
               <Zap size={8} className="text-emerald-400" /> Free-first routing efficiency
@@ -479,7 +479,7 @@ export default function CreditsPage() {
       </div>
 
       {/* Period filter */}
-      <div className="flex gap-1 mb-4 sm:mb-5 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex gap-1 mb-4 sm:mb-5 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)' }}>
         {(['today','week','month','all'] as const).map(p => (
           <button key={p} onClick={() => setPeriod(p)}
                   className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-mono capitalize transition-all ${
@@ -536,12 +536,12 @@ export default function CreditsPage() {
                 <Activity size={14} className="text-ghost-accent" />
                 <h3 className="text-sm font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>Recent API Calls</h3>
                 <span className="text-[9px] font-mono text-ghost-muted/40 px-1.5 py-0.5 rounded-full"
-                      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)' }}>
                   {calls.length} total
                 </span>
               </div>
               {calls.length > CALLS_PER_PAGE && (
-                <p className="text-[9px] font-mono text-ghost-muted/30">
+                <p className="text-[9px] font-mono text-ghost-muted/50">
                   {startIdx}–{endIdx} of {calls.length}
                 </p>
               )}
@@ -560,7 +560,7 @@ export default function CreditsPage() {
             )}
 
             {/* Calls list */}
-            <div className="glass rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="glass rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               {loading ? (
                 <div className="p-12 text-center">
                   <RefreshCw size={18} className="text-ghost-accent animate-spin mx-auto mb-2" />
@@ -589,7 +589,7 @@ export default function CreditsPage() {
                     onClick={() => setCallsPage(1)}
                     disabled={callsPage === 1}
                     className="px-2 py-1 rounded-md text-[9px] font-mono text-ghost-muted/40 hover:text-white hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                    style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                    style={{ border: '1px solid rgba(255,255,255,0.10)' }}
                   >
                     First
                   </button>
@@ -597,7 +597,7 @@ export default function CreditsPage() {
                     onClick={() => setCallsPage(p => Math.max(1, p - 1))}
                     disabled={callsPage === 1}
                     className="w-7 h-7 flex items-center justify-center rounded-md text-ghost-muted/40 hover:text-white hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                    style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                    style={{ border: '1px solid rgba(255,255,255,0.10)' }}
                   >
                     <ChevronLeft size={12} />
                   </button>
@@ -622,7 +622,7 @@ export default function CreditsPage() {
                             ? 'text-ghost-accent bg-ghost-accent/15 font-bold'
                             : 'text-ghost-muted/40 hover:text-white hover:bg-white/5'
                         }`}
-                        style={{ border: callsPage === page ? '1px solid rgba(0,212,255,0.2)' : '1px solid rgba(255,255,255,0.06)' }}
+                        style={{ border: callsPage === page ? '1px solid rgba(0,212,255,0.2)' : '1px solid rgba(255,255,255,0.10)' }}
                       >
                         {page}
                       </button>
@@ -632,7 +632,7 @@ export default function CreditsPage() {
                     onClick={() => setCallsPage(p => Math.min(totalPages, p + 1))}
                     disabled={callsPage === totalPages}
                     className="w-7 h-7 flex items-center justify-center rounded-md text-ghost-muted/40 hover:text-white hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                    style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                    style={{ border: '1px solid rgba(255,255,255,0.10)' }}
                   >
                     <ChevronRight size={12} />
                   </button>
@@ -640,7 +640,7 @@ export default function CreditsPage() {
                     onClick={() => setCallsPage(totalPages)}
                     disabled={callsPage === totalPages}
                     className="px-2 py-1 rounded-md text-[9px] font-mono text-ghost-muted/40 hover:text-white hover:bg-white/5 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                    style={{ border: '1px solid rgba(255,255,255,0.06)' }}
+                    style={{ border: '1px solid rgba(255,255,255,0.10)' }}
                   >
                     Last
                   </button>

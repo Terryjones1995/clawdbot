@@ -112,7 +112,7 @@ function AccountCard({ account }: { account: XAccount }) {
                   style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}>
               CONNECTED
             </span>
-            <button className="w-7 h-7 flex items-center justify-center rounded-lg text-ghost-muted/50 hover:text-red-400 hover:bg-red-400/5 transition-all"
+            <button className="w-7 h-7 flex items-center justify-center rounded-lg text-ghost-muted/70 hover:text-red-400 hover:bg-red-400/5 transition-all"
                     title="Disconnect account">
               <Unlink size={12} />
             </button>
@@ -126,9 +126,9 @@ function AccountCard({ account }: { account: XAccount }) {
             { label: 'Following', value: account.following.toLocaleString() },
             { label: 'Agent',     value: account.agent },
           ].map(stat => (
-            <div key={stat.label} className="text-center p-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+            <div key={stat.label} className="text-center p-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.07)' }}>
               <p className="text-sm font-bold text-white" style={{ fontFamily: 'Space Grotesk' }}>{stat.value}</p>
-              <p className="text-[9px] text-ghost-muted/60 uppercase tracking-wider mt-0.5">{stat.label}</p>
+              <p className="text-[9px] text-ghost-muted/70 uppercase tracking-wider mt-0.5">{stat.label}</p>
             </div>
           ))}
         </div>
@@ -143,7 +143,7 @@ function AccountCard({ account }: { account: XAccount }) {
           ))}
         </div>
 
-        <p className="text-[9px] text-ghost-muted/40 font-mono">
+        <p className="text-[9px] text-ghost-muted/70 font-mono">
           Connected {formatRelative(account.connectedAt)}
           {account.lastPost && ` · Last post ${formatRelative(account.lastPost)}`}
         </p>
@@ -151,13 +151,13 @@ function AccountCard({ account }: { account: XAccount }) {
 
       {/* Recent tweets */}
       {tweets.length > 0 && (
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <p className="text-[9px] text-ghost-muted/40 uppercase tracking-wider px-3 sm:px-5 pt-3 sm:pt-4 pb-2">Recent Posts</p>
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <p className="text-[9px] text-ghost-muted/70 uppercase tracking-wider px-3 sm:px-5 pt-3 sm:pt-4 pb-2">Recent Posts</p>
           <div className="space-y-0">
             {tweets.map((tweet, i) => (
               <div key={tweet.id} className={`px-3 sm:px-5 py-2.5 sm:py-3 hover:bg-white/[0.02] transition-all ${i < tweets.length-1 ? 'border-b border-white/[0.04]' : ''}`}>
                 <p className="text-[10px] sm:text-[11px] text-ghost-muted leading-relaxed mb-2">{tweet.content}</p>
-                <div className="flex items-center gap-3 sm:gap-4 text-[9px] text-ghost-muted/40 font-mono">
+                <div className="flex items-center gap-3 sm:gap-4 text-[9px] text-ghost-muted/70 font-mono">
                   <span className="flex items-center gap-1"><Heart size={9} />{tweet.likes}</span>
                   <span className="flex items-center gap-1"><Repeat2 size={9} />{tweet.reposts}</span>
                   <span className="flex items-center gap-1"><MessageCircle size={9} />{tweet.replies}</span>
@@ -262,9 +262,9 @@ export default function SocialPage() {
       <motion.div variants={stagger.container} initial="initial" animate="animate" className="space-y-4">
         {ACCOUNTS.length === 0 ? (
           <div className="glass rounded-2xl p-16 text-center">
-            <Twitter size={32} className="text-ghost-muted/20 mx-auto mb-4" />
+            <Twitter size={32} className="text-ghost-muted/35 mx-auto mb-4" />
             <p className="text-sm font-semibold text-white mb-2" style={{ fontFamily: 'Space Grotesk' }}>No accounts connected</p>
-            <p className="text-xs text-ghost-muted/50 mb-6">Connect an X account to enable Crow agent social automation</p>
+            <p className="text-xs text-ghost-muted/70 mb-6">Connect an X account to enable Crow agent social automation</p>
             <button
               onClick={() => setShowConnect(true)}
               className="px-4 py-2 rounded-lg text-xs font-medium bg-[#1DA1F2]/20 text-[#1DA1F2] hover:bg-[#1DA1F2]/30 transition-all"

@@ -136,7 +136,7 @@ function HeroCard({ agent }: { agent: AgentState }) {
                 </div>
                 <p className="text-[13px] text-ghost-muted">{agent.role}</p>
                 {agent.model && (
-                  <p className="text-[10px] text-ghost-muted/30 font-mono mt-0.5">{agent.model}</p>
+                  <p className="text-[10px] text-ghost-muted/50 font-mono mt-0.5">{agent.model}</p>
                 )}
               </div>
             </div>
@@ -150,7 +150,7 @@ function HeroCard({ agent }: { agent: AgentState }) {
                   key={i}
                   className="flex-1 h-[6px] rounded-full"
                   style={{
-                    background: i < actLevel ? color : 'rgba(255,255,255,0.04)',
+                    background: i < actLevel ? color : 'rgba(255,255,255,0.07)',
                     opacity: i < actLevel ? 0.35 + (i / 10) * 0.55 : 1,
                   }}
                 />
@@ -181,7 +181,7 @@ function HeroCard({ agent }: { agent: AgentState }) {
                   <div
                     key={`${e.ts}-${i}`}
                     className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg"
-                    style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.025)' }}
+                    style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.05)' }}
                   >
                     <div
                       className="w-[6px] h-[6px] rounded-full shrink-0"
@@ -190,7 +190,7 @@ function HeroCard({ agent }: { agent: AgentState }) {
                     <p className="text-[10px] text-ghost-muted/60 font-mono truncate flex-1">
                       {e.message}
                     </p>
-                    <span className="text-[9px] text-ghost-muted/30 font-mono shrink-0">
+                    <span className="text-[9px] text-ghost-muted/50 font-mono shrink-0">
                       {formatRelative(e.ts)}
                     </span>
                   </div>
@@ -200,10 +200,10 @@ function HeroCard({ agent }: { agent: AgentState }) {
           ) : (
             <div
               className="flex items-center gap-2 px-3 py-4 rounded-lg"
-              style={{ background: 'rgba(255,255,255,0.015)' }}
+              style={{ background: 'rgba(255,255,255,0.07)' }}
             >
-              <Radio size={12} className="text-ghost-muted/25" />
-              <p className="text-[10px] text-ghost-muted/25 font-mono">Waiting for first events…</p>
+              <Radio size={12} className="text-ghost-muted/40" />
+              <p className="text-[10px] text-ghost-muted/40 font-mono">Waiting for first events…</p>
             </div>
           )}
         </div>
@@ -306,13 +306,13 @@ function AgentCard({ agent, index }: { agent: AgentState; index: number }) {
         </div>
 
         {/* Divider */}
-        <div className="h-px mb-3" style={{ background: 'rgba(255,255,255,0.04)' }} />
+        <div className="h-px mb-3" style={{ background: 'rgba(255,255,255,0.07)' }} />
 
         {/* Last event */}
         {lastEvent ? (
           <div
             className="flex items-center gap-2 px-3 py-2 rounded-lg mb-3"
-            style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.03)' }}
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.05)' }}
           >
             <p className="text-[10px] text-ghost-muted font-mono truncate flex-1">
               {lastEvent.message}
@@ -322,8 +322,8 @@ function AgentCard({ agent, index }: { agent: AgentState; index: number }) {
             </span>
           </div>
         ) : (
-          <div className="px-3 py-2 rounded-lg mb-3" style={{ background: 'rgba(255,255,255,0.015)' }}>
-            <p className="text-[10px] text-ghost-muted/30 font-mono">No recent activity</p>
+          <div className="px-3 py-2 rounded-lg mb-3" style={{ background: 'rgba(255,255,255,0.07)' }}>
+            <p className="text-[10px] text-ghost-muted/50 font-mono">No recent activity</p>
           </div>
         )}
 
@@ -335,7 +335,7 @@ function AgentCard({ agent, index }: { agent: AgentState; index: number }) {
                 key={i}
                 className="flex-1 h-1.5 rounded-full"
                 style={{
-                  background: i < actLevel ? color : 'rgba(255,255,255,0.04)',
+                  background: i < actLevel ? color : 'rgba(255,255,255,0.07)',
                   opacity: i < actLevel ? 0.35 + (i / 10) * 0.55 : 1,
                 }}
               />
@@ -464,7 +464,7 @@ function ActivityFeed() {
 
   if (!events.length) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-ghost-muted/25">
+      <div className="flex flex-col items-center justify-center py-16 text-ghost-muted/40">
         <Radio size={24} className="mb-3" />
         <p className="text-xs font-mono">Waiting for activity…</p>
       </div>
@@ -483,7 +483,7 @@ function ActivityFeed() {
         return (
           <div
             key={`${e.agentId}-${e.ts}-${i}`}
-            className="flex items-start gap-2 sm:gap-3 px-3 sm:px-5 py-2 sm:py-2.5 hover:bg-white/[0.02] transition-colors"
+            className="flex items-start gap-2 sm:gap-3 px-3 sm:px-5 py-2 sm:py-2.5 hover:bg-white/[0.05] transition-colors"
           >
             <div className="flex flex-col items-center pt-1.5 shrink-0">
               <div
@@ -531,7 +531,7 @@ function HealthGrid({ items }: {
           <div
             key={item.label}
             className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-white/[0.025] transition-colors"
-            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)' }}
+            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.05)' }}
           >
             <Icon size={14} style={{ color }} className="shrink-0" />
             <div className="flex-1 min-w-0">
@@ -587,7 +587,7 @@ function DailyBrief() {
 
   if (!brief) {
     return (
-      <div className="flex flex-col items-center py-12 text-ghost-muted/20">
+      <div className="flex flex-col items-center py-12 text-ghost-muted/35">
         <FileText size={22} className="mb-2" />
         <p className="text-[10px] font-mono">No briefing available</p>
       </div>
@@ -597,7 +597,7 @@ function DailyBrief() {
   return (
     <div className="p-3 sm:p-5">
       {ts && (
-        <p className="text-[9px] font-mono text-ghost-muted/30 mb-2">
+        <p className="text-[9px] font-mono text-ghost-muted/50 mb-2">
           {new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
         </p>
       )}
@@ -612,7 +612,7 @@ function DailyBrief() {
 
 function SectionLabel({ icon: Icon, label, meta }: { icon: any; label: string; meta?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between mb-3 pb-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+    <div className="flex items-center justify-between mb-3 pb-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
       <div className="flex items-center gap-2.5">
         <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: 'rgba(0,212,255,0.08)' }}>
           <Icon size={12} className="text-ghost-accent" />
@@ -828,7 +828,7 @@ export default function OverviewPage() {
           >
             {uptime}
           </p>
-          <p className="text-[9px] text-ghost-muted/30 font-mono tracking-[0.2em] mt-0.5">UPTIME</p>
+          <p className="text-[9px] text-ghost-muted/50 font-mono tracking-[0.2em] mt-0.5">UPTIME</p>
         </div>
       </motion.div>
 
@@ -895,7 +895,7 @@ export default function OverviewPage() {
             right={
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[9px] font-mono text-ghost-muted/30">real-time</span>
+                <span className="text-[9px] font-mono text-ghost-muted/50">real-time</span>
               </div>
             }
           >

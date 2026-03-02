@@ -200,7 +200,7 @@ function JobRow({ job, users }: { job: Job; users: Record<string, DiscordUser> }
       className="glass rounded-xl overflow-hidden"
       style={{ border: `1px solid ${cfg.color}12`, borderLeft: `3px solid ${color}60` }}
     >
-      <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer hover:bg-white/[0.015] transition-colors"
+      <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer hover:bg-white/[0.05] transition-colors"
            onClick={() => setExpanded(!expanded)}>
         <Icon size={14} style={{ color: cfg.color }} className={job.status === 'running' ? 'animate-spin' : ''} />
 
@@ -241,8 +241,8 @@ function JobRow({ job, users }: { job: Job; users: Record<string, DiscordUser> }
           {formatRelative(job.ts)}
         </span>
         {expanded
-          ? <ChevronUp size={12} className="text-ghost-muted/30 shrink-0" />
-          : <ChevronDown size={12} className="text-ghost-muted/30 shrink-0" />
+          ? <ChevronUp size={12} className="text-ghost-muted/50 shrink-0" />
+          : <ChevronDown size={12} className="text-ghost-muted/50 shrink-0" />
         }
       </div>
 
@@ -252,7 +252,7 @@ function JobRow({ job, users }: { job: Job; users: Record<string, DiscordUser> }
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+            style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
             className="overflow-hidden"
           >
             <div className="p-3 sm:p-4 space-y-3">
@@ -279,14 +279,14 @@ function JobRow({ job, users }: { job: Job; users: Record<string, DiscordUser> }
               {/* Outcome row */}
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Outcome:</span>
+                  <span className="text-[9px] text-ghost-muted/50 uppercase tracking-wider">Outcome:</span>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded"
                         style={{ color: cfg.color, background: `${cfg.color}08` }}>
                     {formatOutcome(job.outcome)}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Level:</span>
+                  <span className="text-[9px] text-ghost-muted/50 uppercase tracking-wider">Level:</span>
                   <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
                     job.level === 'ERROR' ? 'text-red-400 bg-red-400/10' :
                     job.level === 'WARN'  ? 'text-yellow-400 bg-yellow-400/10' :
@@ -305,7 +305,7 @@ function JobRow({ job, users }: { job: Job; users: Record<string, DiscordUser> }
                       {d.avatar && (
                         <Image src={d.avatar} alt="" width={14} height={14} className="rounded-full" unoptimized />
                       )}
-                      <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">{d.label}:</span>
+                      <span className="text-[9px] text-ghost-muted/50 uppercase tracking-wider">{d.label}:</span>
                       <span className="text-[10px] font-mono text-ghost-muted/70">{d.value}</span>
                     </div>
                   ))}
@@ -315,7 +315,7 @@ function JobRow({ job, users }: { job: Job; users: Record<string, DiscordUser> }
               {/* Full note */}
               {summary && (
                 <div>
-                  <p className="text-[9px] text-ghost-muted/30 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-1 flex items-center gap-1">
                     <FileText size={9} /> Details
                   </p>
                   <p className="text-[10px] sm:text-[11px] font-mono text-ghost-muted/60 bg-white/[0.025] p-2.5 rounded-lg leading-relaxed break-all">
@@ -335,8 +335,8 @@ function DetailCell({ icon: Icon, label, value, valueColor }: {
   icon: any; label: string; value: string; valueColor?: string;
 }) {
   return (
-    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-      <p className="text-[8px] sm:text-[9px] text-ghost-muted/30 uppercase tracking-wider mb-1 flex items-center gap-1">
+    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <p className="text-[8px] sm:text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-1 flex items-center gap-1">
         <Icon size={8} /> {label}
       </p>
       <p className="text-[10px] sm:text-xs font-mono text-white truncate" style={valueColor ? { color: valueColor } : undefined}>
@@ -425,13 +425,13 @@ export default function JobsPage() {
         </div>
         <button onClick={fetchJobs}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
-                style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 sm:mb-5 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex gap-1 mb-4 sm:mb-5 p-1 rounded-xl w-fit" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)' }}>
         {tabs.map(t => {
           const TIcon = t.icon;
           return (
@@ -449,12 +449,12 @@ export default function JobsPage() {
       {/* Jobs list */}
       <div className="space-y-2 mb-4">
         {loading ? (
-          <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
             <Loader2 size={20} className="text-ghost-accent animate-spin mx-auto mb-2" />
             <p className="text-xs text-ghost-muted">Loading jobs...</p>
           </div>
         ) : jobs.length === 0 ? (
-          <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
             <Briefcase size={24} className="text-ghost-muted/20 mx-auto mb-2" />
             <p className="text-xs text-ghost-muted/40">No jobs found</p>
           </div>
@@ -475,14 +475,14 @@ export default function JobsPage() {
               onClick={() => setPage(0)}
               disabled={page === 0}
               className="px-2 py-1.5 rounded-lg text-[10px] font-mono text-ghost-muted/50 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-              style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               First
             </button>
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
               className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted/50 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-              style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               <ChevronLeft size={14} />
             </button>
 
@@ -499,7 +499,7 @@ export default function JobsPage() {
                       ? 'text-ghost-accent bg-ghost-accent/15'
                       : 'text-ghost-muted/40 hover:text-white hover:bg-white/5'
                   }`}
-                  style={{ border: p === page ? '1px solid rgba(0,212,255,0.2)' : '1px solid rgba(255,255,255,0.06)' }}>
+                  style={{ border: p === page ? '1px solid rgba(0,212,255,0.2)' : '1px solid rgba(255,255,255,0.10)' }}>
                   {p + 1}
                 </button>
               ));
@@ -509,14 +509,14 @@ export default function JobsPage() {
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
               className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted/50 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-              style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               <ChevronRight size={14} />
             </button>
             <button
               onClick={() => setPage(totalPages - 1)}
               disabled={page >= totalPages - 1}
               className="px-2 py-1.5 rounded-lg text-[10px] font-mono text-ghost-muted/50 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-              style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               Last
             </button>
           </div>

@@ -203,8 +203,8 @@ function DetailCell({ icon: Icon, label, value, valueColor }: {
   icon: any; label: string; value: string; valueColor?: string;
 }) {
   return (
-    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-      <p className="text-[8px] sm:text-[9px] text-ghost-muted/30 uppercase tracking-wider mb-1 flex items-center gap-1">
+    <div className="rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <p className="text-[8px] sm:text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-1 flex items-center gap-1">
         <Icon size={8} /> {label}
       </p>
       <p className="text-[10px] sm:text-xs font-mono text-white truncate" style={valueColor ? { color: valueColor } : undefined}>
@@ -236,7 +236,7 @@ function LogRow({ log, users }: { log: LogEntry; users: Record<string, DiscordUs
       className="glass rounded-xl overflow-hidden"
       style={{ border: `1px solid ${levelCfg.color}12`, borderLeft: `3px solid ${color}60` }}
     >
-      <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer hover:bg-white/[0.015] transition-colors"
+      <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer hover:bg-white/[0.05] transition-colors"
            onClick={() => setExpanded(!expanded)}>
         <LevelIcon size={14} style={{ color: levelCfg.color }}  />
 
@@ -273,8 +273,8 @@ function LogRow({ log, users }: { log: LogEntry; users: Record<string, DiscordUs
           {formatRelative(log.ts)}
         </span>
         {expanded
-          ? <ChevronUp size={12} className="text-ghost-muted/30 shrink-0" />
-          : <ChevronDown size={12} className="text-ghost-muted/30 shrink-0" />
+          ? <ChevronUp size={12} className="text-ghost-muted/50 shrink-0" />
+          : <ChevronDown size={12} className="text-ghost-muted/50 shrink-0" />
         }
       </div>
 
@@ -284,7 +284,7 @@ function LogRow({ log, users }: { log: LogEntry; users: Record<string, DiscordUs
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+            style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
             className="overflow-hidden"
           >
             <div className="p-3 sm:p-4 space-y-3">
@@ -312,7 +312,7 @@ function LogRow({ log, users }: { log: LogEntry; users: Record<string, DiscordUs
               <div className="flex items-center gap-3 flex-wrap">
                 {log.outcome && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Outcome:</span>
+                    <span className="text-[9px] text-ghost-muted/50 uppercase tracking-wider">Outcome:</span>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded"
                           style={{ color: outcomeColor, background: `${outcomeColor}10` }}>
                       {formatOutcome(log.outcome)}
@@ -320,7 +320,7 @@ function LogRow({ log, users }: { log: LogEntry; users: Record<string, DiscordUs
                   </div>
                 )}
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Level:</span>
+                  <span className="text-[9px] text-ghost-muted/50 uppercase tracking-wider">Level:</span>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded"
                         style={{ color: levelCfg.color, background: `${levelCfg.color}10` }}>
                     {log.level}
@@ -328,7 +328,7 @@ function LogRow({ log, users }: { log: LogEntry; users: Record<string, DiscordUs
                 </div>
                 {log.user_role && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">Role:</span>
+                    <span className="text-[9px] text-ghost-muted/50 uppercase tracking-wider">Role:</span>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded text-ghost-muted/60 bg-white/[0.03]">
                       {log.user_role}
                     </span>
@@ -344,7 +344,7 @@ function LogRow({ log, users }: { log: LogEntry; users: Record<string, DiscordUs
                       {d.avatar && (
                         <Image src={d.avatar} alt="" width={14} height={14} className="rounded-full" unoptimized />
                       )}
-                      <span className="text-[9px] text-ghost-muted/30 uppercase tracking-wider">{d.label}:</span>
+                      <span className="text-[9px] text-ghost-muted/50 uppercase tracking-wider">{d.label}:</span>
                       <span className="text-[10px] font-mono text-ghost-muted/70">{d.value}</span>
                     </div>
                   ))}
@@ -354,7 +354,7 @@ function LogRow({ log, users }: { log: LogEntry; users: Record<string, DiscordUs
               {/* Full note */}
               {summary && (
                 <div>
-                  <p className="text-[9px] text-ghost-muted/30 uppercase tracking-wider mb-1 flex items-center gap-1">
+                  <p className="text-[9px] text-ghost-muted/50 uppercase tracking-wider mb-1 flex items-center gap-1">
                     <FileText size={9} /> Details
                   </p>
                   <p className="text-[10px] sm:text-[11px] font-mono text-ghost-muted/60 bg-white/[0.025] p-2.5 rounded-lg leading-relaxed break-all">
@@ -458,13 +458,13 @@ export default function LogsPage() {
         </div>
         <button onClick={fetchLogs}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted hover:text-white hover:bg-white/5 transition-all"
-                style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
 
       {/* Filters */}
-      <div className="glass rounded-xl p-3 sm:p-4 mb-4 sm:mb-5 space-y-3" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="glass rounded-xl p-3 sm:p-4 mb-4 sm:mb-5 space-y-3" style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
         {/* Search */}
         <div className="relative">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ghost-muted/40" />
@@ -474,7 +474,7 @@ export default function LogsPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 rounded-lg text-xs text-white placeholder-ghost-muted/30 outline-none transition-colors focus:ring-1 focus:ring-ghost-accent/30"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.10)' }}
           />
         </div>
 
@@ -492,7 +492,7 @@ export default function LogsPage() {
                     className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] sm:text-[10px] font-mono transition-all"
                     style={isActive
                       ? { color: ac, background: `${ac}15`, border: `1px solid ${ac}30` }
-                      : { color: 'rgba(255,255,255,0.35)', background: 'transparent', border: '1px solid rgba(255,255,255,0.06)' }
+                      : { color: 'rgba(255,255,255,0.35)', background: 'transparent', border: '1px solid rgba(255,255,255,0.10)' }
                     }>
                     {a !== 'All' && <span className="text-[9px]">{agentEmoji(a)}</span>}
                     {a}
@@ -514,7 +514,7 @@ export default function LogsPage() {
                     className="px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-mono transition-all"
                     style={isActive
                       ? { color: lc, background: `${lc}15`, border: `1px solid ${lc}30` }
-                      : { color: 'rgba(255,255,255,0.35)', background: 'transparent', border: '1px solid rgba(255,255,255,0.06)' }
+                      : { color: 'rgba(255,255,255,0.35)', background: 'transparent', border: '1px solid rgba(255,255,255,0.10)' }
                     }>
                     {l}
                   </button>
@@ -528,12 +528,12 @@ export default function LogsPage() {
       {/* Log list */}
       <div className="space-y-2 mb-4">
         {loading ? (
-          <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
             <Loader2 size={20} className="text-ghost-accent animate-spin mx-auto mb-2" />
             <p className="text-xs text-ghost-muted">Loading logs...</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="glass rounded-2xl p-12 text-center" style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
             <ScrollText size={24} className="text-ghost-muted/20 mx-auto mb-2" />
             <p className="text-xs text-ghost-muted/40">No log entries found</p>
           </div>
@@ -554,14 +554,14 @@ export default function LogsPage() {
               onClick={() => setPage(0)}
               disabled={page === 0}
               className="px-2 py-1.5 rounded-lg text-[10px] font-mono text-ghost-muted/50 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-              style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               First
             </button>
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
               className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted/50 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-              style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               <ChevronLeft size={14} />
             </button>
 
@@ -577,7 +577,7 @@ export default function LogsPage() {
                       ? 'text-ghost-accent bg-ghost-accent/15'
                       : 'text-ghost-muted/40 hover:text-white hover:bg-white/5'
                   }`}
-                  style={{ border: p === page ? '1px solid rgba(0,212,255,0.2)' : '1px solid rgba(255,255,255,0.06)' }}>
+                  style={{ border: p === page ? '1px solid rgba(0,212,255,0.2)' : '1px solid rgba(255,255,255,0.10)' }}>
                   {p + 1}
                 </button>
               ));
@@ -587,14 +587,14 @@ export default function LogsPage() {
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
               className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost-muted/50 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-              style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               <ChevronRight size={14} />
             </button>
             <button
               onClick={() => setPage(totalPages - 1)}
               disabled={page >= totalPages - 1}
               className="px-2 py-1.5 rounded-lg text-[10px] font-mono text-ghost-muted/50 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-              style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              style={{ border: '1px solid rgba(255,255,255,0.10)' }}>
               Last
             </button>
           </div>
