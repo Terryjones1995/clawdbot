@@ -155,6 +155,11 @@ async function initSchema() {
     console.warn('[DB] Could not create HNSW index (pgvector may be unavailable):', err.message);
   }
 
+  // Indexes for memory pruning and querying
+  await query(`CREATE INDEX IF NOT EXISTS ghost_memory_source_idx ON ghost_memory (source)`);
+  await query(`CREATE INDEX IF NOT EXISTS ghost_memory_category_idx ON ghost_memory (category)`);
+  await query(`CREATE INDEX IF NOT EXISTS ghost_memory_created_idx ON ghost_memory (created_at)`);
+
   // Access tracking columns for memory pruning
   try {
     await query(`ALTER TABLE ghost_memory ADD COLUMN IF NOT EXISTS last_accessed_at TIMESTAMPTZ DEFAULT NOW()`);

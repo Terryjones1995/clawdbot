@@ -5,16 +5,23 @@ import { useGhostStore, ForgeProgressEvent } from '@/store';
 
 export function useGhostWebSocket() {
   const ws = useRef<WebSocket | null>(null);
+  const retryRef = useRef(0);
+  const mountedRef = useRef(true);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
   const { upsertAgent, setAgentStatus, pushAgentEvent, pushMessage, setWsConnected, setForgeProgress, setTerminalOpen, pushTerminalLine } = useGhostStore();
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Zustand selectors are stable store references;
+  // adding them as deps would cause reconnect loops since destructured selectors create new refs each render.
   useEffect(() => {
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:18790';
 
     function connect() {
       try {
-        ws.current = new WebSocket(`${wsUrl}/ws`);
+        const token = process.env.NEXT_PUBLIC_PORTAL_SECRET ?? '';
+        ws.current = new WebSocket(`${wsUrl}/ws?token=${encodeURIComponent(token)}`);
 
         ws.current.onopen = () => {
+          retryRef.current = 0;
           setWsConnected(true);
           console.log('[WS] Connected to Ghost');
         };
@@ -77,8 +84,11 @@ export function useGhostWebSocket() {
 
         ws.current.onclose = () => {
           setWsConnected(false);
-          // Reconnect after 3s
-          setTimeout(connect, 3000);
+          if (!mountedRef.current) return;
+          // Exponential backoff: 3s, 4.5s, 6.75s, ... capped at 30s
+          const delay = Math.min(3000 * Math.pow(1.5, retryRef.current), 30000);
+          retryRef.current++;
+          reconnectTimer.current = setTimeout(connect, delay);
         };
 
         ws.current.onerror = () => {
@@ -87,12 +97,16 @@ export function useGhostWebSocket() {
         };
       } catch {
         setWsConnected(false);
-        setTimeout(connect, 5000);
+        if (mountedRef.current) {
+          reconnectTimer.current = setTimeout(connect, 5000);
+        }
       }
     }
 
     connect();
     return () => {
+      mountedRef.current = false;
+      clearTimeout(reconnectTimer.current);
       ws.current?.close();
     };
   }, []);

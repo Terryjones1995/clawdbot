@@ -23,6 +23,7 @@ const { trackUsage } = require('./skills/usage-tracker');
 const learning       = require('./skills/learning');
 const archivist      = require('./archivist');
 const db             = require('./db');
+const registry       = require('./agentRegistry');
 
 const ROOT_DIR = path.join(__dirname, '..');
 
@@ -35,19 +36,17 @@ You're a senior dev: direct, opinionated, allergic to vague requirements. You sh
 If requirements are unclear, flag it immediately — don't guess and deliver garbage. MVP-first, no gold-plating.
 
 Tech stack:
-- Runtime: Node.js 18+
+- Runtime: Node.js 22
 - Framework: Express 4
 - AI: Anthropic SDK (Claude Sonnet/Opus), Ollama (qwen2.5:14b, local)
-- DB: Neon (Postgres) via pg or Drizzle ORM
+- DB: Neon (Postgres) via pg
 - Cache/Queue/Events: Redis (ioredis)
-- Vector: Pinecone
-- Email: Resend
-- Analytics: PostHog
-- Discord: discord.js v14
+- Vector: pgvector
+- Discord: OpenClaw gateway (config-driven)
 - Auth: JWT (jsonwebtoken) + bcryptjs
 
 Project structure:
-- server.js         — Express gateway (port 18789)
+- server.js         — Express gateway (port 18790)
 - src/              — server-side modules
 - openclaw/agents/  — agent prompt files
 - openclaw/skills/  — connector implementations
@@ -217,6 +216,8 @@ async function run(input) {
 
   if (!description.trim()) throw new Error('description is required');
 
+  registry.setStatus('forge', 'working', { task });
+
   const { model: targetModel, reason: escalationReason } = detectModel(task, description, files, context);
   const userMessage = buildUserMessage(task, description, files, context, priority);
 
@@ -239,6 +240,20 @@ async function run(input) {
     }
   }
 
+  // ── gpt-5.3-codex (bug-fix default) ──
+  if (targetModel === 'gpt-5.3-codex') {
+    const { text, escalate, reason } = await codexModel.fixCode(SYSTEM_PROMPT, userMessage, 8192);
+    if (!escalate) {
+      rawResponse = text;
+    } else {
+      // codex unavailable — fall through to Claude Sonnet
+      miniFailed = true;
+      modelUsed  = 'claude-sonnet-4-6';
+      escalated  = true;
+      logEscalation('gpt-5.3-codex', 'claude-sonnet-4-6', `gpt-5.3-codex unavailable: ${reason}`, task);
+    }
+  }
+
   // ── gpt-4o-mini (fast, cheap default) ──
   if (targetModel === 'gpt-4o-mini') {
     const { result, escalate, reason } = await mini.tryChat(
@@ -257,7 +272,7 @@ async function run(input) {
   }
 
   // ── Claude Sonnet or Opus (escalation path) ──
-  if ((targetModel !== 'gpt-4o-mini' && targetModel !== 'o4-mini') || miniFailed) {
+  if ((targetModel !== 'gpt-4o-mini' && targetModel !== 'o4-mini' && targetModel !== 'gpt-5.3-codex') || miniFailed) {
     if (escalationReason && !miniFailed) {
       logEscalation(targetModel, modelUsed, escalationReason, task);
     }
@@ -294,25 +309,16 @@ async function run(input) {
     ttl_days:     180,
   }).catch(() => {});
 
+  registry.pushEvent('forge', `${task}: ${description.slice(0, 60)} (${modelUsed})`, 'success');
+  registry.setStatus('forge', 'idle');
+
   return result;
 }
 
 // ── Auto-fix ──────────────────────────────────────────────────────────────────
 
-const AUTOFIX_SYSTEM = `You are Forge, an expert Node.js/JavaScript debugger for the Ghost AI system.
-You will receive an error message and the full contents of the broken file.
-Your job is to output the COMPLETE fixed file — every line, no placeholders, no "// ... rest of file".
-The fix must be minimal and surgical — change only what is needed to resolve the error.
-
-Rules:
-1. Output ONLY the fixed file content. No explanation, no markdown fences, no JSON wrapper.
-2. Preserve all existing logic, formatting, and comments unless they are wrong.
-3. If the error is in an import/require, fix only that import.
-4. If you cannot determine the fix with confidence, output the original file unchanged.`;
-
 // Agent name → most likely source file
 const AGENT_FILE_MAP = {
-  sentinel:    'src/sentinel.js',
   scout:       'src/scout.js',
   scribe:      'src/scribe.js',
   forge:       'src/forge.js',
@@ -323,7 +329,6 @@ const AGENT_FILE_MAP = {
   archivist:   'src/archivist.js',
   courier:     'src/courier.js',
   ghost:       'src/routes/reception.js',
-  switchboard: 'src/switchboard.js',
 };
 
 // Files that must never be auto-patched — they are the auto-fix engine itself.
@@ -331,8 +336,17 @@ const AGENT_FILE_MAP = {
 const PROTECTED_FILES = new Set([
   'src/forge.js',
   'server.js',
+  'src/db.js',
+  'src/redis.js',
+  'src/middleware/requireAuth.js',
+  'src/routes/forge.js',
   'src/skills/usage-tracker.js',
   'src/skills/learning.js',
+  'ecosystem.config.js',
+  'package.json',
+  'openclaw-start.sh',
+  'CLAUDE.md',
+  '.env',
 ]);
 
 // Parse an error note/stack to extract a likely file path
@@ -347,130 +361,6 @@ function _extractFilePath(note = '', action = '') {
     if (m) return m[0];
   }
   return null;
-}
-
-/**
- * Auto-fix: identify the broken file, fix it with gpt-5.3-codex,
- * write it to disk, and restart Ghost.
- *
- * @param {object} opts
- *   - errorNote  {string}  specific error text (optional — fetched from DB if not given)
- *   - filePath   {string}  override file path to fix (optional)
- *   - agentName  {string}  agent that logged the error — used to guess file when no path in note
- *   - restart    {boolean} restart ghost after fix (default true)
- *
- * @returns {{ fixed, filePath, model_used, summary, patch }}
- */
-async function autoFix({ errorNote, filePath, agentName, restart = true } = {}) {
-  // Step 1: get the error to fix
-  let targetError = errorNote;
-  let targetFile  = filePath;
-
-  if (!targetError) {
-    // Fetch most recent ERROR from agent_logs
-    const { rows } = await db.query(
-      `SELECT note, action, agent FROM agent_logs WHERE level = 'ERROR' ORDER BY ts DESC LIMIT 5`
-    );
-    if (!rows.length) return { fixed: false, summary: 'No errors found in agent_logs.' };
-
-    // Use the first entry that has a recognisable file path, or fall back to agent mapping
-    for (const row of rows) {
-      const fp = _extractFilePath(row.note || '', row.action || '')
-                 || AGENT_FILE_MAP[(row.agent || '').toLowerCase()];
-      if (fp) {
-        targetError = row.note;
-        targetFile  = targetFile || fp;
-        if (!agentName) agentName = row.agent;
-        break;
-      }
-    }
-    if (!targetError) targetError = rows[0].note;
-  }
-
-  // If still no file path, try agent name mapping
-  if (!targetFile && agentName) {
-    targetFile = AGENT_FILE_MAP[agentName.toLowerCase()];
-  }
-
-  if (!targetFile) {
-    return {
-      fixed:      false,
-      summary:    `Could not identify which file to fix from error:\n${targetError}`,
-      model_used: 'none',
-    };
-  }
-
-  // Step 2: read the file
-  const absPath = path.isAbsolute(targetFile)
-    ? targetFile
-    : path.join(ROOT_DIR, targetFile);
-
-  let originalContent;
-  try {
-    originalContent = fs.readFileSync(absPath, 'utf8');
-  } catch (err) {
-    return { fixed: false, summary: `Cannot read file ${targetFile}: ${err.message}`, model_used: 'none' };
-  }
-
-  // Step 3: call o4-mini to generate the fix
-  const userPrompt = `ERROR:\n${targetError}\n\nFILE: ${targetFile}\n\`\`\`js\n${originalContent}\n\`\`\``;
-
-  const { text: fixedContent, escalate, reason } = await codexModel.fixCode(AUTOFIX_SYSTEM, userPrompt, 16384);
-
-  const modelUsed = fixedContent ? (codexModel.MODEL || 'gpt-5.3-codex') : 'gpt-5.3-codex';
-
-  if (escalate || !fixedContent.trim()) {
-    const summary = `gpt-5.3-codex failed to generate a fix: ${reason}`;
-    db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix', outcome: 'no-fix', model: modelUsed, note: `file=${targetFile} | ${summary}` }).catch(() => {});
-    return {
-      fixed:      false,
-      filePath:   targetFile,
-      model_used: modelUsed,
-      summary,
-    };
-  }
-
-  // Strip any accidental markdown fences
-  const clean = fixedContent.replace(/^```(?:js|javascript|typescript)?\n?/i, '').replace(/\n?```$/, '').trim();
-
-  // Sanity check — must look like JS (has 'use strict' or require or function or const)
-  if (!/\b(require|const|function|module\.exports|'use strict'|import )\b/.test(clean)) {
-    const summary = 'Fix output did not look like valid JS — not applied for safety.';
-    db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix', outcome: 'no-fix', model: modelUsed, note: `file=${targetFile} | ${summary}` }).catch(() => {});
-    return {
-      fixed:      false,
-      filePath:   targetFile,
-      model_used: modelUsed,
-      summary,
-    };
-  }
-
-  // Step 4: write the fix
-  fs.writeFileSync(absPath, clean, 'utf8');
-
-  log('autofix', 'system', modelUsed, 'applied', true, `file=${targetFile}`);
-  db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix', outcome: 'fixed', model: modelUsed, note: `file=${targetFile}` }).catch(() => {});
-  learning.learnFromFix(agentName || 'unknown', targetError, `Fixed with ${modelUsed}`, targetFile).catch(() => {});
-
-  // Step 5: restart Ghost
-  let restartMsg = '';
-  if (restart) {
-    try {
-      execSync('pm2 restart ghost', { timeout: 15000 });
-      restartMsg = ' Ghost restarted.';
-    } catch (err) {
-      restartMsg = ` Restart failed: ${err.message}`;
-    }
-  }
-
-  const summary = `Fixed \`${targetFile}\` using ${modelUsed}.${restartMsg}`;
-  return {
-    fixed:      true,
-    filePath:   targetFile,
-    model_used: modelUsed,
-    summary,
-    patch:      `Original ${originalContent.split('\n').length} lines → Fixed ${clean.split('\n').length} lines`,
-  };
 }
 
 // ── Auto-fix via Claude Code CLI ──────────────────────────────────────────────
@@ -519,12 +409,15 @@ function _formatStreamLine(event) {
  * @returns {{ fixed, filePath, model_used, summary, sessionId? }}
  */
 async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } = {}) {
+  registry.setStatus('forge', 'working', { task: 'autofix' });
   // Resolve target file
   let targetFile = filePath;
   if (!targetFile && errorNote) targetFile = _extractFilePath(errorNote, '');
   if (!targetFile && agentName)  targetFile = AGENT_FILE_MAP[agentName.toLowerCase()];
 
   if (!targetFile) {
+    registry.pushEvent('forge', `autofix skipped: no file identified`, 'warning');
+    registry.setStatus('forge', 'idle');
     return {
       fixed:      false,
       model_used: 'claude-code-cli',
@@ -532,8 +425,23 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
     };
   }
 
+  // Normalize to a relative path before checking protected list
+  targetFile = path.relative(ROOT_DIR, path.resolve(ROOT_DIR, targetFile));
+  if (targetFile.startsWith('..')) {
+    registry.pushEvent('forge', `autofix skipped: ${targetFile} (outside project)`, 'warning');
+    registry.setStatus('forge', 'idle');
+    return {
+      fixed:      false,
+      filePath:   targetFile,
+      model_used: 'claude-code-cli',
+      summary:    `Skipped auto-fix: ${targetFile} is outside the project root.`,
+    };
+  }
+
   // Guard: never auto-patch the repair engine itself — would risk corruption + infinite loop
   if (PROTECTED_FILES.has(targetFile)) {
+    registry.pushEvent('forge', `autofix skipped: ${targetFile} (protected)`, 'warning');
+    registry.setStatus('forge', 'idle');
     return {
       fixed:      false,
       filePath:   targetFile,
@@ -586,13 +494,18 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
     const outputFormat  = streaming ? 'stream-json' : 'json';
     const promptB64     = Buffer.from(prompt).toString('base64');
     const verboseFlag   = streaming ? '--verbose' : '';
-    const claudeCmd     = `env -u CLAUDECODE claude --print ${verboseFlag} --output-format ${outputFormat} --max-turns 3 --allowedTools Read,Edit,Bash --dangerously-skip-permissions --setting-sources user -- "$(printf '%s' '${promptB64}' | base64 -d)"`;
+    const claudeCmd     = `env -u CLAUDECODE claude --print ${verboseFlag} --output-format ${outputFormat} --max-turns 3 --allowedTools Read,Edit --dangerously-skip-permissions --setting-sources user -- "$(printf '%s' '${promptB64}' | base64 -d)"`;
 
     const child = spawn(
       'su',
       ['-s', '/bin/bash', 'forge', '-c', `cd ${ROOT_DIR} && ${claudeCmd}`],
       {
-        env:        process.env,
+        env: {
+          PATH: process.env.PATH,
+          HOME: '/home/forge',
+          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+          TERM: 'xterm-256color',
+        },
         cwd:        ROOT_DIR,
         timeout:    180_000,   // 3 min — Sonnet fits comfortably (~60s start + ~10s fix)
         killSignal: 'SIGKILL', // force-kill on timeout, no waiting for graceful exit
@@ -637,6 +550,8 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
     child.on('error', (err) => {
       const summary = `claude CLI spawn error: ${err.message}`;
       db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-code-cli', note: `file=${targetFile} | ${summary}` }).catch(() => {});
+      registry.pushEvent('forge', `autofix error: ${targetFile}`, 'error');
+      registry.setStatus('forge', 'idle');
       resolve({ fixed: false, filePath: targetFile, model_used: 'claude-code-cli', summary });
     });
 
@@ -663,6 +578,8 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
         db.logEntry({ level: 'INFO', agent: 'Forge', action: 'autofix-claude', outcome: 'fixed', model: 'claude-sonnet-4-6', note: `file=${targetFile}` }).catch(() => {});
         // Feed to learning system so agents avoid this error pattern
         learning.learnFromFix(agentName || 'unknown', errorNote, summary, targetFile).catch(() => {});
+        registry.pushEvent('forge', `autofix: fixed ${targetFile}`, 'success');
+        registry.setStatus('forge', 'idle');
         return resolve({ fixed: true, filePath: targetFile, model_used: 'claude-sonnet-4-6', summary, sessionId, result: resultText });
       }
 
@@ -671,11 +588,15 @@ async function autoFixWithClaude({ errorNote, filePath, agentName, onProgress } 
         const label   = signal === 'SIGKILL' ? 'timed out after 180s (SIGKILL)' : code !== null ? `exited ${code}` : `killed (${signal})`;
         const summary = `claude CLI ${label}: ${stderr.slice(0, 200)}`;
         db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-sonnet-4-6', note: `file=${targetFile} | ${summary}` }).catch(() => {});
+        registry.pushEvent('forge', `autofix failed: ${targetFile} (${label.slice(0, 40)})`, 'error');
+        registry.setStatus('forge', 'idle');
         return resolve({ fixed: false, filePath: targetFile, model_used: 'claude-sonnet-4-6', summary });
       }
 
       const summary = `Claude Code ran on \`${targetFile}\` but made no changes. ${String(resultText).slice(0, 150)}`;
       db.logEntry({ level: 'WARN', agent: 'Forge', action: 'autofix-claude', outcome: 'no-fix', model: 'claude-sonnet-4-6', note: `file=${targetFile} | no changes made` }).catch(() => {});
+      registry.pushEvent('forge', `autofix: no changes to ${targetFile}`, 'warning');
+      registry.setStatus('forge', 'idle');
       resolve({ fixed: false, filePath: targetFile, model_used: 'claude-sonnet-4-6', summary });
     });
   });
@@ -699,64 +620,67 @@ async function fixAll(errors = []) {
   _fixAllRunning = true;
 
   const total = errors.length;
-  db.events.emit('forge:progress', { type: 'fix-all:start', total, ts: new Date().toISOString() });
-
   const results = [];
   let anyFixed  = false;
 
-  for (let i = 0; i < errors.length; i++) {
-    const e = errors[i];
+  try {
+    db.events.emit('forge:progress', { type: 'fix-all:start', total, ts: new Date().toISOString() });
 
-    db.events.emit('forge:progress', {
-      type:    'fix-all:item-start',
-      index:   i,
-      total,
-      errorId: e.id,
-      agent:   e.agentName || '',
-      file:    e.filePath || AGENT_FILE_MAP[(e.agentName || '').toLowerCase()] || '',
-      ts:      new Date().toISOString(),
-    });
+    for (let i = 0; i < errors.length; i++) {
+      const e = errors[i];
 
-    let r;
-    try {
-      r = await autoFixWithClaude({ errorNote: e.errorNote, filePath: e.filePath, agentName: e.agentName });
-    } catch (err) {
-      r = { fixed: false, filePath: e.filePath, model_used: 'claude-code-cli', summary: err.message };
+      db.events.emit('forge:progress', {
+        type:    'fix-all:item-start',
+        index:   i,
+        total,
+        errorId: e.id,
+        agent:   e.agentName || '',
+        file:    e.filePath || AGENT_FILE_MAP[(e.agentName || '').toLowerCase()] || '',
+        ts:      new Date().toISOString(),
+      });
+
+      let r;
+      try {
+        r = await autoFixWithClaude({ errorNote: e.errorNote, filePath: e.filePath, agentName: e.agentName });
+      } catch (err) {
+        r = { fixed: false, filePath: e.filePath, model_used: 'claude-code-cli', summary: err.message };
+      }
+
+      if (r.fixed) anyFixed = true;
+      results.push({ errorId: e.id, fixed: r.fixed, summary: r.summary, filePath: r.filePath });
+
+      db.events.emit('forge:progress', {
+        type:    'fix-all:item-done',
+        errorId: e.id,
+        fixed:   r.fixed,
+        summary: r.summary,
+        file:    r.filePath || '',
+        ts:      new Date().toISOString(),
+      });
     }
 
-    if (r.fixed) anyFixed = true;
-    results.push({ errorId: e.id, fixed: r.fixed, summary: r.summary, filePath: r.filePath });
+    let restartMsg = '';
+    if (anyFixed) {
+      try {
+        execSync('pm2 restart ghost', { timeout: 15000 });
+        restartMsg = 'Ghost restarted successfully.';
+      } catch (err) {
+        restartMsg = `Restart failed: ${err.message}`;
+      }
+    }
 
     db.events.emit('forge:progress', {
-      type:    'fix-all:item-done',
-      errorId: e.id,
-      fixed:   r.fixed,
-      summary: r.summary,
-      file:    r.filePath || '',
-      ts:      new Date().toISOString(),
+      type:       'fix-all:complete',
+      anyFixed,
+      restartMsg,
+      results,
+      ts:         new Date().toISOString(),
     });
+
+    return { results, anyFixed, restartMsg };
+  } finally {
+    _fixAllRunning = false;
   }
-
-  let restartMsg = '';
-  if (anyFixed) {
-    try {
-      execSync('pm2 restart ghost', { timeout: 15000 });
-      restartMsg = 'Ghost restarted successfully.';
-    } catch (err) {
-      restartMsg = `Restart failed: ${err.message}`;
-    }
-  }
-
-  db.events.emit('forge:progress', {
-    type:       'fix-all:complete',
-    anyFixed,
-    restartMsg,
-    results,
-    ts:         new Date().toISOString(),
-  });
-
-  _fixAllRunning = false;
-  return { results, anyFixed, restartMsg };
 }
 
-module.exports = { run, detectModel, autoFix, autoFixWithClaude, fixAll };
+module.exports = { run, detectModel, autoFixWithClaude, fixAll };

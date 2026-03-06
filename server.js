@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express      = require('express');
 const http         = require('http');
+const crypto       = require('crypto');
 const cookieParser = require('cookie-parser');
 const path         = require('path');
 const fs           = require('fs');
@@ -8,7 +9,6 @@ const { WebSocketServer } = require('ws');
 
 const authRoutes      = require('./src/routes/auth');
 const agentRoutes     = require('./src/routes/agents');
-const routeRoute      = require('./src/routes/route');
 const wardenRoutes    = require('./src/routes/warden');
 const forgeRoutes     = require('./src/routes/forge');
 const scribeRoutes    = require('./src/routes/scribe');
@@ -34,9 +34,12 @@ const leagueDataApi     = require('./src/routes/league-data-api');
 const visionApi         = require('./src/routes/vision-api');
 const memorySearchApi   = require('./src/routes/memory-search');
 const adminActionsApi   = require('./src/routes/admin-actions');
+const identityRoutes    = require('./src/routes/identity');
+const discordInteractions = require('./src/routes/discord-interactions');
 const forgeAgent        = require('./src/forge');
 const requireAuth       = require('./src/middleware/requireAuth');
 const scribe            = require('./src/scribe');
+const rateLimit         = require('express-rate-limit');
 const heartbeat       = require('./src/heartbeat');
 const registry        = require('./src/agentRegistry');
 const db              = require('./src/db');
@@ -51,7 +54,9 @@ const PORT   = process.env.GHOST_API_PORT || 18790;
 // Ensure logs/ dir exists for PM2 log files
 fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
 
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
@@ -61,13 +66,22 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Rate limiting for public endpoints ────────────────────────────────────────
+const publicLimiter = rateLimit({
+  windowMs: 60_000,  // 1 minute
+  max: 30,           // 30 requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, try again later' },
+});
+
 // ── Public routes ─────────────────────────────────────────────────────────────
 
-app.get('/api/heartbeat', async (req, res) => {
+app.get('/api/heartbeat', publicLimiter, async (req, res) => {
   res.json(await heartbeat.getStatus());
 });
 
-app.get('/api/health', async (req, res) => {
+app.get('/api/health', publicLimiter, async (req, res) => {
   const checks = {};
   // Database
   try {
@@ -84,18 +98,61 @@ app.get('/api/health', async (req, res) => {
   // Ollama
   try {
     const t0  = Date.now();
-    const olr = await fetch(`${process.env.OLLAMA_HOST || 'http://localhost:11434'}/api/tags`);
+    const olr = await fetch(`${process.env.OLLAMA_HOST || 'http://localhost:11434'}/api/tags`, { signal: AbortSignal.timeout(5000) });
     checks.ollama = { status: olr.ok ? 'up' : 'down', ping: Date.now() - t0 };
   } catch { checks.ollama = { status: 'down' }; }
-  // Discord (via OpenClaw gateway on port 18789)
+  // Discord (via OpenClaw gateway health check)
   try {
     const t0 = Date.now();
-    const ocr = await fetch('http://localhost:18789/health');
-    checks.discord = { status: ocr.ok ? 'up' : 'down', ping: Date.now() - t0, via: 'openclaw' };
+    const { execSync } = require('child_process');
+    const raw = execSync('openclaw health --json 2>/dev/null', { timeout: 12000 }).toString();
+    const health = JSON.parse(raw);
+    const discord = health.channels?.discord;
+    const botName = discord?.probe?.bot?.username || null;
+    checks.discord = {
+      status: (health.ok && discord?.probe?.ok) ? 'up' : 'down',
+      ping: Date.now() - t0,
+      via: 'openclaw',
+      bot: botName,
+      sessions: health.sessions?.count || 0,
+    };
   } catch { checks.discord = { status: 'down', via: 'openclaw' }; }
+  // DeepSeek API
+  try {
+    const t0 = Date.now();
+    const r = await fetch('https://api.deepseek.com/v1/models', {
+      headers: { Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    checks.deepseek = { status: r.ok ? 'up' : 'down', ping: Date.now() - t0 };
+  } catch { checks.deepseek = { status: 'down' }; }
+  // OpenAI API
+  try {
+    const t0 = Date.now();
+    const r = await fetch('https://api.openai.com/v1/models', {
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    checks.openai = { status: r.ok ? 'up' : 'down', ping: Date.now() - t0 };
+  } catch { checks.openai = { status: 'down' }; }
+  // Anthropic API
+  try {
+    const t0 = Date.now();
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY || '', 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+      signal: AbortSignal.timeout(8000),
+    });
+    // 200 = working, 401 = bad key, 529 = overloaded — any non-network response means API is reachable
+    checks.anthropic = { status: r.ok || r.status === 400 || r.status === 429 ? 'up' : 'down', ping: Date.now() - t0 };
+  } catch { checks.anthropic = { status: 'down' }; }
 
   res.json(checks);
 });
+
+// Discord interactions webhook (public — Discord doesn't send our portal secret)
+app.post('/api/discord/interactions', discordInteractions.handleInteraction);
 
 app.use('/auth', authRoutes);
 
@@ -103,19 +160,25 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// ── React UI static files (public — assets must load before auth check) ───────
-app.use(express.static(path.join(__dirname, 'ui/dist')));
+// (Legacy React UI removed — Portal is served by Next.js on port 3001 via nginx)
 
 // ── Portal reception — allow portal terminal via shared secret OR normal auth ──
 const PORTAL_SECRET = process.env.PORTAL_SECRET;
+const _portalSecretBuf = PORTAL_SECRET ? Buffer.from(PORTAL_SECRET) : null;
+
+function _checkPortalSecret(headerValue) {
+  if (!_portalSecretBuf || !headerValue) return false;
+  const headerBuf = Buffer.from(String(headerValue));
+  if (headerBuf.length !== _portalSecretBuf.length) return false;
+  return crypto.timingSafeEqual(headerBuf, _portalSecretBuf);
+}
+
 app.use('/api/reception',
   (req, res, next) => {
-    // Portal-to-Ghost server call with shared secret
-    if (PORTAL_SECRET && req.headers['x-portal-secret'] === PORTAL_SECRET) {
+    if (_checkPortalSecret(req.headers['x-portal-secret'])) {
       req.user = { username: 'portal', role: 'ADMIN' };
       return next();
     }
-    // Normal auth (Discord session JWT)
     requireAuth(req, res, next);
   },
   receptionRoutes,
@@ -123,7 +186,7 @@ app.use('/api/reception',
 
 // ── Portal data routes — allow via shared secret OR normal auth ────────────────
 const PORTAL_BYPASS = (req, res, next) => {
-  if (PORTAL_SECRET && req.headers['x-portal-secret'] === PORTAL_SECRET) {
+  if (_checkPortalSecret(req.headers['x-portal-secret'])) {
     req.user = { username: 'portal', role: 'ADMIN' };
     return next();
   }
@@ -158,74 +221,41 @@ app.use('/api/league',        PORTAL_BYPASS, leagueDataApi);
 app.use('/api/vision',        PORTAL_BYPASS, visionApi);
 app.use('/api/memory',        PORTAL_BYPASS, memorySearchApi);
 app.use('/api/admin',         PORTAL_BYPASS, adminActionsApi);
-
-app.get('/api/scribe/brief',  PORTAL_BYPASS, async (req, res) => {
-  try {
-    // Build brief from agent_logs DB (the real data source), not the flat file
-    const today = new Date().toISOString().slice(0, 10);
-    const [statsRes, errRes, recentRes] = await Promise.all([
-      db.query(`SELECT agent, COUNT(*)::int AS cnt FROM agent_logs WHERE ts::date >= $1 GROUP BY agent ORDER BY cnt DESC`, [today]),
-      db.query(`SELECT COUNT(*)::int AS cnt FROM agent_logs WHERE level = 'ERROR' AND ts::date >= $1`, [today]),
-      db.query(`SELECT agent, action, outcome, note, ts FROM agent_logs WHERE ts::date >= $1 ORDER BY ts DESC LIMIT 5`, [today]),
-    ]);
-
-    const totalActions = statsRes.rows.reduce((sum, r) => sum + r.cnt, 0);
-    const errCount     = errRes.rows[0]?.cnt ?? 0;
-
-    const agentLines = statsRes.rows.length
-      ? statsRes.rows.map(r => `  - ${r.agent}: ${r.cnt} actions`).join('\n')
-      : '  - No activity recorded';
-
-    const recentLines = recentRes.rows.length
-      ? recentRes.rows.map(r => {
-          const time = new Date(r.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-          return `  - ${time} ${r.agent}: ${r.action} → ${r.outcome}`;
-        }).join('\n')
-      : '  - None';
-
-    const briefing = [
-      `Ghost Daily Briefing — ${today}`,
-      '',
-      `Activity (${totalActions} actions today)`,
-      agentLines,
-      errCount > 0 ? `\nErrors: ${errCount} error(s) logged today` : '',
-      '',
-      `Recent Activity`,
-      recentLines,
-    ].filter(l => l !== undefined).join('\n');
-
-    res.json({ briefing, period: today, ts: new Date().toISOString() });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+app.use('/api/identity',      PORTAL_BYPASS, identityRoutes);
+app.use('/api/discord/send-embed', PORTAL_BYPASS, discordInteractions.sendEmbedRouter);
 
 // Archivist needs portal access (moved above requireAuth)
 app.use('/api/archivist', PORTAL_BYPASS, archivistRoutes);
+
+// ── OpenClaw scout skill (needs PORTAL_BYPASS for skill calls) ──────────────
+app.use('/api/scout',     PORTAL_BYPASS, scoutRoutes);
+
+// ── Scribe ops (OpenClaw cron + portal) ──────────────────────────────────────
+app.use('/api/scribe',    PORTAL_BYPASS, scribeRoutes);
 
 // ── Protected routes ──────────────────────────────────────────────────────────
 app.use(requireAuth);
 
 app.use('/api/agents',    agentRoutes);
-app.use('/api/route',     routeRoute);
 app.use('/api/warden',    wardenRoutes);
-app.use('/api/scribe',    scribeRoutes);
-app.use('/api/scout',     scoutRoutes);
 app.use('/api/lens',      lensRoutes);
 app.use('/api/courier',   courierRoutes);
 app.use('/api/keeper',    keeperRoutes);
 app.use('/api/helm',      helmRoutes);
 
-// ── SPA catch-all — serve React app for any non-API route ─────────────────────
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'ui/dist/index.html'));
-});
-
-// ── WebSocket server — /ws path for the React office UI ───────────────────────
+// ── WebSocket server — /ws path for the portal UI ─────────────────────────────
 const wss     = new WebSocketServer({ server, path: '/ws' });
 const clients = new Set();
 
 wss.on('connection', (ws, req) => {
+  // Authenticate: require portal secret as query param or cookie
+  const url    = new URL(req.url, `http://${req.headers.host}`);
+  const secret = url.searchParams.get('token') || req.headers['x-portal-secret'];
+  if (secret !== process.env.PORTAL_SECRET) {
+    ws.close(4001, 'Unauthorized');
+    return;
+  }
+
   clients.add(ws);
 
   // Send initial state
@@ -262,6 +292,11 @@ db.events.on('forge:progress', (msg) => _broadcast(msg));
 {
   // Track last fix time per file to avoid thrashing (max 1 fix per file per 10min)
   const _fixCooldowns = new Map();
+  // Cleanup stale cooldown entries every 30 minutes
+  setInterval(() => {
+    const cutoff = Date.now() - 10 * 60 * 1000;
+    for (const [k, ts] of _fixCooldowns) { if (ts < cutoff) _fixCooldowns.delete(k); }
+  }, 30 * 60_000);
   db.events.on('error-logged', async (entry) => {
     const note        = entry.note  || '';
     const agentName   = entry.agent || '';
@@ -304,6 +339,96 @@ db.events.on('forge:progress', (msg) => _broadcast(msg));
   });
 }
 
+// ── Cron state sync — log completions/errors to agent_logs ──────────────────
+{
+  const { execFile } = require('child_process');
+  const _cronLastSeen = new Map(); // jobId → lastRunAtMs
+
+  async function _syncCronState() {
+    try {
+      const raw = await new Promise((resolve, reject) => {
+        execFile('bash', ['-c', 'source /home/projects/clawdbot/.env && openclaw cron list --json 2>/dev/null'],
+          { timeout: 10000 }, (err, stdout) => err ? reject(err) : resolve(stdout));
+      });
+
+      const data = JSON.parse(raw);
+      for (const job of (data.jobs || [])) {
+        const lastRun = job.state?.lastRunAtMs;
+        if (!lastRun) continue;
+
+        const prevRun = _cronLastSeen.get(job.id);
+        _cronLastSeen.set(job.id, lastRun);
+
+        // Skip first poll (seeding state)
+        if (prevRun === undefined) continue;
+        // Skip if no new run
+        if (lastRun === prevRun) continue;
+
+        const isError = job.state.lastRunStatus === 'error';
+        const duration = job.state.lastDurationMs ? `${(job.state.lastDurationMs / 1000).toFixed(1)}s` : '';
+
+        db.logEntry({
+          level:   isError ? 'ERROR' : 'INFO',
+          agent:   'scribe',
+          action:  `cron:${job.name}`,
+          outcome: isError ? 'failed' : 'completed',
+          model:   'deepseek/deepseek-chat',
+          note:    `Cron "${job.name}" ${isError ? 'failed' : 'completed'}${duration ? ` in ${duration}` : ''}`,
+        });
+
+        _broadcast({
+          type: 'cron:update',
+          job:  { id: job.id, name: job.name, state: job.state },
+        });
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  // Poll every 30s, seed 5s after boot
+  setInterval(_syncCronState, 30_000);
+  setTimeout(_syncCronState, 5000);
+}
+
+// ── Ticket Monitor — watch platform DB + Discord channels in real time ───────
+{
+  const ticketMonitor = require('./src/ticketMonitor');
+  ticketMonitor.init(_broadcast).catch(err => {
+    console.error('[TicketMonitor] Init failed:', err.message);
+  });
+}
+
+// ── Bracket Monitor — tournament match mediation + escalation ────────────────
+{
+  const bracketMonitor = require('./src/bracketMonitor');
+  bracketMonitor.init(_broadcast).catch(err => {
+    console.error('[BracketMonitor] Init failed:', err.message);
+  });
+}
+
+// ── Process error handlers ─────────────────────────────────────────────────────
+process.on('unhandledRejection', (err) => {
+  console.error('[Ghost] Unhandled rejection:', err);
+  db.logEntry({ level: 'ERROR', agent: 'ghost', action: 'unhandled-rejection', note: String(err?.message || err) }).catch(() => {});
+});
+process.on('uncaughtException', (err) => {
+  console.error('[Ghost] Uncaught exception:', err);
+  db.logEntry({ level: 'ERROR', agent: 'ghost', action: 'uncaught-exception', note: String(err?.message || err) })
+    .catch(() => {})
+    .finally(() => process.exit(1)); // PM2 will restart — Node state is undefined after uncaught exception
+});
+
+// ── Graceful shutdown ────────────────────────────────────────────────────────
+function _gracefulShutdown(signal) {
+  console.log(`[Ghost] ${signal} received — shutting down gracefully`);
+  server.close(() => {
+    db.pool.end().catch(() => {});
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 10_000); // force exit after 10s
+}
+process.on('SIGTERM', () => _gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => _gracefulShutdown('SIGINT'));
+
 // ── Boot ───────────────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
   console.log(`Ghost API running on http://localhost:${PORT}`);
@@ -316,7 +441,5 @@ server.listen(PORT, () => {
   );
   ollama.ensureModels().catch(err => console.error('[Ollama] Model check failed:', err.message));
   heartbeat.start();
-  // Discord connection now handled by OpenClaw gateway (port 18789)
-  // sentinel.start() removed — OpenClaw owns the Discord bot token
   scribe.start();
 });
