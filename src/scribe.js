@@ -23,6 +23,7 @@ const warden    = require('./warden');
 const archivist = require('./archivist');
 const db        = require('./db');
 const mini      = require('./skills/openai-mini');
+const registry  = require('./agentRegistry');
 
 const LOG_FILE       = path.join(__dirname, '../memory/run_log.md');
 const REMINDERS_FILE = path.join(__dirname, '../memory/reminders.json');
@@ -176,48 +177,140 @@ async function synthesise(prompt, escalate = false) {
 // ── Report generators ─────────────────────────────────────────────────────────
 
 async function dailySummary({ date, narrative = false } = {}) {
+  registry.setStatus('scribe', 'working');
   const target   = date || new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const fromDate = date || yesterday;
 
-  const entries  = readLogEntries({ fromDate, toDate: fromDate });
-  const stats    = statsFromEntries(entries);
+  // Pull real data from DB instead of stale local log file
+  let dbStats = { total: 0, errors: 0, byAgent: {}, topErrors: [] };
+  try {
+    const { rows: agentRows } = await db.query(
+      `SELECT LOWER(agent) as agent, COUNT(*)::int as count,
+              COUNT(*) FILTER (WHERE level = 'ERROR')::int as errors
+       FROM agent_logs WHERE ts >= $1::date AND ts < ($1::date + INTERVAL '1 day')
+       GROUP BY LOWER(agent) ORDER BY count DESC`,
+      [fromDate],
+    );
+    for (const r of agentRows) {
+      dbStats.byAgent[r.agent] = r.count;
+      dbStats.total += r.count;
+      dbStats.errors += r.errors;
+    }
+    // Top errors for visibility
+    const { rows: errorRows } = await db.query(
+      `SELECT agent, action, note FROM agent_logs
+       WHERE level = 'ERROR' AND ts >= $1::date AND ts < ($1::date + INTERVAL '1 day')
+       ORDER BY ts DESC LIMIT 5`,
+      [fromDate],
+    );
+    dbStats.topErrors = errorRows;
+  } catch { /* DB unavailable — use file fallback */ }
+
+  // Fallback to local file if DB returned nothing
+  if (dbStats.total === 0) {
+    const entries = readLogEntries({ fromDate, toDate: fromDate });
+    const stats   = statsFromEntries(entries);
+    dbStats.total = stats.total;
+    dbStats.errors = stats.errors;
+    dbStats.byAgent = stats.byAgent;
+  }
+
+  // Ticket counts
+  let ticketInfo = '';
+  try {
+    const { rows: tRows } = await db.query(
+      `SELECT status, COUNT(*)::int as count FROM tickets GROUP BY status`,
+    );
+    const open   = tRows.find(r => r.status === 'open')?.count || 0;
+    const closed = tRows.find(r => r.status === 'closed')?.count || 0;
+    ticketInfo = `  Open: ${open}  |  Closed: ${closed}  |  Total: ${open + closed}`;
+  } catch { ticketInfo = '  (unavailable)'; }
+
+  // Memory stats
+  let memoryInfo = '';
+  try {
+    const memStats = await db.getMemoryStats();
+    memoryInfo = `  Facts: ${memStats.total_facts}  |  Never accessed: ${memStats.never_accessed}  |  From convos: ${memStats.from_conversations}`;
+  } catch { memoryInfo = '  (unavailable)'; }
+
+  // API costs for the briefing date
+  let costInfo = '';
+  try {
+    const { rows: costRows } = await db.query(
+      `SELECT provider, COUNT(*)::int as calls,
+              SUM(cost)::numeric as total_cost,
+              SUM(input_tokens)::int as input_tok,
+              SUM(output_tokens)::int as output_tok
+       FROM api_usage WHERE ts >= $1::date AND ts < ($1::date + INTERVAL '1 day')
+       GROUP BY provider ORDER BY total_cost DESC`,
+      [fromDate],
+    );
+    if (costRows.length) {
+      const lines = costRows.map(r =>
+        `  ${r.provider}: ${r.calls} calls, $${Number(r.total_cost).toFixed(4)} (${r.input_tok}+${r.output_tok} tok)`
+      );
+      costInfo = lines.join('\n');
+    } else {
+      costInfo = '  No API calls';
+    }
+  } catch { costInfo = '  (unavailable)'; }
+
   const pending  = await warden.getPending();
   const reminders = loadReminders().filter(r =>
     !r.fired && r.due_at.slice(0, 10) <= target
   );
 
-  const agentLines = Object.entries(stats.byAgent)
+  const agentLines = Object.entries(dbStats.byAgent)
     .sort((a, b) => b[1] - a[1])
-    .map(([agent, count]) => `  • ${agent}: ${count}`)
-    .join('\n') || '  • (none)';
+    .map(([agent, count]) => `  ${agent}: ${count}`)
+    .join('\n') || '  (none)';
 
   const pendingLines = pending.length
-    ? pending.map(p => `  • \`${p.id}\` — ${p.requesting_agent} → \`${p.action}\``).join('\n')
-    : '  • None';
+    ? pending.map(p => `  ${p.id} — ${p.requesting_agent} → ${p.action}`).join('\n')
+    : '  None';
 
   const reminderLines = reminders.length
-    ? reminders.map(r => `  • ${r.due_at.slice(11, 16)} UTC — ${r.text}`).join('\n')
-    : '  • None due';
+    ? reminders.map(r => `  ${r.due_at.slice(11, 16)} UTC — ${r.text}`).join('\n')
+    : '  None due';
 
-  const template = [
-    `**Ghost Daily Briefing — ${fromDate}**`,
+  const errorLines = dbStats.topErrors.length
+    ? dbStats.topErrors.map(e => `  [${e.agent}] ${e.action}: ${(e.note || '').slice(0, 80)}`).join('\n')
+    : '';
+
+  const sections = [
+    `Ghost Daily Briefing — ${fromDate}`,
+    `────────────────────────────`,
     '',
-    `**Activity (${stats.total} actions)**`,
+    `ACTIVITY (${dbStats.total} actions, ${dbStats.errors} errors)`,
     agentLines,
-    stats.escalations ? `  ⬆️ ${stats.escalations} escalation(s)` : '',
-    stats.errors      ? `  ❌ ${stats.errors} error(s)` : '',
+  ];
+
+  if (errorLines) {
+    sections.push('', `RECENT ERRORS`, errorLines);
+  }
+
+  sections.push(
     '',
-    `**Pending Approvals (${pending.length})**`,
+    `TICKETS`,
+    ticketInfo,
+    '',
+    `MEMORY`,
+    memoryInfo,
+    '',
+    `API COSTS (today)`,
+    costInfo,
+    '',
+    `PENDING APPROVALS (${pending.length})`,
     pendingLines,
     '',
-    `**Reminders**`,
+    `REMINDERS`,
     reminderLines,
-  ].filter(l => l !== undefined).join('\n');
+  );
 
-  const content = await synthesise(template, narrative || stats.total > 100);
+  const content = sections.join('\n');
 
-  appendLog('INFO', 'daily-summary', 'system', 'success', `date=${fromDate} entries=${stats.total}`);
+  appendLog('INFO', 'daily-summary', 'system', 'success', `date=${fromDate} entries=${dbStats.total}`);
 
   archivist.store({
     type:         'agent_output',
@@ -227,10 +320,13 @@ async function dailySummary({ date, narrative = false } = {}) {
     ttl_days:     365,
   }).catch(() => {});
 
+  registry.pushEvent('scribe', `daily briefing: ${dbStats.total} actions, ${dbStats.errors} errors`, 'success');
+  registry.setStatus('scribe', 'idle');
   return { report_type: 'daily_summary', content, date: fromDate, logged: true };
 }
 
 async function weeklyDigest({ weekStart, narrative = false } = {}) {
+  registry.setStatus('scribe', 'working');
   const now   = new Date();
   const start = weekStart || new Date(now - 7 * 86400000).toISOString().slice(0, 10);
   const end   = now.toISOString().slice(0, 10);
@@ -275,10 +371,13 @@ async function weeklyDigest({ weekStart, narrative = false } = {}) {
     ttl_days:     365,
   }).catch(() => {});
 
+  registry.pushEvent('scribe', `weekly digest: ${stats.total} actions (${start})`, 'success');
+  registry.setStatus('scribe', 'idle');
   return { report_type: 'weekly_digest', content, week_start: start, logged: true };
 }
 
 async function statusReport({ agentFilter } = {}) {
+  registry.setStatus('scribe', 'working');
   const today   = new Date().toISOString().slice(0, 10);
   const entries = readLogEntries({ fromDate: today, agentFilter });
   const stats   = statsFromEntries(entries);
@@ -308,6 +407,8 @@ async function statusReport({ agentFilter } = {}) {
     ttl_days:     90,
   }).catch(() => {});
 
+  registry.pushEvent('scribe', `status report: ${stats.total} actions today`, 'success');
+  registry.setStatus('scribe', 'idle');
   return { report_type: 'status_report', content, logged: true };
 }
 
@@ -330,168 +431,216 @@ If no notable facts, return [].`;
  * Runs automatically at 03:00 UTC via the scheduler.
  */
 async function nightlyReflection() {
-  appendLog('INFO', 'nightly-reflection', 'system', 'started', 'reviewing conversations from last 24h');
-
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  let threads;
+  registry.setStatus('scribe', 'working');
   try {
-    const { rows } = await db.query(
-      `SELECT thread_id, messages FROM conversations WHERE updated_at > $1`,
-      [cutoff],
-    );
-    threads = rows;
-  } catch (err) {
-    appendLog('ERROR', 'nightly-reflection', 'system', 'failed', `db error: ${err.message}`);
-    return;
-  }
+    appendLog('INFO', 'nightly-reflection', 'system', 'started', 'reviewing conversations from last 24h');
 
-  if (!threads.length) {
-    appendLog('INFO', 'nightly-reflection', 'system', 'skipped', 'no conversations updated in last 24h');
-    return;
-  }
-
-  let totalFacts = 0;
-
-  for (const thread of threads) {
-    const messages = thread.messages ?? [];
-    if (messages.length < 2) continue;
-
-    // Build a transcript of recent exchanges (last 20 messages)
-    const recent = messages.slice(-20);
-    const transcript = recent
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => `${m.role === 'user' ? 'User' : 'Ghost'}: ${m.content}`)
-      .join('\n');
-
-    if (!transcript.trim()) continue;
-
-    const { result, escalate } = await mini.tryChat([
-      { role: 'system', content: REFLECT_SYSTEM },
-      { role: 'user',   content: transcript },
-    ], { maxTokens: 512 });
-
-    if (escalate || !result?.message?.content) continue;
-
-    let facts;
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    let threads;
     try {
-      const raw = result.message.content.trim()
-        .replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-      facts = JSON.parse(raw);
-      if (!Array.isArray(facts)) continue;
-    } catch { continue; }
-
-    for (const fact of facts) {
-      if (!fact.key || !fact.content) continue;
-      await db.storeFact({
-        key:      fact.key,
-        content:  fact.content,
-        category: fact.category ?? 'misc',
-        source:   'reflection',
-        threadId: thread.thread_id,
-      }).catch(() => {});
-      totalFacts++;
-    }
-  }
-
-  appendLog('INFO', 'nightly-reflection', 'system', 'success',
-    `threads=${threads.length} facts_stored=${totalFacts}`);
-  console.log(`[Scribe] Nightly reflection complete — ${threads.length} threads reviewed, ${totalFacts} facts stored`);
-  return { threads: threads.length, facts: totalFacts };
-}
-
-// ── Scheduler ─────────────────────────────────────────────────────────────────
-
-let _schedulerStarted = false;
-
-function start() {
-  if (_schedulerStarted) return;
-  _schedulerStarted = true;
-
-  console.log('[Scribe] Scheduler started (tick: 60s)');
-
-  setInterval(async () => {
-    const now    = new Date();
-    const hour   = now.getUTCHours();
-    const minute = now.getUTCMinutes();
-    const day    = now.getUTCDay(); // 0=Sun, 1=Mon
-
-    // Fire due reminders
-    for (const reminder of getDueReminders()) {
-      await _deliverToDiscord(`⏰ **Reminder** \`${reminder.id}\`\n${reminder.text}`);
-      markFired(reminder.id);
-      appendLog('INFO', 'reminder-fired', 'system', 'success', `id=${reminder.id}`);
-    }
-
-    // Nightly reflection at 03:00 UTC — extract facts from all recent conversations
-    if (hour === 3 && minute === 0) {
-      nightlyReflection().catch(err =>
-        appendLog('ERROR', 'nightly-reflection', 'system', 'failed', err.message)
+      const { rows } = await db.query(
+        `SELECT thread_id, messages FROM conversations WHERE updated_at > $1`,
+        [cutoff],
       );
+      threads = rows;
+    } catch (err) {
+      appendLog('ERROR', 'nightly-reflection', 'system', 'failed', `db error: ${err.message}`);
+      return;
     }
 
-    // Nightly ticket analysis at 03:30 UTC — snapshot open tickets, analyze closed ones
-    if (hour === 3 && minute === 30) {
-      const memory = require('./skills/memory');
-
-      // Snapshot open ticket transcripts (detect deleted channels)
-      memory.snapshotOpenTickets().then(r => {
-        if (r.saved > 0 || r.closed > 0) {
-          appendLog('INFO', 'ticket-snapshot', 'system', 'success',
-            `saved=${r.saved} closedDetected=${r.closed}`);
-        }
-      }).catch(err =>
-        appendLog('ERROR', 'ticket-snapshot', 'system', 'failed', err.message)
-      );
-
-      // Analyze closed tickets and extract lessons
-      memory.analyzeClosedTickets().then(r => {
-        if (r.lessons > 0) {
-          appendLog('INFO', 'ticket-analysis', 'system', 'success',
-            `analyzed=${r.analyzed} lessons=${r.lessons}`);
-          _deliverToDiscord(`📋 **Ticket Analysis**\nAnalyzed ${r.analyzed} closed ticket(s), extracted ${r.lessons} lesson(s).`);
-        }
-      }).catch(err =>
-        appendLog('ERROR', 'ticket-analysis', 'system', 'failed', err.message)
-      );
+    if (!threads.length) {
+      appendLog('INFO', 'nightly-reflection', 'system', 'skipped', 'no conversations updated in last 24h');
+      return;
     }
 
-    // Weekly memory pruning — Sunday 04:00 UTC
-    if (day === 0 && hour === 4 && minute === 0) {
-      const memory = require('./skills/memory');
-      memory.pruneMemory().then(results => {
-        const total = results.facts?.total || 0;
-        appendLog('INFO', 'memory-prune', 'system', 'success',
-          `pruned=${total} conv=${results.facts?.conversationPruned || 0} old=${results.facts?.oldUnused || 0} cache=${results.facts?.staleCache || 0} threads=${results.archivedThreads || 0} logs=${results.prunedLogs || 0}`);
-        if (total > 0) {
-          _deliverToDiscord(`🧹 **Weekly Memory Cleanup**\nPruned ${total} stale facts, archived ${results.archivedThreads || 0} old threads, removed ${results.prunedLogs || 0} old logs.`);
-        }
-      }).catch(err =>
-        appendLog('ERROR', 'memory-prune', 'system', 'failed', err.message)
-      );
-    }
+    let totalFacts = 0;
 
-    // Daily briefing at 08:00 UTC
-    if (hour === 8 && minute === 0) {
-      const report = await dailySummary();
-      await _deliverToDiscord(report.content);
+    for (const thread of threads) {
+      const messages = thread.messages ?? [];
+      if (messages.length < 2) continue;
 
-      // Weekly digest on Mondays
-      if (day === 1) {
-        const digest = await weeklyDigest();
-        await _deliverToDiscord(digest.content);
+      // Build a transcript of recent exchanges (last 20 messages)
+      const recent = messages.slice(-20);
+      const transcript = recent
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => `${m.role === 'user' ? 'User' : 'Ghost'}: ${m.content}`)
+        .join('\n');
+
+      if (!transcript.trim()) continue;
+
+      const { result, escalate } = await mini.tryChat([
+        { role: 'system', content: REFLECT_SYSTEM },
+        { role: 'user',   content: transcript },
+      ], { maxTokens: 512 });
+
+      if (escalate || !result?.message?.content) continue;
+
+      let facts;
+      try {
+        const raw = result.message.content.trim()
+          .replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+        facts = JSON.parse(raw);
+        if (!Array.isArray(facts)) continue;
+      } catch { continue; }
+
+      for (const fact of facts) {
+        if (!fact.key || !fact.content) continue;
+        await db.storeFact({
+          key:      fact.key,
+          content:  fact.content,
+          category: fact.category ?? 'misc',
+          source:   'reflection',
+          threadId: thread.thread_id,
+        }).catch(() => {});
+        totalFacts++;
       }
     }
-  }, 60_000);
+
+    appendLog('INFO', 'nightly-reflection', 'system', 'success',
+      `threads=${threads.length} facts_stored=${totalFacts}`);
+    console.log(`[Scribe] Nightly reflection complete — ${threads.length} threads reviewed, ${totalFacts} facts stored`);
+    registry.pushEvent('scribe', `nightly reflection: ${threads.length} threads, ${totalFacts} facts`, 'success');
+    return { threads: threads.length, facts: totalFacts };
+  } finally {
+    registry.setStatus('scribe', 'idle');
+  }
 }
 
-async function _deliverToDiscord(content) {
+// ── Fire due reminders ────────────────────────────────────────────────────────
+
+async function fireReminders() {
+  const dueReminders = getDueReminders();
+  if (!dueReminders.length) return { fired: 0 };
+
+  registry.setStatus('scribe', 'working');
+  const results = [];
+  for (const reminder of dueReminders) {
+    markFired(reminder.id);
+    appendLog('INFO', 'reminder-fired', 'system', 'success', `id=${reminder.id}`);
+    registry.pushEvent('scribe', `reminder fired: ${reminder.id}`, 'info');
+    results.push({ id: reminder.id, text: reminder.text });
+  }
+  registry.setStatus('scribe', 'idle');
+  return { fired: results.length, reminders: results };
+}
+
+// ── Ticket analysis ──────────────────────────────────────────────────────────
+
+async function ticketAnalysis() {
+  registry.setStatus('scribe', 'working');
+  const memory = require('./skills/memory');
+
+  const snapshotResult = await memory.snapshotOpenTickets().catch(err => {
+    appendLog('ERROR', 'ticket-snapshot', 'system', 'failed', err.message);
+    return { saved: 0, closed: 0 };
+  });
+
+  if (snapshotResult.saved > 0 || snapshotResult.closed > 0) {
+    appendLog('INFO', 'ticket-snapshot', 'system', 'success',
+      `saved=${snapshotResult.saved} closedDetected=${snapshotResult.closed}`);
+    registry.pushEvent('scribe', `ticket snapshot: ${snapshotResult.saved} saved, ${snapshotResult.closed} closed`, 'success');
+  }
+
+  const analysisResult = await memory.analyzeClosedTickets().catch(err => {
+    appendLog('ERROR', 'ticket-analysis', 'system', 'failed', err.message);
+    return { analyzed: 0, lessons: 0 };
+  });
+
+  if (analysisResult.lessons > 0) {
+    appendLog('INFO', 'ticket-analysis', 'system', 'success',
+      `analyzed=${analysisResult.analyzed} lessons=${analysisResult.lessons}`);
+    registry.pushEvent('scribe', `ticket analysis: ${analysisResult.analyzed} analyzed, ${analysisResult.lessons} lessons`, 'success');
+  }
+
+  registry.setStatus('scribe', 'idle');
+  return {
+    snapshot: snapshotResult,
+    analysis: analysisResult,
+  };
+}
+
+// ── Memory pruning ───────────────────────────────────────────────────────────
+
+async function memoryPrune() {
+  registry.setStatus('scribe', 'working');
   try {
-    const discord   = require('../openclaw/skills/discord');
-    const heartbeat = require('./heartbeat');
-    if (!discord.ready) return;
-    heartbeat.pulse();
-    await discord.dmOwner(content);
-  } catch { /* Discord may not be connected */ }
+    const memory = require('./skills/memory');
+
+    const results = await memory.pruneMemory();
+    const total = results.facts?.total || 0;
+
+    appendLog('INFO', 'memory-prune', 'system', 'success',
+      `pruned=${total} conv=${results.facts?.conversationPruned || 0} old=${results.facts?.oldUnused || 0} cache=${results.facts?.staleCache || 0} threads=${results.archivedThreads || 0} logs=${results.prunedLogs || 0}`);
+    registry.pushEvent('scribe', `memory prune: ${total} facts, ${results.archivedThreads || 0} threads`, 'success');
+
+    return results;
+  } finally {
+    registry.setStatus('scribe', 'idle');
+  }
+}
+
+// ── League Data Sync — daily scrape of all 4 league public APIs ──────────────
+
+async function leagueScrape() {
+  registry.setStatus('scribe', 'working');
+  appendLog('INFO', 'league-scrape', 'system', 'started', 'syncing league data from platform DB');
+
+  let leagueDb;
+  try {
+    leagueDb = require('./skills/league-db');
+  } catch (err) {
+    appendLog('ERROR', 'league-scrape', 'system', 'failed', `league-db load error: ${err.message}`);
+    registry.setStatus('scribe', 'idle');
+    return { error: err.message };
+  }
+
+  try {
+    // Pull full snapshot directly from the platform database
+    const snapshot = await leagueDb.getFullSnapshot();
+
+    // Store as a durable knowledge fact Ghost can recall
+    const today = new Date().toISOString().slice(0, 10);
+    await db.storeFact({
+      key: `league-daily-summary:${today}`,
+      content: `League Data (live from platform DB) — ${today}\n\n${snapshot}`,
+      category: 'league-data',
+      source: 'league-db-sync',
+    }).catch(() => {});
+
+    // Also embed it for semantic retrieval
+    const ollamaModule = require('../openclaw/skills/ollama');
+    let embedding = null;
+    try { embedding = await ollamaModule.embed(snapshot.slice(0, 8000)); } catch { /* non-fatal */ }
+    if (embedding) {
+      await db.storeFact({
+        key: `league-daily-summary:${today}`,
+        content: `League Data (live from platform DB) — ${today}\n\n${snapshot}`,
+        category: 'league-data',
+        source: 'league-db-sync',
+        embedding,
+      }).catch(() => {});
+    }
+
+    // Count what we got
+    const lines = snapshot.split('\n').filter(l => l.startsWith('-')).length;
+
+    appendLog('INFO', 'league-scrape', 'system', 'success',
+      `snapshot=${lines} data points from platform DB`);
+    console.log(`[Scribe] League sync complete — ${lines} data points from platform DB`);
+    registry.pushEvent('scribe', `league sync: ${lines} data points from platform DB`, 'success');
+    registry.setStatus('scribe', 'idle');
+    return { ok: true, dataPoints: lines, source: 'platform-db' };
+  } catch (err) {
+    appendLog('ERROR', 'league-scrape', 'system', 'failed', err.message);
+    registry.setStatus('scribe', 'idle');
+    return { error: err.message };
+  }
+}
+
+// ── Scheduler (disabled — cron managed by OpenClaw) ──────────────────────────
+
+function start() {
+  console.log('[Scribe] Scheduler disabled — cron managed by OpenClaw');
 }
 
 // ── Logging ───────────────────────────────────────────────────────────────────
@@ -517,6 +666,10 @@ module.exports = {
   weeklyDigest,
   statusReport,
   nightlyReflection,
+  ticketAnalysis,
+  memoryPrune,
+  leagueScrape,
+  fireReminders,
   setReminder,
   cancelReminder,
   loadReminders,

@@ -20,12 +20,13 @@
  *   memory.extractAndStore(userMessage, assistantReply, threadId).catch(() => {});
  */
 
-const crypto = require('crypto');
-const db     = require('../db');
-const mini   = require('./openai-mini');
-const ollama = require('../../openclaw/skills/ollama');
-const redis  = require('../redis');
+const crypto   = require('crypto');
+const db       = require('../db');
+const mini     = require('./openai-mini');
+const ollama   = require('../../openclaw/skills/ollama');
+const redis    = require('../redis');
 const learning = require('./learning');
+const registry = require('../agentRegistry');
 
 const EXTRACT_SYSTEM = `You are a fact extractor for Ghost, an AI assistant managing a multi-agent Discord system and operations platform.
 
@@ -79,7 +80,8 @@ async function _sweepConflicts(key, category) {
   const parts = topic.split('_');
   if (parts.length < 2) return;
   // Match keys with same category and same first two topic words but different full key
-  const prefix = `${category}:${parts.slice(0, 2).join('_')}%`;
+  const rawPrefix = `${category}:${parts.slice(0, 2).join('_')}`;
+  const prefix = rawPrefix.replace(/%/g, '\\%').replace(/_/g, '\\_') + '%';
   await db.query(
     'DELETE FROM ghost_memory WHERE category = $1 AND key LIKE $2 AND key != $3',
     [category, prefix, key],
@@ -95,65 +97,73 @@ async function _sweepConflicts(key, category) {
  * @param {string} threadId
  */
 async function extractAndStore(userMessage, assistantReply, threadId) {
-  const exchange = `User: ${userMessage}\n\nGhost: ${assistantReply}`;
-
-  const { result, escalate } = await mini.tryChat([
-    { role: 'system', content: EXTRACT_SYSTEM },
-    { role: 'user',   content: exchange },
-  ], { maxTokens: 512 });
-
-  if (escalate || !result?.message?.content) return;
-
-  let facts;
+  registry.setStatus('archivist', 'working');
   try {
-    const raw = result.message.content.trim()
-      .replace(/^```(?:json)?\n?/, '')
-      .replace(/\n?```$/, '');
-    facts = JSON.parse(raw);
-    if (!Array.isArray(facts)) return;
-  } catch {
-    return; // model returned garbage — skip silently
-  }
+    const exchange = `User: ${userMessage}\n\nGhost: ${assistantReply}`;
 
-  const userId = _extractUserId(threadId);
-  const profileData = {};
+    const { result, escalate } = await mini.tryChat([
+      { role: 'system', content: EXTRACT_SYSTEM },
+      { role: 'user',   content: exchange },
+    ], { maxTokens: 512 });
 
-  for (const fact of facts) {
-    if (!fact.key || !fact.content) continue;
-    const category = fact.category ?? 'misc';
-
-    // Conflict sweep — remove stale facts with same category+topic prefix
-    await _sweepConflicts(fact.key, category);
-
-    // Generate embedding for semantic search (non-fatal — Ollama may be unavailable)
-    let embedding = null;
-    try {
-      embedding = await ollama.embed(fact.content);
-    } catch { /* non-fatal — store without embedding */ }
-
-    await db.storeFact({
-      key:      fact.key,
-      content:  fact.content,
-      category,
-      source:   'conversation',
-      threadId,
-      embedding,
-    }).catch(() => {});
-
-    // Collect profile-relevant facts (person + preference categories)
-    if ((category === 'person' || category === 'preference') && userId) {
-      const topicKey = fact.key.split(':')[1] || fact.key;
-      profileData[topicKey] = fact.content;
+    if (escalate || !result?.message?.content) {
+      return;
     }
-  }
 
-  // Merge profile-relevant facts into user_profiles
-  if (Object.keys(profileData).length > 0 && userId) {
-    db.upsertProfile(userId, profileData).catch(() => {});
-  }
+    let facts;
+    try {
+      const raw = result.message.content.trim()
+        .replace(/^```(?:json)?\n?/, '')
+        .replace(/\n?```$/, '');
+      facts = JSON.parse(raw);
+      if (!Array.isArray(facts)) return;
+    } catch {
+      return; // model returned garbage — skip silently
+    }
 
-  if (facts.length > 0) {
-    console.log(`[Memory] Stored ${facts.length} fact(s) from thread ${threadId}`);
+    const userId = _extractUserId(threadId);
+    const profileData = {};
+
+    for (const fact of facts) {
+      if (!fact.key || !fact.content) continue;
+      const category = fact.category ?? 'misc';
+
+      // Conflict sweep — remove stale facts with same category+topic prefix
+      await _sweepConflicts(fact.key, category);
+
+      // Generate embedding for semantic search (non-fatal — Ollama may be unavailable)
+      let embedding = null;
+      try {
+        embedding = await ollama.embed(fact.content);
+      } catch { /* non-fatal — store without embedding */ }
+
+      await db.storeFact({
+        key:      fact.key,
+        content:  fact.content,
+        category,
+        source:   'conversation',
+        threadId,
+        embedding,
+      }).catch(() => {});
+
+      // Collect profile-relevant facts (person + preference categories)
+      if ((category === 'person' || category === 'preference') && userId) {
+        const topicKey = fact.key.split(':')[1] || fact.key;
+        profileData[topicKey] = fact.content;
+      }
+    }
+
+    // Merge profile-relevant facts into user_profiles
+    if (Object.keys(profileData).length > 0 && userId) {
+      db.upsertProfile(userId, profileData).catch(() => {});
+    }
+
+    if (facts.length > 0) {
+      console.log(`[Memory] Stored ${facts.length} fact(s) from thread ${threadId}`);
+      registry.pushEvent('archivist', `extracted ${facts.length} fact(s) from ${threadId}`, 'success');
+    }
+  } finally {
+    registry.setStatus('archivist', 'idle');
   }
 }
 
@@ -176,6 +186,7 @@ async function getRelevantFacts(query, limit = 15) {
     return cached === '' ? null : cached;
   }
 
+  registry.setStatus('archivist', 'working');
   try {
     // Try to generate an embedding for semantic retrieval
     let queryEmbedding = null;
@@ -186,6 +197,7 @@ async function getRelevantFacts(query, limit = 15) {
     const rows = await db.getFacts(query, limit, queryEmbedding);
     if (!rows.length) {
       await redis.set(cacheKey, '', FACTS_TTL); // cache negative result
+      registry.setStatus('archivist', 'idle');
       return null;
     }
 
@@ -209,15 +221,18 @@ async function getRelevantFacts(query, limit = 15) {
 
     const result = lines.join('\n');
     await redis.set(cacheKey, result, FACTS_TTL);
+    registry.pushEvent('archivist', `recall: ${rows.length} facts for "${query.slice(0, 30)}"`, 'info');
+    registry.setStatus('archivist', 'idle');
     return result;
   } catch {
+    registry.setStatus('archivist', 'idle');
     return null; // non-fatal — DB unavailable
   }
 }
 
 // ── Correction Detection ──────────────────────────────────────────────────────
 
-const CORRECTION_RE = /\b(no[,.]?\s+(actually|that'?s|you'?re|it'?s)|actually[,.]?\s+(it'?s|that'?s|the|no)|that'?s (wrong|incorrect|not right)|you'?re wrong|you('re| are) incorrect|wrong[,.]|incorrect[,.]|not (quite|right|correct)|let me correct|correction[,:]|mistake[,:]|that is (wrong|incorrect))\b/i;
+const CORRECTION_RE = /\b(no[,.]?\s+(actually|that'?s|you'?re|it'?s|wrong)|actually[,.]?\s+(it'?s|that'?s|the|no)|that'?s\s+(wrong|incorrect|not right)|you'?re\s+wrong|you('re| are)\s+incorrect|wrong[,.\s]|incorrect[,.\s]|not\s+(quite|right|correct)|let me correct|correction[,:\s]|mistake[,:\s]|that\s+is\s+(wrong|incorrect)|that ain'?t right|nah[,.]?\s+(it'?s|that'?s|you)|stop saying)/i;
 
 const CORRECTION_SYSTEM = `You are a lesson extractor for Ghost, an AI assistant.
 The user is correcting a previous response. Extract the lesson clearly.
@@ -696,38 +711,25 @@ async function analyzeClosedTickets() {
 }
 
 /**
- * Snapshot open ticket transcripts — fetch current channel history and save.
- * Called nightly to ensure we have transcripts even if Ghost never directly interacted.
+ * Snapshot open ticket transcripts — check DB state of open tickets.
+ * OpenClaw handles Discord channel access natively; this just checks
+ * for stale tickets that may need cleanup.
  */
 async function snapshotOpenTickets() {
-  const discord = require('../../openclaw/skills/discord');
   const openTickets = await db.getOpenTickets();
-  let saved = 0, closed = 0;
+  let stale = 0;
 
   for (const t of openTickets) {
-    try {
-      const history = await discord.fetchChannelHistory(t.channel_id, 100);
-      if (history.length > 0) {
-        const info   = await discord.getChannelInfo(t.channel_id);
-        const opener = history.find(m => !m.isBot);
-        await db.upsertTicket({
-          channelId:    t.channel_id,
-          guildId:      t.guild_id,
-          openerId:     opener?.authorId,
-          openerName:   opener?.author,
-          categoryName: info?.parentName,
-          transcript:   history,
-        });
-        saved++;
-      }
-    } catch {
-      // Channel likely deleted — mark ticket as closed
-      await db.closeTicket(t.channel_id, [], 'Channel no longer exists (detected during nightly snapshot)');
-      closed++;
+    // Check if ticket has been open for more than 7 days without update
+    const updatedAt = new Date(t.updated_at || t.created_at);
+    const daysSinceUpdate = (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceUpdate > 7) {
+      await db.closeTicket(t.channel_id, null, 'Auto-closed: no activity for 7+ days');
+      stale++;
     }
   }
 
-  return { saved, closed };
+  return { saved: stale, closed: stale, total: openTickets.length };
 }
 
 module.exports = {

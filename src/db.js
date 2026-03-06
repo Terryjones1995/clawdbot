@@ -4,6 +4,7 @@ const { EventEmitter } = require('events');
 
 /** Emits 'error-logged' with the entry object whenever level=ERROR is stored. */
 const events = new EventEmitter();
+events.on('error', () => {});
 
 /**
  * db.js — Neon PostgreSQL connection pool
@@ -28,7 +29,7 @@ if (!process.env.NEON_DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.NEON_DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: true },
   max:              10,   // max connections in pool
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
@@ -100,6 +101,9 @@ async function initSchema() {
   await query(`
     CREATE INDEX IF NOT EXISTS agent_logs_agent_idx ON agent_logs (agent)
   `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS agent_logs_level_idx ON agent_logs (level)
+  `);
 
   await query(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -142,6 +146,13 @@ async function initSchema() {
     await query(`ALTER TABLE ghost_memory ADD COLUMN IF NOT EXISTS embedding vector(768)`);
   } catch (err) {
     console.warn('[DB] Could not add embedding column (pgvector may be unavailable):', err.message);
+  }
+
+  // HNSW index for fast vector similarity search
+  try {
+    await query(`CREATE INDEX IF NOT EXISTS ghost_memory_embedding_idx ON ghost_memory USING hnsw (embedding vector_cosine_ops)`);
+  } catch (err) {
+    console.warn('[DB] Could not create HNSW index (pgvector may be unavailable):', err.message);
   }
 
   // Access tracking columns for memory pruning
@@ -248,6 +259,7 @@ async function initSchema() {
   // Add embedding column for semantic lesson search (non-fatal)
   try {
     await query(`ALTER TABLE agent_lessons ADD COLUMN IF NOT EXISTS embedding vector(768)`);
+    await query(`CREATE INDEX IF NOT EXISTS agent_lessons_embedding_idx ON agent_lessons USING hnsw (embedding vector_cosine_ops)`);
   } catch (err) {
     console.warn('[DB] Could not add embedding column to agent_lessons:', err.message);
   }
@@ -332,7 +344,7 @@ async function getAgentStats() {
       COUNT(*) FILTER (WHERE level = 'ERROR')::int                              AS total_errors,
       COUNT(*) FILTER (WHERE ts > NOW() - INTERVAL '24 hours')::int             AS calls_today,
       COUNT(*) FILTER (WHERE level = 'ERROR' AND ts > NOW() - INTERVAL '24 hours')::int AS errors_today,
-      COUNT(*) FILTER (WHERE outcome IN ('success','fixed'))::int               AS successes,
+      COUNT(*) FILTER (WHERE outcome IN ('success','fixed','sent','confirmed','detected','dispatched','partial','completed'))::int AS successes,
       MAX(ts)                                                                   AS last_active
     FROM agent_logs
     GROUP BY LOWER(agent)
@@ -447,15 +459,17 @@ async function getFacts(queryText = '', limit = 15, queryEmbedding = null) {
     try {
       const embStr = `[${queryEmbedding.join(',')}]`;
       const { rows } = await query(
-        `SELECT id, content, category, updated_at, 1 AS relevant
+        `SELECT id, content, category, updated_at,
+                (embedding <=> $1::vector) AS distance
          FROM ghost_memory
          WHERE embedding IS NOT NULL
+           AND (embedding <=> $1::vector) < 0.35
          ORDER BY embedding <=> $1::vector
          LIMIT $2`,
         [embStr, limit],
       );
       if (rows.length > 0) return rows;
-      // If no rows have embeddings yet, fall through to ILIKE
+      // If no rows within threshold, fall through to ILIKE
     } catch (err) {
       console.warn('[DB] Vector search failed, falling back to ILIKE:', err.message);
     }
@@ -727,6 +741,7 @@ async function getActiveLessonsByEmbedding(agent, embedding, limit = 5) {
     const { rows } = await query(
       `SELECT id, lesson, category, severity, source FROM agent_lessons
        WHERE LOWER(agent) = LOWER($1) AND active = true AND embedding IS NOT NULL
+         AND (embedding <=> $2::vector) < 0.4
        ORDER BY embedding <=> $2::vector LIMIT $3`,
       [agent, embStr, limit],
     );
@@ -900,10 +915,12 @@ async function getTicket(channelId) {
 async function closeTicket(channelId, transcript, summary = null) {
   await query(
     `UPDATE tickets
-     SET status = 'closed', transcript = $2, summary = $3,
+     SET status = 'closed',
+         transcript = COALESCE($2, transcript),
+         summary = COALESCE($3, summary),
          closed_at = NOW(), updated_at = NOW()
      WHERE channel_id = $1`,
-    [channelId, JSON.stringify(transcript), summary],
+    [channelId, transcript != null ? JSON.stringify(transcript) : null, summary],
   );
 }
 
@@ -926,7 +943,7 @@ async function markTicketAnalyzed(channelId) {
 
 async function getOpenTickets() {
   const { rows } = await query(
-    `SELECT channel_id, guild_id FROM tickets WHERE status = 'open' ORDER BY created_at DESC`,
+    `SELECT channel_id, guild_id, created_at, updated_at FROM tickets WHERE status = 'open' ORDER BY created_at DESC`,
   );
   return rows;
 }
